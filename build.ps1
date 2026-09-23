@@ -20,20 +20,20 @@ $Produktionsstopp = [datetime]"2026-10-02"   # Regel 8: vorher kein Deploy
 $Exes = "WOO_to_CDH.exe", "WOO_to_CDH_Oberflaeche.exe", "Lieferadressen.exe"
 
 Write-Host "1/5 Stand pruefen" -ForegroundColor Cyan
-if (git status --porcelain) { throw "Ungesicherte Aenderungen im Repo — erst committen. Kein Build." }
+if (git status --porcelain) { throw "Ungesicherte Aenderungen im Repo - erst committen. Kein Build." }
 $Commit = (git rev-parse --short HEAD).Trim()
 $Branch = (git rev-parse --abbrev-ref HEAD).Trim()
 $Stand  = "$(Get-Date -Format 'yyyy-MM-dd HH:mm') $Branch@$Commit"
 Write-Host "   $Stand"
 if ($Deploy) {
     if ($Branch -ne "main") { throw "Ausrollen nur von main (aktuell: $Branch)." }
-    if ((Get-Date) -lt $Produktionsstopp) { throw "Produktionsstopp bis 01.10.2026 — kein Deploy." }
+    if ((Get-Date) -lt $Produktionsstopp) { throw "Produktionsstopp bis 01.10.2026 - kein Deploy." }
 }
 
 Write-Host "2/5 Tests (UI-Tests sind Pflicht)" -ForegroundColor Cyan
 $env:WOO_CDH_UI_TESTS = "pflicht"
 try { python -m pytest -q } finally { Remove-Item Env:WOO_CDH_UI_TESTS }
-if ($LASTEXITCODE -ne 0) { throw "Tests rot — kein Build." }
+if ($LASTEXITCODE -ne 0) { throw "Tests rot - kein Build." }
 
 Write-Host "3/5 Konfigurationen auf V: pruefen (nur lesen)" -ForegroundColor Cyan
 foreach ($f in "config.yaml", "einstellungen.yaml", "zugang.yaml", "lieferadressen.yaml") {

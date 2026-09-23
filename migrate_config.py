@@ -13,6 +13,11 @@ in Logs oder Tickets landen (siehe README §15).
     python migrate_config.py                         # Dateien schreiben
     python migrate_config.py --admin-password ...    # zusätzlich Hash setzen
 
+Welle 5 — feste Shop-ids statt Namen als Schlüssel in zugang.yaml:
+
+    python migrate_config.py --shop-ids --probelauf  # nur anzeigen
+    python migrate_config.py --shop-ids              # umstellen (mit Backup)
+
 Migration auf V: nur nach Freigabe und mit Sicherung der alten config.yaml
 in Backup\\ (siehe Briefing, Welle 2 + Regel 8: Produktionsstopp).
 """
@@ -28,6 +33,8 @@ from datetime import datetime
 from pathlib import Path
 
 import yaml
+
+from woo_to_cdh import shop_id_aus_name
 
 # Diese beiden Felder sind die einzigen Geheimnisse je Shop. Alles andere
 # gilt als Einstellung.
@@ -84,12 +91,34 @@ def leerer_passwort_satz() -> dict:
 # Aufteilen
 # ---------------------------------------------------------------------------
 
+def vergebe_shop_ids(shops: list) -> dict:
+    """Ergänzt fehlende Shop-ids (aus dem Namen, eindeutig) und liefert
+    {Name: id}. Vorhandene ids bleiben unverändert."""
+    vergeben = {s["id"] for s in shops if s.get("id")}
+    zuordnung = {}
+    for shop in shops:
+        name = shop.get("name") or shop.get("url")
+        if not shop.get("id"):
+            basis = shop_id_aus_name(name)
+            sid, n = basis, 2
+            while sid in vergeben:
+                sid, n = f"{basis}-{n}", n + 1
+            vergeben.add(sid)
+            # id als erstes Feld, damit sie in der Datei oben steht
+            neu = {"id": sid, **shop}
+            shop.clear()
+            shop.update(neu)
+        zuordnung[name] = shop["id"]
+    return zuordnung
+
+
 def split_config(cfg: dict, *, admin_password: str | None = None,
                  vorhandener_zugang: dict | None = None) -> tuple[dict, dict]:
     """config-Dict -> (einstellungen, zugang).
 
-    einstellungen: tiefe Kopie ohne die geheimen Felder je Shop.
-    zugang: { admin: {...}, shops: { <name>: {consumer_key, consumer_secret} } }
+    einstellungen: tiefe Kopie ohne die geheimen Felder je Shop, jeder Shop
+    mit fester id (Welle 5).
+    zugang: { admin: {...}, shops: { <id>: {consumer_key, consumer_secret} } }
 
     Ein bereits vorhandener Zugang (z. B. mit gesetztem Admin-Hash) wird als
     Basis genommen, damit die Migration einen Hash nicht überschreibt.
@@ -101,14 +130,15 @@ def split_config(cfg: dict, *, admin_password: str | None = None,
     zugang["admin"].setdefault("users", [])
     zugang.setdefault("shops", {})
 
+    vergebe_shop_ids(einstellungen.get("shops", []))
     for shop in einstellungen.get("shops", []):
         name = shop.get("name") or shop.get("url")
-        creds = zugang["shops"].get(name, {})
+        creds = zugang["shops"].pop(name, None) or zugang["shops"].get(shop["id"], {})
         for feld in GEHEIME_FELDER:
             if feld in shop:
                 creds[feld] = shop.pop(feld)
         if creds:
-            zugang["shops"][name] = creds
+            zugang["shops"][shop["id"]] = creds
 
     if admin_password:
         zugang["admin"]["password"] = hash_admin_password(admin_password)
@@ -253,6 +283,61 @@ def schreibe_migration(cfg: dict, *, ziel_einstellungen: Path, ziel_zugang: Path
 
 
 # ---------------------------------------------------------------------------
+# Welle 5: feste Shop-ids in bestehenden einstellungen.yaml/zugang.yaml
+# ---------------------------------------------------------------------------
+
+def shop_ids_umstellen(einstellungen: dict, zugang: dict) -> tuple[dict, dict, list]:
+    """Ergänzt ids in einstellungen und schlüsselt zugang.shops auf ids um.
+
+    Liefert (einstellungen, zugang, zeilen) — zeilen beschreibt je Shop, was
+    passiert, ohne Schlüsselwerte. Idempotent: ein zweiter Lauf ändert nichts.
+    """
+    einstellungen = copy.deepcopy(einstellungen)
+    zugang = copy.deepcopy(zugang)
+    zuordnung = vergebe_shop_ids(einstellungen.get("shops", []))
+    alt = zugang.get("shops") or {}
+    neu: dict = {}
+    zeilen = []
+    for name, sid in zuordnung.items():
+        if sid in alt:
+            neu[sid] = alt.pop(sid)
+            zeilen.append(f"  {name:16} id {sid:12} Zugang schon unter id")
+        elif name in alt:
+            neu[sid] = alt.pop(name)
+            zeilen.append(f"  {name:16} id {sid:12} Zugang: Name -> id")
+        else:
+            zeilen.append(f"  {name:16} id {sid:12} KEIN Zugang in zugang.yaml")
+    for rest in alt:   # Einträge ohne passenden Shop nicht stillschweigend löschen
+        neu[rest] = alt[rest]
+        zeilen.append(f"  {rest:16} (kein Shop in einstellungen.yaml) bleibt stehen")
+    zugang["shops"] = neu
+    return einstellungen, zugang, zeilen
+
+
+def shop_ids_migration(ordner: Path, *, probelauf: bool,
+                       datum: str | None = None) -> str:
+    """--shop-ids: bestehende Dateien umstellen. Vorher Backup beider Dateien."""
+    pe, pz = ordner / "einstellungen.yaml", ordner / "zugang.yaml"
+    for p in (pe, pz):
+        if not p.exists():
+            raise FileNotFoundError(f"{p} fehlt — erst die Migration aus config.yaml.")
+    einstellungen, zugang, zeilen = shop_ids_umstellen(_lade_yaml(pe), _lade_yaml(pz))
+    kopf = ["=== " + ("Probelauf " if probelauf else "") +
+            "Umstellung zugang.yaml auf feste Shop-ids ===",
+            "(Es werden KEINE Schlüsselwerte ausgegeben.)", ""]
+    if probelauf:
+        return "\n".join(kopf + zeilen + ["", "Probelauf ohne Änderungen beendet."])
+    stempel = datum or datetime.now().strftime("%Y-%m-%d_%H%M%S")
+    backup = ordner / "Backup"
+    backup.mkdir(parents=True, exist_ok=True)
+    for p in (pe, pz):
+        shutil.copy2(p, backup / f"{p.stem}_{stempel}{p.suffix}")
+    _dump(pe, einstellungen)
+    _dump(pz, zugang)
+    return "\n".join(kopf + zeilen + ["", f"Gesichert nach {backup}", "Umgestellt."])
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
@@ -270,7 +355,19 @@ def main(argv: list[str] | None = None) -> int:
                    help="Admin-Passwort; wird gehasht in zugang.yaml abgelegt.")
     p.add_argument("--force", action="store_true",
                    help="Bestehende Zieldateien überschreiben (nach Sicherung).")
+    p.add_argument("--shop-ids", action="store_true",
+                   help="Bestehende einstellungen.yaml/zugang.yaml auf feste "
+                        "Shop-ids umstellen (Welle 5).")
     args = p.parse_args(argv)
+
+    if args.shop_ids:
+        try:
+            print(shop_ids_migration(args.config.resolve().parent,
+                                     probelauf=args.probelauf))
+        except FileNotFoundError as e:
+            print(e, file=sys.stderr)
+            return 2
+        return 0
 
     config_pfad = args.config
     if not config_pfad.exists():

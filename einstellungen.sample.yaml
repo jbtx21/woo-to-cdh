@@ -30,31 +30,36 @@ status_after_export: completed
 # --- Shops (ohne Zugangsdaten) ----------------------------------------------
 shops:
 
-  - name: CAF-Shop
+  - id: caf
+    name: CAF-Shop
     enabled: true
     url: https://shop.texma-gmbh.de/caf-shop/
     datev_no: 19541
     order_type: AB
 
-  - name: Stoll-Shop
+  - id: stoll
+    name: Stoll-Shop
     enabled: true
     url: https://shop.texma-gmbh.de/stoll-shop/
     datev_no: 19377
     order_type: AB
 
-  - name: Xond-Shop
+  - id: xond
+    name: Xond-Shop
     enabled: true
     url: https://shop.texma-gmbh.de/xond-shop/
     datev_no: 19705
     order_type: AB
 
-  - name: SFS-Shop
+  - id: sfs
+    name: SFS-Shop
     enabled: true
     url: https://shop.texma-gmbh.de/sfs-shop/
     datev_no: 19616
     order_type: AB
 
-  - name: Allgaier-Shop
+  - id: allgaier
+    name: Allgaier-Shop
     enabled: false
     url: https://shop.texma-gmbh.de/allgaier/
     datev_no: 10698
@@ -62,7 +67,8 @@ shops:
     included_statuses: [processing]
     combine_by_delivery: true
 
-  - name: Ensinger-Shop
+  - id: ensinger
+    name: Ensinger-Shop
     enabled: false
     url: https://shop.texma-gmbh.de/ensinger-shop/
     datev_no: 14020
@@ -89,7 +95,8 @@ shops:
       - key: personalnummer
         label: Personalnummer
 
-  - name: KVSW-Shop
+  - id: kvsw
+    name: KVSW-Shop
     enabled: false
     url: https://shop.texma-gmbh.de/kvsw-re-shop/
     datev_no: 19742

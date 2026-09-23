@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import socket
 import subprocess
 import sys
@@ -1471,8 +1472,14 @@ def _tages_gate(shop_cfg: dict, shop_name: str) -> str:
 def _status_after_export(shop_cfg: dict, global_cfg: dict) -> str:
     # Die REST-API erwartet den Status ohne "wc-"-Präfix ("completed",
     # nicht "wc-completed") — beides in der Config zulassen.
-    status = str(shop_cfg.get("status_after_export")
-                 or global_cfg.get("status_after_export") or "").strip()
+    # Steht der Schlüssel im Shop, gilt er — auch leer ("Status nicht
+    # ändern"), sonst ließe sich ein globales "completed" pro Shop nicht
+    # abschalten. Fehlt er, gilt der globale Wert.
+    if "status_after_export" in shop_cfg:
+        roh = shop_cfg.get("status_after_export")
+    else:
+        roh = global_cfg.get("status_after_export")
+    status = str(roh or "").strip()
     return status[3:] if status.startswith("wc-") else status
 
 
@@ -1796,7 +1803,7 @@ def abrufen(einstellungen: dict, trotzdem=(), client_factory=None) -> Pruefergeb
         fehlt = fehlende_zugangsdaten(shop_cfg)
         if fehlt:
             logging.error("Shop %s: Zugangsdaten fehlen (%s) — in "
-                          "zugang.yaml unter dem Shop-Namen eintragen. "
+                          "zugang.yaml unter der Shop-id eintragen. "
                           "Shop übersprungen.", shop_name, ", ".join(fehlt))
             ergebnis.shops.append(ShopErgebnis(
                 shop=shop_name, shop_cfg=shop_cfg, global_cfg=einstellungen,
@@ -2273,24 +2280,42 @@ def release_lock() -> None:
 # Konfiguration laden (Welle 2: geteilte Dateien mit Rückfall)
 # ---------------------------------------------------------------------------
 
-def _load_split_config() -> dict:
+def shop_id_aus_name(name: str) -> str:
+    """Feste Shop-id aus dem Namen: "Ensinger-Shop" → "ensinger"."""
+    s = str(name or "").strip().lower()
+    s = re.sub(r"[-_\s]*shop$", "", s)
+    s = (s.replace("ä", "ae").replace("ö", "oe").replace("ü", "ue")
+          .replace("ß", "ss"))
+    s = re.sub(r"[^a-z0-9]+", "-", s).strip("-")
+    return s or "shop"
+
+
+def _load_split_config(einst_path: Path | None = None,
+                       zugang_path: Path | None = None) -> dict:
     """Liest einstellungen.yaml + zugang.yaml und führt sie zusammen.
 
-    Die Zugangsdaten (consumer_key/-secret) werden je Shop über den Namen
-    wieder in die Shop-Einträge eingesetzt, sodass der Rest des Programms
-    dieselbe Struktur wie bisher aus config.yaml sieht.
+    Die Zugangsdaten (consumer_key/-secret) werden je Shop über die feste
+    Shop-id wieder eingesetzt (Welle 5), sodass der Rest des Programms
+    dieselbe Struktur wie bisher aus config.yaml sieht. Ältere zugang.yaml
+    sind nach dem Shop-Namen verschlüsselt — dann greift der Name als
+    Rückfall, mit Hinweis auf die Migration.
     """
-    with EINSTELLUNGEN_PATH.open("r", encoding="utf-8") as f:
+    with (einst_path or EINSTELLUNGEN_PATH).open("r", encoding="utf-8") as f:
         cfg = yaml.safe_load(f) or {}
-    with ZUGANG_PATH.open("r", encoding="utf-8") as f:
+    with (zugang_path or ZUGANG_PATH).open("r", encoding="utf-8") as f:
         zugang = yaml.safe_load(f) or {}
 
     secret_by_shop = zugang.get("shops") or {}
     for shop in cfg.get("shops", []):
         name = shop.get("name") or shop.get("url")
-        creds = secret_by_shop.get(name) or {}
+        creds = secret_by_shop.get(shop.get("id")) if shop.get("id") else None
+        if creds is None and name in secret_by_shop:
+            creds = secret_by_shop[name]
+            logging.info("Shop %s: zugang.yaml noch nach Namen verschlüsselt — "
+                         "auf feste Shop-ids umstellen: python migrate_config.py "
+                         "--shop-ids --probelauf", name)
         for feld in ("consumer_key", "consumer_secret"):
-            if feld in creds:
+            if feld in (creds or {}):
                 shop[feld] = creds[feld]
     return cfg
 
@@ -2312,20 +2337,30 @@ def config_vorhanden() -> bool:
         or CONFIG_PATH.exists()
 
 
-def load_config() -> tuple[dict, str]:
+def load_config(base_dir: Path | None = None) -> tuple[dict, str]:
     """Lädt die Konfiguration und liefert (cfg, quelle).
 
     Bevorzugt die geteilten Dateien (einstellungen.yaml + zugang.yaml).
     Fehlt eine davon, wird auf config.yaml zurückgefallen — so lange, bis
-    die Migration vollständig durchgeführt wurde.
+    die Migration vollständig durchgeführt wurde. base_dir liest aus einem
+    anderen Ordner (Oberfläche, Tests), ohne die Modulpfade anzufassen.
     """
+    if base_dir is not None:
+        EINSTELLUNGEN_PATH, ZUGANG_PATH, CONFIG_PATH = (
+            Path(base_dir) / "einstellungen.yaml", Path(base_dir) / "zugang.yaml",
+            Path(base_dir) / "config.yaml")
+    else:
+        EINSTELLUNGEN_PATH, ZUGANG_PATH, CONFIG_PATH = (
+            globals()["EINSTELLUNGEN_PATH"], globals()["ZUGANG_PATH"],
+            globals()["CONFIG_PATH"])
     if EINSTELLUNGEN_PATH.exists() and ZUGANG_PATH.exists():
         if CONFIG_PATH.exists():
             logging.warning(
                 "config.yaml liegt noch neben einstellungen.yaml/zugang.yaml — "
                 "es gelten die neuen Dateien. Alte config.yaml nach Backup\\ "
                 "verschieben (die Migration erledigt das normalerweise).")
-        return _load_split_config(), "einstellungen.yaml + zugang.yaml"
+        return (_load_split_config(EINSTELLUNGEN_PATH, ZUGANG_PATH),
+                "einstellungen.yaml + zugang.yaml")
 
     if (EINSTELLUNGEN_PATH.exists()) != (ZUGANG_PATH.exists()):
         fehlt = ZUGANG_PATH.name if EINSTELLUNGEN_PATH.exists() else EINSTELLUNGEN_PATH.name
@@ -2369,8 +2404,12 @@ def main() -> int:
         cfg_prefixes = cfg.get("veredelung_prefixes")
         if cfg_prefixes:
             global VEREDELUNG_PREFIXES
+            # Einträge als Text ("004/") oder mit Bezeichnung aus der
+            # Oberfläche ({prefix: "004/", label: "Stick"}).
             VEREDELUNG_PREFIXES = tuple(
-                str(p).strip() for p in cfg_prefixes if str(p).strip()
+                str(p.get("prefix") if isinstance(p, dict) else p).strip()
+                for p in cfg_prefixes
+                if str(p.get("prefix") if isinstance(p, dict) else p).strip()
             )
         logging.info("Veredelungs-Präfixe: %s",
                      ", ".join(VEREDELUNG_PREFIXES))

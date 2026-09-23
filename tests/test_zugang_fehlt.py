@@ -31,7 +31,7 @@ def split_ohne_xond(tmp_path, monkeypatch):
     ziel_z = tmp_path / "zugang.yaml"
     m.schreibe_migration(_config(), ziel_einstellungen=ziel_e, ziel_zugang=ziel_z)
     zugang = yaml.safe_load(ziel_z.read_text(encoding="utf-8"))
-    del zugang["shops"]["Xond-Shop"]
+    del zugang["shops"]["xond"]
     ziel_z.write_text(yaml.safe_dump(zugang, allow_unicode=True), encoding="utf-8")
 
     monkeypatch.setattr(w, "EINSTELLUNGEN_PATH", ziel_e)

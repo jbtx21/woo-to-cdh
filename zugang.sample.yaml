@@ -21,26 +21,27 @@ admin:
   # Windows-Benutzernamen mit Admin-Rechten (gegen den angemeldeten Benutzer geprüft).
   users: []
 
-# Consumer Key/Secret je Shop. Schlüssel = Shop-Name wie in einstellungen.yaml.
+# Consumer Key/Secret je Shop. Schlüssel = feste Shop-id aus einstellungen.yaml
+# (nicht der Name — der darf sich ändern, ohne dass der Zugang verloren geht).
 shops:
-  CAF-Shop:
+  caf:
     consumer_key: 'ck_HIER_EINTRAGEN'
     consumer_secret: 'cs_HIER_EINTRAGEN'
-  Stoll-Shop:
+  stoll:
     consumer_key: 'ck_HIER_EINTRAGEN'
     consumer_secret: 'cs_HIER_EINTRAGEN'
-  Xond-Shop:
+  xond:
     consumer_key: 'ck_HIER_EINTRAGEN'
     consumer_secret: 'cs_HIER_EINTRAGEN'
-  SFS-Shop:
+  sfs:
     consumer_key: 'ck_HIER_EINTRAGEN'
     consumer_secret: 'cs_HIER_EINTRAGEN'
-  Allgaier-Shop:
+  allgaier:
     consumer_key: 'ck_HIER_EINTRAGEN'
     consumer_secret: 'cs_HIER_EINTRAGEN'
-  Ensinger-Shop:
+  ensinger:
     consumer_key: 'ck_HIER_EINTRAGEN'
     consumer_secret: 'cs_HIER_EINTRAGEN'
-  KVSW-Shop:
+  kvsw:
     consumer_key: 'ck_HIER_EINTRAGEN'
     consumer_secret: 'cs_HIER_EINTRAGEN'

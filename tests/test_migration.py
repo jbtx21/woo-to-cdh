@@ -73,8 +73,9 @@ def test_split_trennt_geheimnisse_ab():
         assert "consumer_key" not in shop
         assert "consumer_secret" not in shop
 
-    assert zugang["shops"]["CAF-Shop"]["consumer_key"] == "ck_TEST_CAF"
-    assert zugang["shops"]["Ensinger-Shop"]["consumer_secret"] == "cs_TEST_ENS"
+    assert zugang["shops"]["caf"]["consumer_key"] == "ck_TEST_CAF"
+    assert zugang["shops"]["ensinger"]["consumer_secret"] == "cs_TEST_ENS"
+    assert [s["id"] for s in einst["shops"]][:1] == ["caf"]
 
 
 def test_split_behaelt_einstellungen():
@@ -168,7 +169,7 @@ def test_schreibe_erzeugt_beide_dateien(tmp_path):
     einst = yaml.safe_load(ziel_e.read_text(encoding="utf-8"))
     zugang = yaml.safe_load(ziel_z.read_text(encoding="utf-8"))
     assert not m._enthaelt_geheimnis(einst)
-    assert zugang["shops"]["CAF-Shop"]["consumer_key"] == "ck_TEST_CAF"
+    assert zugang["shops"]["caf"]["consumer_key"] == "ck_TEST_CAF"
 
 
 def test_schreibe_ohne_force_kein_ueberschreiben(tmp_path):
@@ -256,6 +257,8 @@ def test_roundtrip_migration_dann_laden(tmp_path, monkeypatch):
     monkeypatch.setattr(w, "CONFIG_PATH", tmp_path / "config.yaml")
 
     cfg, _ = w.load_config()
+    for s in cfg["shops"]:
+        assert s.pop("id")                  # feste Shop-id kommt dazu
     assert cfg == original
 
 

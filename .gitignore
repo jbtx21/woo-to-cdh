@@ -4,6 +4,7 @@ zugang.yaml
 einstellungen.yaml
 lieferadressen.yaml
 exported.log
+aenderungsverlauf.log
 running.lock
 logs/
 wex-archiv/

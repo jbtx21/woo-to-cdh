@@ -88,6 +88,8 @@ def test_samples_sind_aufgeteilt():
             assert k in s, f"{s.get('name')}: {k} fehlt"
 
     assert "shops" in zugang and zugang["shops"], "zugang ohne Shops"
+    # Welle 5: zugang.yaml ist nach der festen Shop-id verschlüsselt
+    assert set(zugang["shops"]) == {s["id"] for s in einst["shops"]}
     for name, creds in zugang["shops"].items():
         assert "consumer_key" in creds, f"{name}: consumer_key fehlt"
         assert "consumer_secret" in creds, f"{name}: consumer_secret fehlt"

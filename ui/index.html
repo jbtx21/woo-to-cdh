@@ -436,6 +436,7 @@ let initial = [];
 let initialGlobal = { prefixes: [] };
 let LOG = [];
 let USER = { name: "" };
+let STAND = "";
 let TOKEN = "";
 let ADMIN_PW_SET = true;
 
@@ -458,7 +459,7 @@ const api = () => window.pywebview.api;
 
 function anwenden(st) {
   initial = st.shops; initialGlobal = st.global; LOG = st.log;
-  USER = { name: st.user }; TOKEN = st.token; ADMIN_PW_SET = st.adminPasswortGesetzt;
+  USER = { name: st.user }; STAND = st.stand || ""; TOKEN = st.token; ADMIN_PW_SET = st.adminPasswortGesetzt;
   adminUntil = st.admin.aktiv ? Date.now() + st.admin.rest_sekunden * 1000 : 0;
   // Bereits geholte Versandarten behalten (reine Anzeige)
   const methods = Object.fromEntries(shops.map((s) => [s.id, s.methods]));
@@ -613,7 +614,7 @@ function renderList() {
           <span class="row-body"><span class="row-main"><span class="row-title">Admin-Modus</span><div class="row-sub">Noch ${adminLeft()} Min.</div></span>
           <button class="navlink" data-a="admin-end" style="font-size:15px">Beenden</button></span></div>
       </div></div>` : ""}
-      <div class="who">Angemeldet als ${esc(USER.name)}</div>
+      <div class="who">Angemeldet als ${esc(USER.name)}<br><span id="stand">Stand ${esc(STAND)}</span></div>
     </div>`;
 }
 

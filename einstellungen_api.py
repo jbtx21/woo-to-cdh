@@ -417,6 +417,7 @@ class EinstellungenApi:
             "global": {"prefixes": _praefixe_ui(cfg.get("veredelung_prefixes"))},
             "log": self._verlauf_lesen(),
             "user": self._benutzer,
+            "stand": w.programmstand(),
             "admin": self._admin_info(),
             "adminPasswortGesetzt": bool(pw.get("hash")),
             "token": self._token(),

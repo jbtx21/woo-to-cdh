@@ -2404,6 +2404,17 @@ def fehlende_zugangsdaten(shop_cfg: dict) -> list[str]:
             if not str(shop_cfg.get(f) or "").strip()]
 
 
+def programmstand() -> str:
+    """Welche Fassung läuft? build.ps1 schreibt build_info.py (Commit, Datum)
+    und packt sie in die EXE. Ohne Build: „Entwicklung". Steht im Log, damit
+    im Parallelbetrieb erkennbar ist, welches Programm gelaufen ist."""
+    try:
+        import build_info  # noqa: PLC0415 — nur im Build vorhanden
+        return str(build_info.STAND)
+    except ImportError:
+        return "Entwicklung (nicht gebaut)"
+
+
 def config_vorhanden() -> bool:
     """Gibt es überhaupt eine Konfiguration (geteilt oder alt)?"""
     return (EINSTELLUNGEN_PATH.exists() and ZUGANG_PATH.exists()) \
@@ -2485,6 +2496,7 @@ def main() -> int:
                      datetime.now().isoformat(),
                      os.environ.get("COMPUTERNAME", "?"),
                      os.environ.get("USERNAME", "?"))
+        logging.info("Programmstand: %s (Konsole)", programmstand())
 
         # Veredelungs-Präfixe aus der Config übernehmen, falls gesetzt.
         # Damit lässt sich ein neuer Präfix ohne EXE-Neubau nachtragen.

@@ -6,10 +6,13 @@ wird per Init-Skript auf diesen Server umgeleitet — dahinter steht die echte
 EinstellungenApi auf Testdateien. Geprüft wird also HTML + JS + Python
 zusammen, nur die Brücke ist ersetzt.
 
-Übersprungen, wenn Playwright oder Chromium fehlen.
+Übersprungen, wenn Playwright oder Chromium fehlen — außer beim Build:
+build.ps1 setzt WOO_CDH_UI_TESTS=pflicht, dann ist das ein Fehler
+(Einrichten: pip install playwright; python -m playwright install chromium).
 """
 import glob
 import json
+import os
 import threading
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -23,11 +26,34 @@ import oberflaeche as ob
 import woo_to_cdh as w
 from conftest import FIXTURES, FakeWoo
 
-sync_api = pytest.importorskip("playwright.sync_api")
+PFLICHT = os.environ.get("WOO_CDH_UI_TESTS") == "pflicht"
+if PFLICHT:
+    from playwright import sync_api
+else:
+    sync_api = pytest.importorskip("playwright.sync_api")
 
 ROOT = Path(__file__).resolve().parent.parent
-CHROMIUM = sorted(glob.glob("/opt/pw-browsers/chromium-*/chrome-linux/chrome"))
+
+
+def _chromium() -> str | None:
+    """Chromium dieser Umgebung (Cloud) oder das von Playwright installierte
+    (Entwicklungsrechner: python -m playwright install chromium)."""
+    pfade = sorted(glob.glob("/opt/pw-browsers/chromium-*/chrome-linux/chrome"))
+    if pfade:
+        return pfade[-1]
+    try:
+        with sync_api.sync_playwright() as pw:
+            pfad = pw.chromium.executable_path
+    except Exception:  # noqa: BLE001
+        return None
+    return pfad if pfad and Path(pfad).exists() else None
+
+
+CHROMIUM = _chromium()
 if not CHROMIUM:
+    if PFLICHT:
+        raise RuntimeError("Chromium für die UI-Tests fehlt: "
+                           "python -m playwright install chromium")
     pytest.skip("Chromium nicht vorhanden", allow_module_level=True)
 
 PASSWORT = "richtig-geheim"
@@ -135,7 +161,7 @@ def _browser(api, ordner, cdh):
     port = server.server_address[1]
 
     with sync_api.sync_playwright() as pw:
-        browser = pw.chromium.launch(executable_path=CHROMIUM[-1])
+        browser = pw.chromium.launch(executable_path=CHROMIUM)
         page = browser.new_page(viewport={"width": 1200, "height": 900})
         fehler, extern = [], []
         page.on("pageerror", lambda e: fehler.append(str(e)))
@@ -299,6 +325,13 @@ def test_abrufen_pruefansicht(importseite):
     assert p.fehler == [] and p.extern == []
 
 
+def _ende(p):
+    """Warten, bis der ganze Lauf fertig ist — nicht nur die Zeile: Eine
+    Einheit steht schon auf „fertig“, während der Lauf noch Excel und Sperre
+    abschließt. Erst dann gibt es „Fertig“ und das Blatt lässt sich schließen."""
+    p.wait_for_selector("#overlay .nav-r [data-a=close]")
+
+
 def test_bestelldetail_so_geht_es_an_cdh(importseite):
     p = importseite
     _abrufen(p)
@@ -328,6 +361,7 @@ def test_import_mit_fortschritt(importseite):
     assert (p.ordner / "running.lock").exists()                          # Sperre während des Laufs
     p.cdh["warte"].set()
     p.wait_for_selector("#overlay .row[data-status=fertig]")
+    _ende(p)
     assert "1 Bestellung in 1 Auftrag verarbeitet" in p.locator("#overlay").inner_text()
     p.click("#overlay [data-a=close] >> nth=-1")
     assert p.locator("#importPane .row-title", has_text="#402").count() == 0
@@ -347,6 +381,7 @@ def test_import_abbrechen(importseite):
     p.wait_for_selector("#overlay [data-a=cancel-import]:has-text('Wird beendet')")
     p.cdh["warte"].set()
     p.wait_for_selector("#overlay .row[data-status=abgebrochen]")
+    _ende(p)
     assert "Abgebrochen nach 1 von 2" in p.locator("#overlay").inner_text()
     assert len(p.cdh["aufrufe"]) == 1
     p.click("#overlay [data-a=close] >> nth=-1")
@@ -360,6 +395,7 @@ def test_exit_code_bitte_pruefen(importseite):
     _nur(p, "#402")
     p.click("#importPane [data-a=import]")
     p.wait_for_selector("#overlay .row[data-status=pruefen]:has-text('CDH meldet Exit 3')")
+    _ende(p)
     assert "braucht einen Blick" in p.locator("#overlay").inner_text()
 
 
@@ -394,12 +430,14 @@ def test_erneut_an_cdh(importseite):
     _nur(p, "#402")
     p.click("#importPane [data-a=import]")
     p.wait_for_selector("#overlay .row[data-status=fertig]")
+    _ende(p)
     p.click("#overlay [data-a=close] >> nth=-1")
     p.wait_for_selector("#importPane [data-a=erneut]")
     p.click("#importPane [data-a=erneut] >> nth=0")
     p.wait_for_selector("#overlay .alert-box:has-text('Nur, wenn der Auftrag in CDH fehlt')")
     p.click("#overlay [data-a=erneut-ok]")
     p.wait_for_selector("#overlay .row[data-status=fertig]")
+    _ende(p)
     assert len(p.cdh["aufrufe"]) == 2 and p.cdh["aufrufe"][0] == p.cdh["aufrufe"][1]
     zeilen = (p.ordner / "exported.log").read_text(encoding="utf-8").splitlines()
     assert len(zeilen) == 2                                  # Kopf + 1 — nichts doppelt vermerkt

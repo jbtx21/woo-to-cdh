@@ -16,10 +16,10 @@ Vorlagen, Tests und Doku**. Betriebsdaten liegen ausschließlich auf V:.
 | Im Repo | Nur auf V: |
 |---|---|
 | `woo_to_cdh.py`, `launcher.py`, `diagnose.py`, `adressen_gui.py`, `xlsx_to_wex.py`, `migrate_config.py` | `einstellungen.yaml`, `zugang.yaml` (Zugangsdaten), bis zur Migration `config.yaml` |
-| `oberflaeche.py`, `einstellungen_api.py`, `ui/` (Oberfläche, Inter-Schrift) | `lieferadressen.yaml` (Ansprechpartner) |
+| `oberflaeche.py`, `einstellungen_api.py`, `import_api.py`, `shop_api.py`, `ui/` (Oberfläche, Inter-Schrift) | `lieferadressen.yaml` (Ansprechpartner) |
 | `config.sample.yaml`, `einstellungen.sample.yaml`, `zugang.sample.yaml`, `lieferadressen.sample.yaml` | `aenderungsverlauf.log`, `Backup\` |
 | `tests/` mit anonymisierten Testbestellungen | `exported.log`, `logs\`, `wex-archiv\`, `excel-archiv\` |
-| `docs/` mit Entwurf und Briefing | EXE-Dateien |
+| `docs/` mit Entwurf, Briefing, Mitarbeiter-Anleitung, Ausroll-Checkliste | EXE-Dateien |
 
 Die `.gitignore` sorgt dafür, dass die rechte Spalte nicht versehentlich
 committet wird. Ein Test prüft zusätzlich, dass keine echten API-Schlüssel im
@@ -36,8 +36,7 @@ python -m pytest -q
 ```
 
 **Bauen und ausrollen:** `.\build.ps1` baut nur, `.\build.ps1 -Deploy` kopiert
-zusätzlich nach V:. Das Skript bricht ab, wenn Tests rot sind oder eine YAML auf
-V: kaputt ist.
+zusätzlich nach V: (Abschnitt 11, Checkliste in `docs/AUSROLLEN.md`).
 
 **Golden-WEX:** `tests/golden/` enthält WEX-Dateien für feste Testbestellungen.
 Weicht die Ausgabe ab, schlägt der Test fehl — jede Formatänderung wird so
@@ -663,29 +662,48 @@ weiter, im Log steht eine Warnung.
 
 ## 11. EXE bauen und ausrollen
 
-Nach jeder Änderung an `woo_to_cdh.py` oder `launcher.py`:
+Alles über `build.ps1` im Repo-Ordner:
 
 ```powershell
-cd C:\TEXMA\woo-cdh
-python -m PyInstaller --onefile --name WOO_to_CDH `
-    --hidden-import woo_to_cdh --hidden-import openpyxl launcher.py
-Copy-Item -Force dist\WOO_to_CDH.exe "V:\Warenwirtschaftssystem\WooCommerce Import\"
-Copy-Item -Force woo_to_cdh.py "V:\Warenwirtschaftssystem\WooCommerce Import\"
+.\build.ps1            # prüfen und bauen, nichts auf V:
+.\build.ps1 -Deploy    # zusätzlich nach V: kopieren (nur von main, nach Freigabe)
 ```
 
-Ergebnis ist eine eigenständige EXE von rund 13 MB. Die Arbeitsplätze
-brauchen weder Python noch Pakete.
+Ablauf und Abbruchgründe:
 
-**Nur Config geändert?** Dann reicht das Kopieren der `config.yaml`. Die EXE
-liest sie bei jedem Start neu.
+1. **Stand:** Das Repo muss sauber sein (alles committet). Der Programmstand
+   (Datum, Branch, Commit) wird in die EXE eingebaut und steht bei jedem Start
+   im Log und in der Oberfläche unten links.
+2. **Tests:** `pytest` einschließlich der Oberflächen-Tests. Die sind beim
+   Build Pflicht; fehlt Playwright oder Chromium, bricht der Build ab
+   (`pip install playwright`, `python -m playwright install chromium`).
+3. **YAML auf V:** wird nur gelesen und auf Gültigkeit geprüft.
+4. **Build:** drei EXE-Dateien in `dist\`:
+   - `WOO_to_CDH.exe` – Konsole wie bisher, bleibt im Parallelbetrieb
+   - `WOO_to_CDH_Oberflaeche.exe` – neue Oberfläche, `ui/` ist eingebaut
+   - `Lieferadressen.exe` – Adressen-Tool
+5. **Selbsttest:** Beide Import-EXE starten einmal mit `--selbsttest`.
+   Geprüft wird, ob alles eingepackt ist; ein Import läuft dabei nicht.
+6. **Deploy** (nur mit `-Deploy`): nur von `main`, nicht vor dem Ende des
+   Produktionsstopps, nur nach Eingabe von `JA`. Vorher wandern die bisherigen
+   EXE-Dateien nach `Backup\exe_<Zeit>\`. Kopiert werden die drei EXE-Dateien,
+   `README.md` und die Mitarbeiter-Anleitung. **Nicht** kopiert werden
+   Konfiguration, Zugangsdaten, Logs und Python-Dateien (eine `.py` auf V: lädt
+   zum Starten veralteter Fassungen ein, siehe COMPUTER-1 im Briefing).
 
-Voraussetzungen auf dem Entwicklungsrechner:
+Die Arbeitsplätze brauchen weder Python noch Pakete. Für die Oberfläche
+brauchen sie die WebView2-Laufzeit (Windows 11 immer, Windows 10 prüfen).
 
-```powershell
-pip install pyinstaller requests pyyaml openpyxl
-```
+**Nur Konfiguration geändert?** Kein Build nötig, beide EXE-Dateien lesen sie
+bei jedem Start neu.
 
-PowerShell kennt `copy /Y` nicht — dort `Copy-Item -Force` verwenden.
+Voraussetzungen auf dem Entwicklungsrechner: `pip install -r
+requirements-dev.txt`, dazu Playwright wie oben. PowerShell kennt `copy /Y`
+nicht, dort `Copy-Item -Force` verwenden.
+
+Ausrollen Schritt für Schritt, Parallelbetrieb und Rückweg:
+`docs/AUSROLLEN.md`. Anleitung für die Mitarbeiter:
+`docs/ANLEITUNG_MITARBEITER.md`.
 
 ---
 

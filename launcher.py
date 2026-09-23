@@ -20,7 +20,21 @@ import traceback
 from pathlib import Path
 
 
+def selbsttest() -> int:
+    """Für build.ps1: Lässt sich alles laden, was die EXE braucht? Startet
+    keinen Import, fasst weder Shop noch CDH an, wartet nicht auf Enter."""
+    import openpyxl  # noqa: F401
+    import requests  # noqa: F401
+    import yaml  # noqa: F401
+
+    import woo_to_cdh
+    print(f"Selbsttest ok — Programmstand {woo_to_cdh.programmstand()}")
+    return 0
+
+
 def main() -> int:
+    if "--selbsttest" in sys.argv[1:]:
+        return selbsttest()
     # Arbeitsverzeichnis auf den Ordner der EXE/des Skripts setzen, damit
     # woo_to_cdh.py seine config.yaml und logs/ relativ dazu findet — egal
     # von wo die EXE gestartet wurde.

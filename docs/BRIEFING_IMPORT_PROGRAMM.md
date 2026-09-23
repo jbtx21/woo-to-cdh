@@ -226,6 +226,36 @@ pywebview/WebView2 und **nicht** gegen einen echten Shop.
 - Parallelbetrieb mit der Konsolen-EXE, bis mehrere echte Läufe unauffällig waren.
 - Mitarbeiter-Anleitung neu, im Stil der bisherigen.
 
+Umsetzung auf `welle-08-ausrollen` (Stand 23.09.2026, wartet auf Sichtung):
+- `build.ps1` neu: sauberes Repo, Tests mit Pflicht-UI-Tests
+  (`WOO_CDH_UI_TESTS=pflicht`; die UI-Tests finden Chromium jetzt auch unter
+  Windows), YAML-Prüfung auf V: nur lesend, drei EXE-Dateien (neu:
+  `WOO_to_CDH_Oberflaeche.exe` mit eingebautem `ui/`), Selbsttest beider
+  Import-EXE (`--selbsttest`).
+- Deploy nur von `main`, erst nach dem Produktionsstopp, nach Eingabe von
+  `JA`, mit Sicherung der bisherigen EXE in `Backup\exe_<Zeit>\`.
+  `woo_to_cdh.py` wird nicht mehr nach V: kopiert (COMPUTER-1).
+- Programmstand (Datum, Branch, Commit) in der EXE, im Log bei jedem Start
+  und in der Oberfläche. Im Parallelbetrieb ist so erkennbar, welches
+  Programm gelaufen ist.
+- `docs/ANLEITUNG_MITARBEITER.md` neu. Die bisherige Anleitung liegt nicht
+  im Repo, der Stil ist deshalb an README und Oberfläche angelehnt (du-Form
+  wie in der Oberfläche).
+- `docs/AUSROLLEN.md`: Checkliste in der Reihenfolge Vorbereitung →
+  Arbeitsplätze → Ausrollen → Konfiguration umstellen → erster echter Import →
+  Parallelbetrieb, dazu der Rückweg. Beim ersten Ausrollen braucht die alte
+  EXE `config.yaml`, deshalb die Konfiguration erst nach dem Ausrollen
+  umstellen.
+- Build mit denselben PyInstaller-Optionen unter Linux nachgestellt: beide
+  EXE gebaut, Selbsttest ok; eine Oberflächen-EXE ohne `ui/` fällt im
+  Selbsttest durch. **Nicht** unter Windows gebaut, PowerShell lief hier
+  nicht.
+- Beim Pflichtlauf aufgefallen: Vier Import-Tests aus Welle 6 waren
+  wackelig (ca. jeder dritte Lauf rot). Ursache lag im Test: Eine Zeile steht
+  schon auf „fertig", während der Lauf noch abschließt; der Klick auf
+  „Schließen" wird dann bewusst ignoriert. Die Tests warten jetzt auf „Fertig".
+  Danach 8 Läufe in Folge grün.
+
 **STOPP — Umstellung erst nach Freigabe.**
 
 ---

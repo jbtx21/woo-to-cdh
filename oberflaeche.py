@@ -102,7 +102,30 @@ class OberflaecheApi(ShopApi, ImportApi):
         self._init_import(oeffnen)
 
 
-def main() -> int:
+def selbsttest() -> list[str]:
+    """Für build.ps1: Fehlt der gebauten EXE etwas? Liefert die Mängel,
+    leer = in Ordnung. Öffnet kein Fenster, liest keine Konfiguration."""
+    fehlt = []
+    for datei in (UI_DATEI, RESSOURCEN / "ui" / "fonts"):
+        if not datei.exists():
+            fehlt.append(f"{datei.relative_to(RESSOURCEN)} fehlt")
+    try:
+        import webview  # noqa: F401
+    except ImportError as e:
+        fehlt.append(f"pywebview fehlt ({e})")
+    return fehlt
+
+
+def main(argv: list[str] | None = None) -> int:
+    argv = sys.argv[1:] if argv is None else argv
+    if "--selbsttest" in argv:
+        fehlt = selbsttest()
+        text = "; ".join(fehlt) or f"ok — Programmstand {w.programmstand()}"
+        # Die Fenster-EXE hat keine Konsole: Ergebnis zusätzlich als Datei
+        (w.BASE_DIR / "selbsttest.txt").write_text(text + "\n", encoding="utf-8")
+        print(f"Selbsttest {text}")
+        return 1 if fehlt else 0
+
     import webview   # erst hier: Tests und Konsolen-EXE brauchen pywebview nicht
 
     w.setup_logging("INFO")
@@ -111,7 +134,8 @@ def main() -> int:
         _meldung("WooCommerce → CDH", WEBVIEW2_HINWEIS)
         return 2
     api = OberflaecheApi(w.BASE_DIR)
-    logging.info("Oberfläche gestartet von %s", api._benutzer)
+    logging.info("Oberfläche gestartet von %s, Programmstand %s", api._benutzer,
+                 w.programmstand())
     fenster = webview.create_window(
         "WooCommerce → CDH", str(UI_DATEI), js_api=api,
         width=1120, height=780, min_size=(760, 560))

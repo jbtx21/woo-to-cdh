@@ -684,6 +684,10 @@ Wer Zugriff auf V: hat, kann sie lesen.
 
 - Schlüssel niemals in Chats, Tickets oder Konsolenausgaben teilen. Sind sie
   einmal sichtbar geworden, im Shop widerrufen und neu erzeugen.
+- Das Programm entfernt Schlüssel aus Fehlermeldungen und aus dem Log
+  (`consumer_key=***`). Bis 23.09.2026 standen sie bei API-Fehlern (401, 404,
+  Zeitüberschreitung) mit der ganzen URL in `logs\woo_to_cdh.log`. Alte
+  Log-Dateien deshalb nicht weitergeben bzw. vorher bereinigen.
 - Beim Weitergeben der Config Platzhalter einsetzen.
 - Rechte auf dem Ordner auf den Personenkreis beschränken, der den Import
   tatsächlich auslöst.

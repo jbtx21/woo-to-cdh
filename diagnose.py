@@ -59,7 +59,7 @@ def get(base: str, auth: dict, path: str,
     try:
         r = requests.get(url, params=merged, timeout=30)
     except requests.RequestException as e:
-        return 0, str(e)
+        return 0, w.ohne_schluessel(e)     # URL mit Schlüsseln nie ausgeben
     try:
         return r.status_code, r.json()
     except ValueError:

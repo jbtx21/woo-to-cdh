@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import subprocess
 import sys
 import time
@@ -115,21 +116,59 @@ VK_FIELD = "width"    # WooCommerce: dimensions.width
 # Logging
 # ---------------------------------------------------------------------------
 
+# Zugangsdaten dürfen nie im Log landen. requests schreibt bei Fehlern die
+# komplette URL in die Meldung — mit ?consumer_key=…&consumer_secret=…, weil
+# wir per Query-Parameter authentifizieren (siehe WooClient). Vorfall
+# 21.–23.09.2026: echte Schlüssel standen so in woo_to_cdh.log.
+_SCHLUESSEL_PARAM = re.compile(r"(consumer_(?:key|secret)=)[^&\s'\"<>]+", re.I)
+_SCHLUESSEL_WERT = re.compile(r"\b(c[ks]_)[0-9a-f]{8,}", re.I)
+
+
+def ohne_schluessel(text: Any) -> str:
+    """Ersetzt Consumer Key/Secret in einem Text durch ***."""
+    text = _SCHLUESSEL_PARAM.sub(r"\1***", str(text))
+    return _SCHLUESSEL_WERT.sub(r"\1***", text)
+
+
+class SchluesselFormatter(logging.Formatter):
+    """Log-Formatter, der Meldung und Traceback von Schlüsseln befreit —
+    zweite Sicherung, falls irgendwo doch eine URL durchrutscht."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        return ohne_schluessel(super().format(record))
+
+
 def setup_logging(level: str = "INFO") -> None:
     log_file = LOG_DIR / "woo_to_cdh.log"
+    formatter = SchluesselFormatter("%(asctime)s  %(levelname)-7s  %(message)s")
+    handlers = [logging.FileHandler(log_file, encoding="utf-8"),
+                logging.StreamHandler(sys.stdout)]
+    for h in handlers:
+        h.setFormatter(formatter)
     logging.basicConfig(
         level=getattr(logging, level.upper(), logging.INFO),
-        format="%(asctime)s  %(levelname)-7s  %(message)s",
-        handlers=[
-            logging.FileHandler(log_file, encoding="utf-8"),
-            logging.StreamHandler(sys.stdout),
-        ],
+        handlers=handlers,
     )
 
 
 # ---------------------------------------------------------------------------
 # WooCommerce API Client
 # ---------------------------------------------------------------------------
+
+class _ohne_schluessel_in_fehlern:
+    """Fehler von requests ohne Schlüssel weiterreichen: gleiche Klasse,
+    gleiche response, aber die Meldung ohne consumer_key/-secret. Die
+    Ursachenkette (urllib3, enthält die URL ebenfalls) wird abgeschnitten."""
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, typ, e, tb):
+        if e is None or not isinstance(e, requests.RequestException):
+            return False
+        neu = typ(ohne_schluessel(e), response=getattr(e, "response", None))
+        raise neu from None
+
 
 class WooClient:
     """
@@ -165,15 +204,17 @@ class WooClient:
     def _get(self, path: str, params: dict | None = None) -> Any:
         url = f"{self.base}{path}"
         merged = {**(params or {}), **self._auth_params()}
-        r = requests.get(url, params=merged, timeout=self.timeout)
-        r.raise_for_status()
+        with _ohne_schluessel_in_fehlern():
+            r = requests.get(url, params=merged, timeout=self.timeout)
+            r.raise_for_status()
         return r.json()
 
     def _put(self, path: str, data: dict) -> Any:
         url = f"{self.base}{path}"
-        r = requests.put(url, params=self._auth_params(), json=data,
-                         timeout=self.timeout)
-        r.raise_for_status()
+        with _ohne_schluessel_in_fehlern():
+            r = requests.put(url, params=self._auth_params(), json=data,
+                             timeout=self.timeout)
+            r.raise_for_status()
         return r.json()
 
     def iter_new_orders(self, page_size: int = 50,

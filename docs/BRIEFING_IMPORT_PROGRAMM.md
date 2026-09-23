@@ -169,6 +169,17 @@ widerrufen und neu erzeugen (README §15). Behoben in Welle 2: Test scannt
 nur noch getrackte Dateien und meldet im Trefferfall ausschließlich den
 Pfad, nie den Fund (neuer Test sichert das ab).
 
+### Sicherheitsvorfall 23.09.2026 (2) — Schlüssel im Log
+
+`woo_to_cdh.log` enthielt bei jedem API-Fehler die komplette URL samt
+`consumer_key`/`consumer_secret` (requests schreibt die URL in die
+Fehlermeldung, wir authentifizieren per Query-Parameter). Aufgefallen an einem
+Log von COMPUTER-1 (21.–23.09., CAF, Stoll, Xond, SFS, Allgaier). **Zu tun:**
+diese Schlüssel im Shop widerrufen, falls noch nicht geschehen; alte Logs auf
+V: bereinigen oder löschen. Behoben auf `hotfix-schluessel-im-log` (aus
+`main`): Fehler werden ohne Schlüssel weitergereicht, zusätzlich filtert der
+Log-Formatter. Nach dem 01.10. zusammen mit dem nächsten Deploy ausrollen.
+
 Vor Welle 3 klären:
 
 1. **E-Mail im Sender-Block.** Bei Sammelaufträgen steht dort die E-Mail der

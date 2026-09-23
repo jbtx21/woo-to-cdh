@@ -17,27 +17,74 @@ def _abrufen(u, **kw):
     return w.abrufen(u["cfg"], client_factory=FakeWoo, **kw)
 
 
+def _wex(einheit, tmp_path):
+    p = tmp_path / "vorschau.wex"
+    w.write_cdh_wex(p, einheit.wex_data)
+    return p.read_text(encoding="utf-8-sig")
+
+
 def _shop(u, name):
     return next(s for s in u["cfg"]["shops"] if s["name"] == name)
 
 
-# --- Prüfregel: Kundenadresse fehlt → Shop gesperrt -------------------------
+# --- Prüfregel: Kundenadresse fehlt → CDH-Standardadresse ------------------
 
-def test_kundenadresse_fehlt_sperrt_shop(umgebung):
+def test_kundenadresse_fehlt_sender_leer(umgebung, tmp_path):
     del _shop(umgebung, "Mitarbeiter-Shop")["sender_address"]
     pruef = _abrufen(umgebung)
     sh = next(s for s in pruef.shops if s.shop == "Mitarbeiter-Shop")
-    assert sh.sperren and "Kundenadresse fehlt" in sh.sperren[0]
-    assert "Straße" in sh.sperren[0] and "PLZ" in sh.sperren[0]
-    assert sh.einheiten, "Einheiten bleiben zur Ansicht erhalten"
-    assert "Mitarbeiter-Shop" not in {e.shop for e in pruef.einheiten()}
-    assert pruef.fehler == 1
+    assert not sh.sperren and pruef.fehler == 0
+    lenzing = next(e for e in pruef.einheiten() if e.titel == "Lenzing")
+    assert any("Kundenadresse unvollständig (Straße, PLZ, Ort)" in t
+               for t in lenzing.warnungen)
+    xml = _wex(lenzing, tmp_path)
+    sender = xml.split("<Sender>")[1].split("</Sender>")[0]
+    for tag in ("Name1", "Street", "PostalCodeCity", "City", "Country"):
+        assert f"<{tag} />" in sender
+    assert "<DatevNo>10000</DatevNo>" in sender
+    # Feste Lieferadresse bleibt davon unberührt
+    assert "<Street>Werkplatz 1</Street>" in xml.split("<Delivery>")[1]
 
 
-def test_platzhalter_in_sender_address_sperrt(umgebung):
+def test_platzhalter_in_sender_address_wird_geleert(umgebung):
     _shop(umgebung, "Mitarbeiter-Shop")["sender_address"]["street"] = "BITTE EINTRAGEN — Straße"
-    sh = next(s for s in _abrufen(umgebung).shops if s.shop == "Mitarbeiter-Shop")
-    assert sh.sperren and "Straße" in sh.sperren[0]
+    e = next(e for e in _abrufen(umgebung).einheiten() if e.titel == "Lenzing")
+    assert e.wex_data["street"] == "" and e.wex_data["name1"] == ""
+    assert any("(Straße)" in t for t in e.warnungen)
+
+
+def test_einzel_ohne_lieferanschrift(umgebung, orders, tmp_path):
+    o = orders["einzeln"]
+    o["shipping"].update({"address_1": "", "postcode": "", "city": ""})
+    o["billing"].update({"address_1": "", "postcode": "", "city": ""})
+    FakeWoo.orders_by_url["https://shop.example/einzeln/"] = [o]
+    e = next(e for e in _abrufen(umgebung).einheiten() if e.titel == "402")
+    delivery = _wex(e, tmp_path).split("<Delivery>")[1]
+    assert "<Street />" in delivery and "<Name1 />" in delivery
+    assert any(t.startswith("Lieferanschrift unvollständig") for t in e.warnungen)
+
+
+def test_einzel_ohne_rechnungsanschrift(umgebung, orders, tmp_path):
+    o = orders["einzeln"]
+    o["billing"].update({"company": "", "address_1": "", "postcode": "", "city": ""})
+    FakeWoo.orders_by_url["https://shop.example/einzeln/"] = [o]
+    e = next(e for e in _abrufen(umgebung).einheiten() if e.titel == "402")
+    xml = _wex(e, tmp_path)
+    assert "<Street />" in xml.split("<Sender>")[1].split("</Sender>")[0]
+    # Versandadresse der Bestellung bleibt im Delivery-Block
+    assert "<Street>Lindenweg 7</Street>" in xml.split("<Delivery>")[1]
+
+
+def test_kundenadresse_und_lieferung_leer(umgebung, tmp_path):
+    """Sammel ohne feste Adresse, Kundenadresse unvollständig, Regel firma:
+    die Lieferanschrift hing an der Kundenadresse → ebenfalls leer."""
+    agrar = _shop(umgebung, "Agrar-Shop")
+    agrar["unknown_delivery"] = "firma"
+    agrar["sender_address"] = {"street": "BITTE EINTRAGEN"}
+    e = next(e for e in _abrufen(umgebung).einheiten() if e.titel == "Bondorf")
+    delivery = _wex(e, tmp_path).split("<Delivery>")[1]
+    assert "<Name1 />" in delivery and "<Street />" in delivery
+    assert "<ModeOfShippment>Bondorf</ModeOfShippment>" in delivery
 
 
 def test_vollstaendige_adressen_keine_sperre(umgebung):
@@ -47,10 +94,22 @@ def test_vollstaendige_adressen_keine_sperre(umgebung):
 
 # --- Prüfregel: Lieferort ohne feste Adresse --------------------------------
 
-def test_lieferort_ohne_adresse_standard_firma(umgebung):
+def test_lieferort_ohne_adresse_standard_cdh(umgebung, tmp_path):
     e = next(e for e in _abrufen(umgebung).einheiten() if e.titel == "Bondorf")
-    assert e.wex_data["del_street"] == e.wex_data["street"]     # Firmenadresse wie bisher
-    assert not e.sperren
+    assert e.wex_data["delivery_leer"] and not e.sperren
+    delivery = _wex(e, tmp_path).split("<Delivery>")[1].split("</Delivery>")[0]
+    assert "<ModeOfShippment>Bondorf</ModeOfShippment>" in delivery
+    for tag in ("Name1", "Name2", "Street", "PostalCodeCity", "City", "Country"):
+        assert f"<{tag} />" in delivery
+    # Sender bleibt die vollständige Kundenadresse
+    assert "<Street />" not in _wex(e, tmp_path).split("<Sender>")[1].split("</Sender>")[0]
+
+
+def test_lieferort_ohne_adresse_firma(umgebung):
+    _shop(umgebung, "Agrar-Shop")["unknown_delivery"] = "firma"
+    e = next(e for e in _abrufen(umgebung).einheiten() if e.titel == "Bondorf")
+    assert e.wex_data["del_street"] == e.wex_data["street"]     # Kundenadresse
+    assert not e.wex_data.get("delivery_leer") and not e.sperren
 
 
 def test_lieferort_ohne_adresse_sperren(umgebung):
@@ -83,7 +142,7 @@ def test_unknown_delivery_ungueltig(umgebung, caplog):
     _shop(umgebung, "Agrar-Shop")["unknown_delivery"] = "irgendwas"
     with caplog.at_level(logging.ERROR):
         e = next(e for e in _abrufen(umgebung).einheiten() if e.titel == "Bondorf")
-    assert not e.sperren
+    assert not e.sperren and e.wex_data["delivery_leer"]       # Rückfall: cdh
     assert any("unknown_delivery" in r.getMessage() for r in caplog.records)
 
 
@@ -132,6 +191,12 @@ def test_abrufen_meldet_versandarten(umgebung):
     assert any(t.startswith("Lieferadresse ohne passende Versandart im Shop: Lenzing")
                for t in sh.warnungen)
     assert not sh.sperren
+
+
+def test_keine_versandarten_ein_hinweis(umgebung):
+    sh = next(s for s in _abrufen(umgebung).shops if s.shop == "Mitarbeiter-Shop")
+    assert [t for t in sh.warnungen if "Versand" in t] == [
+        "Keine aktive Versandart im Shop gefunden — Versandzonen prüfen."]
 
 
 def test_versandarten_nicht_fuer_einzelshop_ohne_adressen(umgebung):

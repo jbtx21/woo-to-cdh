@@ -365,7 +365,8 @@ Ensinger-Shop:
 Der Schlüssel muss der Versandart im Shop entsprechen; Groß-/Kleinschreibung
 und Leerzeichen am Rand spielen keine Rolle. Im Standard-Modus behalten
 Lieferorte ohne Eintrag die Adresse aus der Bestellung. Im Sammel-Modus
-entscheidet `unknown_delivery` (Abschnitt 6c).
+entscheidet `unknown_delivery` (Abschnitt 6c), Standard ist die
+CDH-Standardadresse.
 
 **Abgleich mit den Versandarten:** Bei Sammel-Shops und Shops mit
 hinterlegten Adressen holt der Abruf die Versandarten aus den
@@ -400,11 +401,20 @@ python -m PyInstaller --onefile --windowed --name Lieferadressen adressen_gui.py
 Der Abruf (`abrufen`) prüft vor dem Import. Gesperrtes wird nicht
 importiert und zählt im Konsolenlauf als Fehler.
 
+Grundsatz (Entscheidung 23.09.2026): **Fehlt eine Adresse, bleibt die
+Anschrift im WEX leer und CDH nimmt die Standardadresse aus dem
+Kundenstamm zur DatevNo.** `DatevNo` und `ModeOfShippment` bleiben stehen.
+
 | Regel | Folge |
 |---|---|
-| Kundenadresse (Sender: Firma, Straße, PLZ, Ort) unvollständig oder „BITTE EINTRAGEN" | **ganzer Shop gesperrt** — `sender_address` ergänzen |
-| Sammel-Modus, Lieferort ohne feste Adresse | je `unknown_delivery`: `firma` (Standard, Kundenadresse wie bisher), `versand` (Versandadresse der ersten Bestellung, mit Hinweis), `sperren` (dieser Lieferort gesperrt) |
+| Kundenadresse (Sender: Firma, Straße, PLZ, Ort) unvollständig oder „BITTE EINTRAGEN" | Sender-Anschrift leer → CDH-Standardadresse, Hinweis |
+| Lieferanschrift unvollständig | Delivery-Anschrift leer → CDH-Standardadresse, Hinweis |
+| Sammel-Modus, Lieferort ohne feste Adresse | je `unknown_delivery`: `cdh` (Standard, Anschrift leer → CDH-Standardadresse), `firma` (Kundenadresse), `versand` (Versandadresse der ersten Bestellung), `sperren` (dieser Lieferort gesperrt) |
 | EK fehlt bei einem Artikel | nur Hinweis, der EK bleibt in CDH leer |
+
+**Noch zu bestätigen am echten CDH** (offene Frage 2): dass CDH bei leerer
+Anschrift tatsächlich die Standardadresse nimmt und den Kundenstamm nicht
+leer überschreibt. Erster Test mit einer Testbestellung.
 
 ---
 
@@ -529,7 +539,7 @@ Alle Felder stehen in `einstellungen.yaml` — **außer** `consumer_key` und
 | `sender_address`       | Feste Hauptkundenadresse für den `<Sender>`-Block |
 | `aggregate_all_positions` | Im Sammel-Modus alle gleichen Artikelvarianten addieren, ohne Trennzeilen |
 | `extra_excel_meta`     | Zusätzliche Bestell-Meta-Felder als Excel-Spalten |
-| `unknown_delivery`     | Sammel-Modus, Lieferort ohne feste Adresse: `firma` (Standard), `versand`, `sperren` |
+| `unknown_delivery`     | Sammel-Modus, Lieferort ohne feste Adresse: `cdh` (Standard, CDH-Standardadresse), `firma`, `versand`, `sperren` |
 | `excel_summary`        | Summenblatt in der Excel (Standard aus) |
 | `excel_summary_by`     | `ort` (Standard) oder `gesamt` |
 | `excel_summary_veredelungen` | Veredelungen im Summenblatt (Standard an) |
@@ -738,7 +748,7 @@ schreibt nichts.
 | „WEX Importer bereits ausgeführt" | Zwei CDH-Importe gleichzeitig | Darf nicht auftreten. Im Log prüfen, ob „warte auf 'Ende'" steht — sonst läuft eine alte Fassung mit `Popen` |
 | Log: „CDH-Import war nach 15 Minuten noch geöffnet" | Ein CDH-Fenster wurde nicht geschlossen | Fenster schließen, genannte WEX aus dem `wex-archiv` nachholen |
 | „Import läuft an … seit …" | Anderer Rechner importiert gerade (`running.lock`) | Warten. Ist der Rechner abgestürzt, wird die Sperre nach 10 Minuten ohne Heartbeat übernommen |
-| Log: „Kundenadresse fehlt … Shop gesperrt" | Sender unvollständig | `sender_address` im Shop-Block ergänzen |
+| Log: „Kundenadresse unvollständig … CDH nimmt die Standardadresse" | Rechnungsanschrift bzw. `sender_address` unvollständig | Kein Fehler. Soll eine feste Anschrift rausgehen: `sender_address` ergänzen |
 | Log: „Lieferadresse ohne passende Versandart" | Schlüssel in `lieferadressen.yaml` passt zu keiner Versandart | Schreibweise wie im Shop übernehmen |
 | EK-Felder in CDH leer | Maße im Shop nicht gepflegt | Diagnose zeigt betroffene Artikel |
 | Bestellung fehlt in CDH | CDH-Fenster ohne „Ende" geschlossen | WEX aus `wex-archiv\` per Doppelklick nachholen |

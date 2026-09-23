@@ -87,9 +87,9 @@ Zug. Die Oberfläche braucht zwei Schritte:
 
 Jeweils mit Tests:
 
-- **Prüfregeln:** Kundenadresse fehlt → Shop gesperrt. Lieferort ohne feste
-  Adresse → je Einstellung Kundenadresse, Versandadresse oder Sperre. EK fehlt →
-  nur Hinweis.
+- **Prüfregeln:** Kundenadresse fehlt → ~~Shop gesperrt~~ CDH-Standardadresse
+  (siehe Entscheidung unten). Lieferort ohne feste Adresse → je Einstellung
+  CDH-Standard, Kundenadresse, Versandadresse oder Sperre. EK fehlt → nur Hinweis.
 - **Versandarten** aus den WooCommerce-Versandzonen
   (`/shipping/zones`, `/shipping/zones/{id}/methods`), Abgleich mit den
   Lieferadressen: fehlende Adressen, Adressen ohne passende Versandart.
@@ -101,13 +101,21 @@ Jeweils mit Tests:
 - **Diagnose als Funktion** (aus `diagnose.py`) für den Shop-Assistenten.
 
 Umsetzung auf `welle-04-logik` (Stand 23.09.2026, wartet auf Sichtung):
-neue Shop-Optionen `unknown_delivery` (`firma`/`versand`/`sperren`,
-Standard `firma` = bisheriges Verhalten), `excel_summary`,
+neue Shop-Optionen `unknown_delivery` (`cdh`/`firma`/`versand`/`sperren`),
+`excel_summary`,
 `excel_summary_by`, `excel_summary_veredelungen`. Die Sperre hält sich per
 Heartbeat, damit lange Läufe mit mehreren CDH-Fenstern nicht nach 10 Minuten
 als verwaist gelten. **Nach dem 01.10. auf V: nachziehen:** `006/` in
 `veredelung_prefixes` der echten Konfiguration (sie überschreibt die
-Standardliste), für Ensinger `unknown_delivery` und `excel_summary` festlegen.
+Standardliste), für Ensinger `excel_summary` festlegen.
+
+**Entscheidung 23.09.2026 — Adressen:** Fehlt eine Adresse (Kundenadresse
+unvollständig, Lieferanschrift unvollständig, Lieferort ohne feste Adresse),
+bleibt die Anschrift im WEX leer und CDH nimmt die Standardadresse aus dem
+Kundenstamm. Keine Shop-Sperre mehr wegen fehlender Kundenadresse.
+`unknown_delivery` Standard `cdh`. Golden `sammel_cdh_standard.wex` neu.
+Voraussetzung, beim ersten Testimport prüfen: CDH überschreibt den
+Kundenstamm bei leerer Anschrift nicht (Frage 2).
 
 **STOPP — Sichtung.**
 

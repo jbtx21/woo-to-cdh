@@ -43,6 +43,15 @@ def test_golden_trennzeilen(orders, client, tmp_path):
     _check("sammel_trennzeilen.wex", w.build_combined_wex_data(data, {"datev_no": 10000}, "Bondorf"), tmp_path)
 
 
+def test_golden_trennzeilen_cdh_standard(orders, client, tmp_path):
+    """Lieferort ohne feste Adresse, unknown_delivery: cdh (Standard) —
+    Delivery-Anschrift leer, CDH nimmt die Standardadresse."""
+    data = [build(o, client) for o in orders["trenn"]]
+    c = w.build_combined_wex_data(data, {"datev_no": 10000}, "Bondorf")
+    c["delivery_leer"] = True
+    _check("sammel_cdh_standard.wex", c, tmp_path)
+
+
 def test_golden_zusammengefasst(orders, client, delivery_table, tmp_path):
     sender = {"name1": "Beispiel Austria GmbH", "street": "Werkplatz 1", "postcode": "4863", "city": "Seewalchen", "country": "AT"}
     data = [build(o, client, sender_address=sender) for o in orders["mitarbeitershop"][1:]]

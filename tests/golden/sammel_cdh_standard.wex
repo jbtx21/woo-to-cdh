@@ -1,0 +1,83 @@
+﻿<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<!--CDH-dietronic-WEX-Werbemittel-Exchange-XML-File-->
+<!--WEXVersion=1.0-->
+<PurchaseOrder XmlStandard="1" SystemId="CDH">
+  <OrderHeader>
+    <Sender>
+      <DatevNo>10000</DatevNo>
+      <NameAddress>
+        <Name1>Beispiel Agrar GmbH</Name1>
+        <Name2 />
+        <Street>Mühlgasse 12</Street>
+        <PostalCodeCity>89604</PostalCodeCity>
+        <City>Allmendingen</City>
+        <Country>DE</Country>
+        <Email />
+      </NameAddress>
+    </Sender>
+    <Delivery>
+      <ModeOfShippment>Bondorf</ModeOfShippment>
+      <NameAddress>
+        <Name1 />
+        <Name2 />
+        <Street />
+        <PostalCodeCity />
+        <City />
+        <Country />
+        <Email />
+      </NameAddress>
+    </Delivery>
+    <OrderNo>3939+3940</OrderNo>
+    <OrderDate>14.09.2026</OrderDate>
+    <OrderId>AB</OrderId>
+  </OrderHeader>
+  <ListOfOrderDetails>
+    <OrderDetails>
+      <Quantity>1</Quantity>
+      <ArticleNo1 />
+      <Description1>3939</Description1>
+      <DescriptionText2>Anna Weber</DescriptionText2>
+      <SellingPrice>0.00</SellingPrice>
+      <BuyingPrice>0.00</BuyingPrice>
+    </OrderDetails>
+    <OrderDetails>
+      <Quantity>2</Quantity>
+      <ArticleNo1>396/SHIRT-4XL</ArticleNo1>
+      <Description1>Safety T-Shirt, warnrot</Description1>
+      <DescriptionText2>4XL</DescriptionText2>
+      <SellingPrice>53.59</SellingPrice>
+      <BuyingPrice>33.64</BuyingPrice>
+    </OrderDetails>
+    <OrderDetails>
+      <Quantity>1</Quantity>
+      <ArticleNo1 />
+      <Description1>3940</Description1>
+      <DescriptionText2>Tim Roth</DescriptionText2>
+      <SellingPrice>0.00</SellingPrice>
+      <BuyingPrice>0.00</BuyingPrice>
+    </OrderDetails>
+    <OrderDetails>
+      <Quantity>1</Quantity>
+      <ArticleNo1>396/SHIRT-4XL</ArticleNo1>
+      <Description1>Safety T-Shirt, warnrot</Description1>
+      <DescriptionText2>4XL</DescriptionText2>
+      <SellingPrice>53.59</SellingPrice>
+      <BuyingPrice>33.64</BuyingPrice>
+    </OrderDetails>
+    <OrderDetails>
+      <Quantity>1</Quantity>
+      <ArticleNo1 />
+      <Description1>Veredelungen</Description1>
+      <DescriptionText2>bestellungsübergreifend</DescriptionText2>
+      <SellingPrice>0.00</SellingPrice>
+      <BuyingPrice>0.00</BuyingPrice>
+    </OrderDetails>
+    <OrderDetails>
+      <Quantity>12</Quantity>
+      <ArticleNo1>234/SRFX-LOGO</ArticleNo1>
+      <Description1>Silberreflex Logo</Description1>
+      <SellingPrice>7.65</SellingPrice>
+      <BuyingPrice>4.07</BuyingPrice>
+    </OrderDetails>
+  </ListOfOrderDetails>
+</PurchaseOrder>

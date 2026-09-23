@@ -54,7 +54,8 @@ def test_warnung_ohne_feste_lieferadresse(umgebung, orders):
     FakeWoo.orders_by_url["https://shop.example/mitarbeiter/"] = orders["trenn"]
     pruef = _abrufen(umgebung)
     e = next(e for e in pruef.einheiten() if e.shop == "Mitarbeiter-Shop")
-    assert e.warnungen and "Firmenadresse" in e.warnungen[0]
+    assert e.warnungen and "CDH nimmt die Standardadresse" in e.warnungen[0]
+    assert e.wex_data["delivery_leer"]
 
 
 def test_tages_gate_und_trotzdem(umgebung):
@@ -98,7 +99,7 @@ def test_konsole_erzeugt_golden_wex(umgebung):
     datum = datetime.now().strftime("%Y-%m-%d")
     paare = {
         f"orders-{datum}-402.wex": "einzeln.wex",
-        f"orders-{datum}-agrar-shop-Bondorf.wex": "sammel_trennzeilen.wex",
+        f"orders-{datum}-agrar-shop-Bondorf.wex": "sammel_cdh_standard.wex",
         f"orders-{datum}-mitarbeiter-shop-Lenzing.wex": "sammel_zusammengefasst.wex",
     }
     for ist, soll in paare.items():

@@ -71,9 +71,10 @@ shops:
     combine_by_delivery: true
     aggregate_all_positions: true
     # Lieferort ohne feste Adresse in lieferadressen.yaml:
-    #   firma (Kundenadresse, Standard) · versand (Versandadresse der ersten
+    #   cdh (Standard: Anschrift leer, CDH nimmt die Standardadresse) ·
+    #   firma (Kundenadresse) · versand (Versandadresse der ersten
     #   Bestellung) · sperren (Lieferort wird nicht importiert)
-    unknown_delivery: firma
+    unknown_delivery: cdh
     # Summenblatt in der Excel: je Lieferort, mit Veredelungen
     excel_summary: true
     excel_summary_by: ort

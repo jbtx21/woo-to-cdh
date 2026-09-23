@@ -947,15 +947,21 @@ def write_cdh_wex(target_path: Path, data: dict) -> None:
 
     # Delivery: Lieferadresse. Fällt auf die Rechnungsadresse zurück, wenn
     # im Shop keine abweichende Lieferadresse erfasst wurde.
+    # delivery_leer: Anschrift bewusst leer, CDH nimmt die Standardadresse
+    # aus dem Kundenstamm zur DatevNo (Entscheidung 23.09.2026).
     parts.append('    <Delivery>\n')
     parts.append(_xml_tag("ModeOfShippment", data["mode_of_shipment"], "      "))
     parts.append('      <NameAddress>\n')
-    parts.append(_xml_tag("Name1",          data.get("del_name1") or data["name1"],       "        "))
-    parts.append(_xml_tag("Name2",          data.get("del_name2") or data["name2"],       "        "))
-    parts.append(_xml_tag("Street",         data.get("del_street") or data["street"],     "        "))
-    parts.append(_xml_tag("PostalCodeCity", data.get("del_postcode") or data["postcode"], "        "))
-    parts.append(_xml_tag("City",           data.get("del_city") or data["city"],         "        "))
-    parts.append(_xml_tag("Country",        data.get("del_country") or data["country"],   "        "))
+    if data.get("delivery_leer"):
+        for tag in ("Name1", "Name2", "Street", "PostalCodeCity", "City", "Country"):
+            parts.append(_xml_tag(tag, "", "        "))
+    else:
+        parts.append(_xml_tag("Name1",          data.get("del_name1") or data["name1"],       "        "))
+        parts.append(_xml_tag("Name2",          data.get("del_name2") or data["name2"],       "        "))
+        parts.append(_xml_tag("Street",         data.get("del_street") or data["street"],     "        "))
+        parts.append(_xml_tag("PostalCodeCity", data.get("del_postcode") or data["postcode"], "        "))
+        parts.append(_xml_tag("City",           data.get("del_city") or data["city"],         "        "))
+        parts.append(_xml_tag("Country",        data.get("del_country") or data["country"],   "        "))
     parts.append(_xml_tag("Email",          data["email"],       "        "))
     parts.append('      </NameAddress>\n')
     parts.append('    </Delivery>\n')
@@ -1489,8 +1495,10 @@ def _status_after_export(shop_cfg: dict, global_cfg: dict) -> str:
 # --- Prüfregeln (Welle 4) ---------------------------------------------------
 
 # Werte für "unknown_delivery": Was gilt im Sammel-Modus für einen Lieferort
-# ohne Eintrag in lieferadressen.yaml?
+# ohne Eintrag in lieferadressen.yaml? Standard "cdh": Anschrift leer lassen,
+# CDH nimmt die Standardadresse aus dem Kundenstamm (Entscheidung 23.09.2026).
 UNKNOWN_DELIVERY = {
+    "cdh":      "Standardadresse aus CDH (Anschrift leer)",
     "firma":    "Kundenadresse verwenden",
     "versand":  "Versandadresse der ersten Bestellung",
     "sperren":  "Import sperren",
@@ -1502,16 +1510,22 @@ _SENDER_PFLICHT = (("name1", "Firma"), ("street", "Straße"),
 def _regel_lieferort_ohne_adresse(einheit: "Einheit", orders_data: list,
                                   shop_cfg: dict, tabelle_da: bool) -> None:
     """Sammel-Modus, Lieferort ohne feste Adresse: je nach unknown_delivery
-    Kundenadresse (Standard, wie bisher), Versandadresse der ersten
-    Bestellung oder Sperre."""
-    regel = str(shop_cfg.get("unknown_delivery") or "firma").strip().lower()
+    CDH-Standardadresse (Standard), Kundenadresse, Versandadresse der
+    ersten Bestellung oder Sperre."""
+    regel = str(shop_cfg.get("unknown_delivery") or "cdh").strip().lower()
     if regel not in UNKNOWN_DELIVERY:
         logging.error("[%s] unknown_delivery=%r ist ungültig — erlaubt: %s. "
-                      "Es gilt 'firma'.", einheit.shop, regel,
+                      "Es gilt 'cdh'.", einheit.shop, regel,
                       ", ".join(UNKNOWN_DELIVERY))
-        regel = "firma"
+        regel = "cdh"
     ort = einheit.titel
-    if regel == "sperren":
+    if regel == "cdh":
+        einheit.wex_data["delivery_leer"] = True
+        text = (f"Keine feste Lieferadresse für '{ort}' — Anschrift leer, "
+                "CDH nimmt die Standardadresse.")
+        einheit.warnungen.append(text)
+        logging.info("[%s] %s", einheit.shop, text)
+    elif regel == "sperren":
         einheit.sperren.append(
             f"Keine feste Lieferadresse für '{ort}' — Import gesperrt. "
             "Adresse im Adressen-Tool ergänzen.")
@@ -1534,10 +1548,12 @@ def _regel_lieferort_ohne_adresse(einheit: "Einheit", orders_data: list,
             "Keine feste Lieferadresse hinterlegt — es gilt die Firmenadresse.")
 
 
-def _fehlende_kundenadresse(data: dict) -> list[str]:
+def _fehlende_kundenadresse(data: dict, praefix: str = "") -> list[str]:
+    """Pflichtfelder der Anschrift, die fehlen oder Platzhalter sind.
+    praefix="del_" prüft die Lieferanschrift."""
     fehlt = []
     for key, label in _SENDER_PFLICHT:
-        wert = str(data.get(key) or "").strip()
+        wert = str(data.get(praefix + key) or "").strip()
         if not wert or "BITTE EINTRAGEN" in wert.upper():
             fehlt.append(label)
     return fehlt
@@ -1546,19 +1562,36 @@ def _fehlende_kundenadresse(data: dict) -> list[str]:
 def _pruefregeln(erg: "ShopErgebnis") -> None:
     """
     Prüfregeln nach dem Bau der Einheiten:
-      - Kundenadresse (Sender) unvollständig → ganzer Shop gesperrt.
+      - Kundenadresse (Sender) unvollständig → Sender-Anschrift leer, CDH
+        nimmt die Standardadresse zur DatevNo (Entscheidung 23.09.2026).
+        Hing die Lieferanschrift an der Kundenadresse, wird sie ebenfalls
+        geleert. Nur Hinweis, keine Sperre.
       - EK fehlt → nur Hinweis, der Preis bleibt in CDH leer.
-    Gesperrte Einheiten/Shops zählen als Fehler, damit der Konsolenlauf
-    nicht still „0 Fehler“ meldet.
+    Gesperrte Einheiten zählen als Fehler, damit der Konsolenlauf nicht
+    still „0 Fehler“ meldet.
     """
     for e in erg.einheiten:
-        fehlt = _fehlende_kundenadresse(e.wex_data)
+        data = e.wex_data
+        fehlt = _fehlende_kundenadresse(data)
         if fehlt:
-            text = (f"Kundenadresse fehlt ({', '.join(fehlt)}) in {e.titel} — "
-                    "sender_address hinterlegen. Shop gesperrt.")
-            if text not in erg.sperren:
-                erg.sperren.append(text)
-                logging.error("[%s] %s", erg.shop, text)
+            for k in ("name1", "name2", "street", "postcode", "city", "country"):
+                data[k] = ""
+            text = (f"Kundenadresse unvollständig ({', '.join(fehlt)}) — "
+                    f"Anschrift leer, CDH nimmt die Standardadresse zu "
+                    f"Debitor {data.get('datev_no')}.")
+            e.warnungen.append(text)
+            logging.warning("[%s] %s: %s", erg.shop, e.titel, text)
+
+        # Gleiche Regel für die Lieferanschrift: lieber leer (CDH-Standard)
+        # als halb gefüllt oder mit Platzhalter.
+        if not data.get("delivery_leer"):
+            fehlt = _fehlende_kundenadresse(data, "del_")
+            if fehlt:
+                data["delivery_leer"] = True
+                text = (f"Lieferanschrift unvollständig ({', '.join(fehlt)}) — "
+                        "Anschrift leer, CDH nimmt die Standardadresse.")
+                e.warnungen.append(text)
+                logging.warning("[%s] %s: %s", erg.shop, e.titel, text)
 
         ohne_ek = sorted({p.get("article_no") for p in e.wex_data["positions"]
                           if p.get("article_no") and p.get("buying_price") in (None, "")})
@@ -1567,10 +1600,7 @@ def _pruefregeln(erg: "ShopErgebnis") -> None:
             e.warnungen.append(text)
             logging.warning("[%s] %s: %s", erg.shop, e.titel, text)
 
-    if erg.sperren:
-        erg.fehler += 1
-    else:
-        erg.fehler += sum(1 for e in erg.einheiten if e.sperren)
+    erg.fehler += sum(1 for e in erg.einheiten if e.sperren)
 
 
 def _versandarten_pruefen(erg: "ShopErgebnis", combine_mode: bool) -> None:
@@ -1587,6 +1617,11 @@ def _versandarten_pruefen(erg: "ShopErgebnis", combine_mode: bool) -> None:
         erg.versandarten = erg.client.get_shipping_methods()
     except Exception as e:  # noqa: BLE001
         text = f"Versandarten konnten nicht abgerufen werden ({e})."
+        erg.warnungen.append(text)
+        logging.warning("[%s] %s", erg.shop, text)
+        return
+    if not erg.versandarten:
+        text = "Keine aktive Versandart im Shop gefunden — Versandzonen prüfen."
         erg.warnungen.append(text)
         logging.warning("[%s] %s", erg.shop, text)
         return

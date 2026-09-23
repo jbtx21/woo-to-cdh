@@ -341,11 +341,11 @@ Bestellungen, die nur von dort aus hätten kommen sollen, fehlen. **Zu tun
    der Cloud-Sitzung gibt es keinen Zugang zum Shop. Danach nach dem 01.10.
    `checkout_key` bei Ensinger eintragen.
 7. ✅ **Lenzing** (Antwort 23.09.2026): gleiche Lieferadresse wie
-   Seewalchen, aber eine getrennte Abteilung. Umsetzung ohne Code: eigene
-   Versandart „Lenzing" im Ensinger-Shop, damit im Sammel-Modus ein eigener
-   CDH-Auftrag entsteht; in `lieferadressen.yaml` dieselbe Anschrift wie
-   Seewalchen, die Abteilung steht in „z. Hd.". So war es in den Testdaten
-   schon angelegt. Versandart anlegen und Anschrift prüfen: nach dem 01.10.
+   Seewalchen, nur eine getrennte Abteilung. Entscheidung: **keine eigene
+   Versandart**, Lenzing-Bestellungen laufen über „Seewalchen" und landen mit
+   Seewalchen in einem Auftrag. Kein Code nötig. Nach dem 01.10. den
+   Lenzing-Eintrag aus `lieferadressen.yaml` (Ensinger) entfernen, sonst
+   meldet der Abruf „Adresse ohne Versandart: Lenzing".
 8. ✅ **Log-Text:** „5 bereits exportierte Bestellungen" erscheint bei jedem
    Shop, ist aber die Gesamtzahl. Erledigt in Welle 3: je Shop gezählt, dazu
    am Laufende „N Bestellung(en) exportiert" je Shop.

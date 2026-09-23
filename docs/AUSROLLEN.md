@@ -56,8 +56,8 @@ zurücknehmen.
       (`\\SERVER…\…\CDH_WEX.EXE`). **Genauer Pfad steht noch aus.**
 - [ ] Ensinger: `checkout_key` für die Personalnummer eintragen (Frage 6,
       ermittelt mit `python diagnose.py Ensinger-Shop --felder`).
-- [ ] Ensinger: Versandart „Lenzing" im Shop anlegen; in `lieferadressen.yaml`
-      dieselbe Anschrift wie Seewalchen, Abteilung unter „z. Hd." (Frage 7).
+- [ ] Ensinger: Lenzing-Eintrag aus `lieferadressen.yaml` entfernen. Lenzing
+      läuft über die Versandart „Seewalchen", gemeinsamer Auftrag (Frage 7).
 - [ ] Aus der Welle-4-Notiz: `006/` in `veredelung_prefixes`, `excel_summary`
       für Ensinger, `sender_address` im Ensinger-Block entfernen.
 - [ ] API-Schlüssel aller Shops erneuern (Sicherheitsvorfälle 23.09.) — geht

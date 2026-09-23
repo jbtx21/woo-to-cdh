@@ -6,9 +6,9 @@ Oberfläche für den Innendienst, um feste Lieferadressen je Shop und
 Lieferort zu hinterlegen. Diese Adressen landen beim nächsten Import im
 <Delivery>-Block der WEX-Datei.
 
-Bewusst getrennt von der config.yaml: Dort stehen die API-Zugangsdaten,
-die hier niemand sehen oder verändern können soll. Dieses Tool liest aus
-der config.yaml ausschließlich die Shop-Namen.
+Bewusst getrennt von den Zugangsdaten (zugang.yaml): die API-Schlüssel
+werden hier weder angezeigt noch verändert. Dieses Tool nutzt aus der
+Konfiguration ausschließlich die Shop-Namen.
 
 Bauen:
     python -m PyInstaller --onefile --windowed --name Lieferadressen adressen_gui.py
@@ -26,6 +26,8 @@ from tkinter import ttk, messagebox
 
 import yaml
 
+import woo_to_cdh as w   # gemeinsame Konfig-Ladefunktion (Welle 2)
+
 
 # --- Ablage -----------------------------------------------------------------
 
@@ -35,7 +37,6 @@ else:
     BASE_DIR = Path(__file__).parent
 
 ADDRESSES_PATH = BASE_DIR / "lieferadressen.yaml"
-CONFIG_PATH = BASE_DIR / "config.yaml"
 BACKUP_DIR = BASE_DIR / "Backup"
 
 # TEXMA-Farben
@@ -68,16 +69,15 @@ HEADER = """# Feste Lieferadressen je Shop und Lieferort
 # --- Datenhaltung -----------------------------------------------------------
 
 def load_shop_names() -> list:
-    """Shop-Namen aus der config.yaml. Zugangsdaten werden ignoriert."""
-    if not CONFIG_PATH.exists():
-        return []
+    """Shop-Namen aus der Konfiguration (einstellungen.yaml + zugang.yaml oder
+    config.yaml als Rückfall). Zugangsdaten werden hier weder angezeigt noch
+    gespeichert — es geht nur um die Namen für die linke Spalte."""
     try:
-        with CONFIG_PATH.open("r", encoding="utf-8") as f:
-            cfg = yaml.safe_load(f) or {}
-        return [str(s.get("name")) for s in (cfg.get("shops") or [])
-                if s.get("name")]
-    except Exception:  # noqa: BLE001
+        cfg, _quelle = w.load_config()
+    except Exception:  # noqa: BLE001  (fehlt/kaputt -> leere Liste, Tool startet trotzdem)
         return []
+    return [str(s.get("name")) for s in (cfg.get("shops") or [])
+            if s.get("name")]
 
 
 def load_addresses() -> dict:

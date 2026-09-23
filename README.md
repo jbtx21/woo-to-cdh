@@ -426,7 +426,32 @@ Minuten sind, gelten als verwaist und werden übergangen.
 
 ## 9. Konfiguration
 
-### Global
+Seit Welle 2 ist die Konfiguration auf **zwei Dateien** geteilt:
+
+| Datei | Inhalt | Wer pflegt |
+|---|---|---|
+| `einstellungen.yaml` | alles außer Zugangsdaten (Shops + globale Optionen) | Innendienst |
+| `zugang.yaml` | Consumer Key/Secret je Shop + Admin-Passwort-Hash | Admin |
+
+`lieferadressen.yaml` bleibt eine eigene Datei (siehe 6b). Alle drei liegen
+**neben** `woo_to_cdh.py` bzw. der EXE und gehören **nie** ins Repo (`.gitignore`).
+
+**Migration aus der alten `config.yaml`:**
+
+```powershell
+python migrate_config.py --probelauf   # zeigt nur an, was entstünde (keine Schlüssel)
+python migrate_config.py               # schreibt beide Dateien, sichert config.yaml nach Backup\
+```
+
+Der Probelauf gibt **keine Schlüsselwerte** aus, nur ob sie vorhanden sind.
+Beim echten Lauf wandert die alte `config.yaml` nach `Backup\config_<Datum>.yaml`.
+
+**Rückfall:** `woo_to_cdh.py`, `diagnose.py` und das Adressen-Tool lesen über
+`load_config()`: bevorzugt `einstellungen.yaml` + `zugang.yaml`, und solange
+eine davon fehlt, die alte `config.yaml`. Liegen alte und neue Dateien
+gleichzeitig vor, gelten die neuen — und es steht eine Warnung im Log.
+
+### Global (in `einstellungen.yaml`)
 
 | Option                 | Bedeutung |
 |------------------------|-----------|
@@ -438,15 +463,18 @@ Minuten sind, gelten als verwaist und werden übergangen.
 | `order_no_with_name`   | Empfängername in die Bestellnummer |
 | `log_level`            | DEBUG, INFO, WARNING, ERROR |
 
-### Pro Shop
+### Pro Shop (in `einstellungen.yaml`)
+
+Alle Felder stehen in `einstellungen.yaml` — **außer** `consumer_key` und
+`consumer_secret`, die nach `zugang.yaml` wandern (dort je Shop-Name).
 
 | Option                 | Bedeutung |
 |------------------------|-----------|
 | `name`                 | Anzeigename im Log |
 | `enabled`              | Shop wird abgefragt |
 | `url`                  | Shop-Basis-URL inkl. Slash |
-| `consumer_key`         | API-Schlüssel |
-| `consumer_secret`      | API-Geheimnis |
+| `consumer_key`         | API-Schlüssel — **liegt in `zugang.yaml`** |
+| `consumer_secret`      | API-Geheimnis — **liegt in `zugang.yaml`** |
 | `datev_no`             | Debitorennummer in CDH |
 | `order_type`           | Belegart, bei uns durchgängig `AB` |
 | `included_statuses`    | Statusfilter, Standard `[processing, on-hold]` |
@@ -458,6 +486,22 @@ Minuten sind, gelten als verwaist und werden übergangen.
 
 Die globalen Optionen `status_after_export` und `order_no_with_name` lassen
 sich pro Shop überschreiben.
+
+### zugang.yaml
+
+```yaml
+admin:
+  password:            # PBKDF2-HMAC-SHA256; salt/hash leer, bis gesetzt (GUI, Welle 5)
+    algo: pbkdf2_sha256
+    iterations: 200000
+    salt: ''
+    hash: ''
+  users: []            # Windows-Benutzernamen mit Admin-Rechten
+shops:
+  CAF-Shop:
+    consumer_key:    'ck_…'
+    consumer_secret: 'cs_…'
+```
 
 ### Aktuelle Shops
 

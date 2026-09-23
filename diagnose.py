@@ -11,7 +11,7 @@ Das Skript schreibt NICHTS nach WooCommerce und ändert NICHTS an CDH. Es ruft n
 ab und zeigt an.
 
 Aufruf:
-    python diagnose.py               # alle Shops aus config.yaml
+    python diagnose.py               # alle Shops aus der Konfiguration
     python diagnose.py CAF-Shop      # nur den Shop mit diesem Namen
 """
 
@@ -19,14 +19,11 @@ from __future__ import annotations
 
 import json
 import sys
-from pathlib import Path
 from typing import Any
 
 import requests
-import yaml
 
-
-CONFIG_PATH = Path(__file__).parent / "config.yaml"
+import woo_to_cdh as w   # gemeinsame Konfig-Ladefunktion (Welle 2)
 
 OK = "\u2713"    # ✓
 WARN = "\u26A0"  # ⚠
@@ -305,27 +302,37 @@ def diagnose_shop(shop_cfg: dict) -> None:
     print()
 
 
-def main() -> int:
-    if not CONFIG_PATH.exists():
-        print(f"config.yaml fehlt: {CONFIG_PATH}", file=sys.stderr)
-        return 2
+def lade_shops(nur: str | None = None) -> tuple[list[dict], str]:
+    """Shops aus der Konfiguration laden (einstellungen.yaml + zugang.yaml,
+    Rückfall auf config.yaml). Optional auf einen Shop-Namen filtern.
 
-    with CONFIG_PATH.open("r", encoding="utf-8") as f:
-        cfg = yaml.safe_load(f)
-
+    Liefert (shops, quelle). Nutzt bewusst dieselbe Ladefunktion wie das
+    Hauptskript, damit Diagnose und Import dieselbe Konfiguration sehen.
+    """
+    cfg, quelle = w.load_config()
     shops = cfg.get("shops") or []
-    if not shops:
-        print("Keine Shops in config.yaml konfiguriert.", file=sys.stderr)
+    if nur:
+        shops = [s for s in shops if s.get("name") == nur]
+    return shops, quelle
+
+
+def main() -> int:
+    if not w.config_vorhanden():
+        print("Konfiguration fehlt: weder einstellungen.yaml + zugang.yaml "
+              "noch config.yaml.", file=sys.stderr)
         return 2
 
-    # Optional: nur einen Shop per Name
-    if len(sys.argv) > 1:
-        wanted = sys.argv[1]
-        shops = [s for s in shops if s.get("name") == wanted]
-        if not shops:
-            print(f"Shop {wanted!r} nicht in config.yaml gefunden.",
+    wanted = sys.argv[1] if len(sys.argv) > 1 else None
+    shops, quelle = lade_shops(wanted)
+    print(f"(Konfiguration geladen aus: {quelle})")
+
+    if not shops:
+        if wanted:
+            print(f"Shop {wanted!r} nicht in der Konfiguration gefunden.",
                   file=sys.stderr)
-            return 2
+        else:
+            print("Keine Shops konfiguriert.", file=sys.stderr)
+        return 2
 
     for s in shops:
         diagnose_shop(s)

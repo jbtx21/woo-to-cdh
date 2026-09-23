@@ -1,0 +1,46 @@
+# TEXMA WooCommerce → CDH — Zugangsdaten (VORLAGE, Welle 2)
+# =========================================================
+#
+# NUR Geheimnisse: Consumer Key/Secret je Shop und der Admin-Passwort-Hash.
+# Die echte zugang.yaml liegt auf V: und gehört NICHT ins Repo (.gitignore).
+#
+# Entsteht per Migration aus config.yaml:
+#   python migrate_config.py               # schreiben
+#   python migrate_config.py --admin-password '...'   # zusätzlich Hash setzen
+#
+# Schlüssel niemals in Chats/Tickets/Konsolen teilen (README §15).
+
+admin:
+  # Admin-Passwort als PBKDF2-HMAC-SHA256-Hash. salt/hash bleiben leer, bis
+  # das Passwort gesetzt wird (Migration mit --admin-password oder GUI, Welle 5).
+  password:
+    algo: pbkdf2_sha256
+    iterations: 200000
+    salt: ''
+    hash: ''
+  # Windows-Benutzernamen mit Admin-Rechten (gegen den angemeldeten Benutzer geprüft).
+  users: []
+
+# Consumer Key/Secret je Shop. Schlüssel = Shop-Name wie in einstellungen.yaml.
+shops:
+  CAF-Shop:
+    consumer_key: 'ck_HIER_EINTRAGEN'
+    consumer_secret: 'cs_HIER_EINTRAGEN'
+  Stoll-Shop:
+    consumer_key: 'ck_HIER_EINTRAGEN'
+    consumer_secret: 'cs_HIER_EINTRAGEN'
+  Xond-Shop:
+    consumer_key: 'ck_HIER_EINTRAGEN'
+    consumer_secret: 'cs_HIER_EINTRAGEN'
+  SFS-Shop:
+    consumer_key: 'ck_HIER_EINTRAGEN'
+    consumer_secret: 'cs_HIER_EINTRAGEN'
+  Allgaier-Shop:
+    consumer_key: 'ck_HIER_EINTRAGEN'
+    consumer_secret: 'cs_HIER_EINTRAGEN'
+  Ensinger-Shop:
+    consumer_key: 'ck_HIER_EINTRAGEN'
+    consumer_secret: 'cs_HIER_EINTRAGEN'
+  KVSW-Shop:
+    consumer_key: 'ck_HIER_EINTRAGEN'
+    consumer_secret: 'cs_HIER_EINTRAGEN'

@@ -78,6 +78,12 @@ EXPORTED_LOG_PATH = BASE_DIR / "exported.log"
 # config.yaml mit den API-Schlüsseln zu müssen.
 DELIVERY_ADDRESSES_PATH = BASE_DIR / "lieferadressen.yaml"
 
+# Welle 2: Konfiguration ist in zwei Dateien geteilt — Einstellungen ohne
+# Geheimnisse (Innendienst) und Zugangsdaten (Admin). Solange die neuen
+# Dateien fehlen, wird auf die alte config.yaml zurückgefallen.
+EINSTELLUNGEN_PATH = BASE_DIR / "einstellungen.yaml"
+ZUGANG_PATH = BASE_DIR / "zugang.yaml"
+
 # Bestellstatus, die wir exportieren (Default; pro Shop überschreibbar
 # via included_statuses in config.yaml)
 INCLUDED_STATUSES = ["processing", "on-hold"]
@@ -1762,13 +1768,73 @@ def release_lock() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Konfiguration laden (Welle 2: geteilte Dateien mit Rückfall)
+# ---------------------------------------------------------------------------
+
+def _load_split_config() -> dict:
+    """Liest einstellungen.yaml + zugang.yaml und führt sie zusammen.
+
+    Die Zugangsdaten (consumer_key/-secret) werden je Shop über den Namen
+    wieder in die Shop-Einträge eingesetzt, sodass der Rest des Programms
+    dieselbe Struktur wie bisher aus config.yaml sieht.
+    """
+    with EINSTELLUNGEN_PATH.open("r", encoding="utf-8") as f:
+        cfg = yaml.safe_load(f) or {}
+    with ZUGANG_PATH.open("r", encoding="utf-8") as f:
+        zugang = yaml.safe_load(f) or {}
+
+    secret_by_shop = zugang.get("shops") or {}
+    for shop in cfg.get("shops", []):
+        name = shop.get("name") or shop.get("url")
+        creds = secret_by_shop.get(name) or {}
+        for feld in ("consumer_key", "consumer_secret"):
+            if feld in creds:
+                shop[feld] = creds[feld]
+    return cfg
+
+
+def config_vorhanden() -> bool:
+    """Gibt es überhaupt eine Konfiguration (geteilt oder alt)?"""
+    return (EINSTELLUNGEN_PATH.exists() and ZUGANG_PATH.exists()) \
+        or CONFIG_PATH.exists()
+
+
+def load_config() -> tuple[dict, str]:
+    """Lädt die Konfiguration und liefert (cfg, quelle).
+
+    Bevorzugt die geteilten Dateien (einstellungen.yaml + zugang.yaml).
+    Fehlt eine davon, wird auf config.yaml zurückgefallen — so lange, bis
+    die Migration vollständig durchgeführt wurde.
+    """
+    if EINSTELLUNGEN_PATH.exists() and ZUGANG_PATH.exists():
+        if CONFIG_PATH.exists():
+            logging.warning(
+                "config.yaml liegt noch neben einstellungen.yaml/zugang.yaml — "
+                "es gelten die neuen Dateien. Alte config.yaml nach Backup\\ "
+                "verschieben (die Migration erledigt das normalerweise).")
+        return _load_split_config(), "einstellungen.yaml + zugang.yaml"
+
+    if (EINSTELLUNGEN_PATH.exists()) != (ZUGANG_PATH.exists()):
+        fehlt = ZUGANG_PATH.name if EINSTELLUNGEN_PATH.exists() else EINSTELLUNGEN_PATH.name
+        logging.warning("Nur eine der geteilten Konfigdateien vorhanden "
+                        "(%s fehlt) — Rückfall auf config.yaml.", fehlt)
+
+    if CONFIG_PATH.exists():
+        with CONFIG_PATH.open("r", encoding="utf-8") as f:
+            return yaml.safe_load(f), "config.yaml"
+
+    raise FileNotFoundError("keine Konfiguration gefunden")
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
 def main() -> int:
-    if not CONFIG_PATH.exists():
-        print(f"config.yaml fehlt: {CONFIG_PATH}", file=sys.stderr)
-        print("Kopiere config.sample.yaml nach config.yaml und fülle sie aus.",
+    if not config_vorhanden():
+        print("Konfiguration fehlt: weder einstellungen.yaml + zugang.yaml "
+              f"noch config.yaml in {BASE_DIR}", file=sys.stderr)
+        print("Migration aus config.yaml: python migrate_config.py --probelauf",
               file=sys.stderr)
         return 2
 
@@ -1776,10 +1842,10 @@ def main() -> int:
         return 3
 
     try:
-        with CONFIG_PATH.open("r", encoding="utf-8") as f:
-            cfg = yaml.safe_load(f)
+        cfg, quelle = load_config()
 
         setup_logging(cfg.get("log_level", "INFO"))
+        logging.info("Konfiguration geladen aus: %s", quelle)
         logging.info("=== Lauf gestartet (%s) von %s\\%s ===",
                      datetime.now().isoformat(),
                      os.environ.get("COMPUTERNAME", "?"),

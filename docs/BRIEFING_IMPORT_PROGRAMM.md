@@ -151,6 +151,20 @@ aus dem Ensinger-Block entfernen (sonst nur Log-Hinweis).
   (Migration mit Probelauf). Der Name bleibt Anzeige und Schlüssel für
   `lieferadressen.yaml`.
 
+Umsetzung auf `welle-05-oberflaeche` (Stand 23.09.2026, wartet auf Sichtung):
+`oberflaeche.py` + `ui/index.html` (aus dem Entwurf) + `einstellungen_api.py`.
+Getestet mit Chromium gegen die echte Schnittstelle, **nicht** in pywebview/
+WebView2 — das zeigt erst die Sichtung am echten Rechner. Abweichungen vom
+Entwurf: Kundenadresse nur noch als Hinweis (CDH-Test), Lieferort-Regel mit
+Option „Kundenadresse aus CDH" (Standard), Import-Tab Platzhalter (Welle 6),
+Shop hinzufügen / Zugang erneuern nur hinter dem Admin-Modus (Welle 7).
+Behoben: Klick auf „Sichern" direkt nach dem Tippen der Debitornummer ging im
+Entwurf verloren. `status_after_export: ''` im Shop schaltet ein globales
+`completed` jetzt wirklich ab (vorher griff trotzdem der globale Wert).
+**Nach dem 01.10. auf V:** `python migrate_config.py --shop-ids --probelauf`,
+dann umstellen; Admin-Passwort setzen; `pip install pywebview` am Arbeitsplatz
+für den ersten Start (EXE-Build in Welle 8).
+
 **STOPP — Sichtung am echten Rechner.**
 
 ## Welle 6 — Oberfläche, Import

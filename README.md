@@ -15,8 +15,9 @@ Vorlagen, Tests und Doku**. Betriebsdaten liegen ausschließlich auf V:.
 
 | Im Repo | Nur auf V: |
 |---|---|
-| `woo_to_cdh.py`, `launcher.py`, `diagnose.py`, `adressen_gui.py`, `xlsx_to_wex.py` | `config.yaml` (Zugangsdaten) |
-| `config.sample.yaml`, `lieferadressen.sample.yaml` | `lieferadressen.yaml` (Ansprechpartner) |
+| `woo_to_cdh.py`, `launcher.py`, `diagnose.py`, `adressen_gui.py`, `xlsx_to_wex.py`, `migrate_config.py` | `einstellungen.yaml`, `zugang.yaml` (Zugangsdaten), bis zur Migration `config.yaml` |
+| `oberflaeche.py`, `einstellungen_api.py`, `ui/` (Oberfläche, Inter-Schrift) | `lieferadressen.yaml` (Ansprechpartner) |
+| `config.sample.yaml`, `einstellungen.sample.yaml`, `zugang.sample.yaml`, `lieferadressen.sample.yaml` | `aenderungsverlauf.log`, `Backup\` |
 | `tests/` mit anonymisierten Testbestellungen | `exported.log`, `logs\`, `wex-archiv\`, `excel-archiv\` |
 | `docs/` mit Entwurf und Briefing | EXE-Dateien |
 
@@ -548,12 +549,24 @@ admin:
     iterations: 200000
     salt: ''
     hash: ''
-  users: []            # Windows-Benutzernamen mit Admin-Rechten
+  users: []            # Windows-Benutzer, die den Admin-Modus öffnen dürfen (leer = alle)
 shops:
-  CAF-Shop:
+  caf:                 # feste Shop-id aus einstellungen.yaml, nicht der Name
     consumer_key:    'ck_…'
     consumer_secret: 'cs_…'
 ```
+
+**Feste Shop-ids (Welle 5).** Jeder Shop in `einstellungen.yaml` trägt eine
+unveränderliche `id` (`caf`, `ensinger` …); `zugang.yaml` ist danach
+verschlüsselt. So kostet ein Umbenennen den Zugang nicht. Ältere Dateien
+(nach Namen) lesen sich weiter, mit Hinweis im Log. Umstellen:
+
+```powershell
+python migrate_config.py --shop-ids --probelauf   # zeigt Zuordnung, keine Schlüssel
+python migrate_config.py --shop-ids               # stellt um, Backup in Backup\
+```
+
+`lieferadressen.yaml` bleibt nach dem Shop-**Namen** verschlüsselt.
 
 ### Aktuelle Shops
 
@@ -756,14 +769,58 @@ aktive Präfixe, verarbeitete Shops und alle Warnungen.
 
 ## 15. Sicherheit
 
-API-Schlüssel stehen im Klartext in der `config.yaml` auf dem Netzlaufwerk.
-Wer Zugriff auf V: hat, kann sie lesen.
+API-Schlüssel stehen im Klartext in der `zugang.yaml` (bzw. vor der
+Migration in der `config.yaml`) auf dem Netzlaufwerk. Wer Zugriff auf V: hat,
+kann sie lesen. Die Oberfläche zeigt sie nie an und gibt sie nicht an das
+Fenster weiter; das Admin-Passwort liegt nur als PBKDF2-Hash vor.
 
 - Schlüssel niemals in Chats, Tickets oder Konsolenausgaben teilen. Sind sie
   einmal sichtbar geworden, im Shop widerrufen und neu erzeugen.
 - Beim Weitergeben der Config Platzhalter einsetzen.
 - Rechte auf dem Ordner auf den Personenkreis beschränken, der den Import
   tatsächlich auslöst.
+
+---
+
+## 15a. Oberfläche (Welle 5)
+
+`oberflaeche.py` öffnet ein Fenster (pywebview, unter Windows WebView2) mit
+der Oberfläche aus `ui/index.html`. Stand Welle 5: Tab **Einstellungen**
+vollständig, der Import läuft bis Welle 6 weiter über `WOO_to_CDH.exe`.
+
+```powershell
+pip install -r requirements.txt      # enthält pywebview
+python oberflaeche.py
+```
+
+- Liest und schreibt `einstellungen.yaml` und `lieferadressen.yaml` im
+  Programmordner. Nur geänderte Felder werden geschrieben; Kommentare in
+  `einstellungen.yaml` gehen beim ersten Sichern verloren.
+- **Sichern:** vorher Kopie nach `Backup\einstellungen_<Zeit>.yaml` (bzw.
+  `lieferadressen_…`), danach Eintrag in `aenderungsverlauf.log` mit
+  Windows-Benutzer, Zeit und Änderung in Worten. Der Verlauf ist in der
+  Oberfläche unter „Änderungsverlauf" sichtbar.
+- **Gleichzeitig an zwei Rechnern:** Wurde die Datei inzwischen woanders
+  gesichert, lehnt das Sichern ab („neu laden") statt zu überschreiben.
+- **Admin-Modus:** Passwort gegen den Hash in `zugang.yaml`, 10 Minuten gültig,
+  nach 5 Fehlversuchen 1 Minute Pause. Ist `admin.users` gefüllt, dürfen nur
+  diese Windows-Benutzer. Geschützt: Debitornummer, Veredelungs-Präfixe,
+  Shop hinzufügen und Zugang erneuern (beide Funktionen folgen in Welle 7).
+  Die Prüfung sitzt in Python (`einstellungen_api.py`), nicht im Fenster.
+- **Kundenadresse:** nur Hinweis „aus dem CDH-Kundenstamm" — der Sender
+  trägt seit dem CDH-Test nur die DatevNo (Abschnitt 5).
+- **Versandarten** werden beim Öffnen eines Shops aus dem Shop gelesen und
+  mit den festen Lieferadressen abgeglichen (nur lesend).
+- **Inter** liegt lokal in `ui/fonts/` (SIL Open Font License), es wird
+  nichts aus dem Netz nachgeladen.
+- Schließen mit ungesicherten Änderungen fragt nach.
+
+Admin-Passwort setzen: `python migrate_config.py --admin-password …` (legt
+den Hash in `zugang.yaml` ab).
+
+**Tests:** `tests/test_einstellungen_api.py` prüft die Schnittstelle,
+`tests/test_oberflaeche.py` die Seite in Chromium gegen die echte
+Schnittstelle (braucht `pip install playwright`, sonst übersprungen).
 
 ---
 

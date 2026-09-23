@@ -8,3 +8,6 @@ tests/golden/*.wex  binary
 *.json  text eol=lf
 *.html  text eol=lf
 *.ps1   text eol=crlf
+
+# Schriften
+*.woff2  binary

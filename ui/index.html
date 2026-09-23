@@ -1,0 +1,1172 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>WooCommerce → CDH</title>
+<link rel="stylesheet" href="fonts/inter.css">
+<style>
+:root {
+  /* iOS-Systemfarben, hell */
+  --bg: #F2F2F7;
+  --card: #FFFFFF;
+  --fill: rgba(118, 118, 128, .12);
+  --label: #000000;
+  --label-2: rgba(60, 60, 67, .60);
+  --label-3: rgba(60, 60, 67, .30);
+  --sep: rgba(60, 60, 67, .29);
+  --blue: #007AFF;
+  --green: #34C759;
+  --orange: #FF9500;
+  --red: #FF3B30;
+  --indigo: #5856D6;
+  --teal: #30B0C7;
+  --pink: #FF2D55;
+  --purple: #AF52DE;
+  --gray: #8E8E93;
+  --seg-on: #FFFFFF;
+  --bar: rgba(242, 242, 247, .82);
+  --hud: rgba(30, 30, 30, .86);
+  --logo-plate: transparent;
+
+  --font: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+
+  box-sizing: border-box;
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #000000; --card: #1C1C1E; --fill: rgba(118, 118, 128, .24);
+    --label: #FFFFFF; --label-2: rgba(235, 235, 245, .60); --label-3: rgba(235, 235, 245, .30);
+    --sep: rgba(84, 84, 88, .65);
+    --blue: #0A84FF; --green: #30D158; --orange: #FF9F0A; --red: #FF453A;
+    --indigo: #5E5CE6; --teal: #40C8E0; --pink: #FF375F; --purple: #BF5AF2; --gray: #8E8E93;
+    --seg-on: #636366; --bar: rgba(0, 0, 0, .78); --hud: rgba(60, 60, 60, .9); --logo-plate: #FFFFFF;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #000000; --card: #1C1C1E; --fill: rgba(118, 118, 128, .24);
+  --label: #FFFFFF; --label-2: rgba(235, 235, 245, .60); --label-3: rgba(235, 235, 245, .30);
+  --sep: rgba(84, 84, 88, .65);
+  --blue: #0A84FF; --green: #30D158; --orange: #FF9F0A; --red: #FF453A;
+  --indigo: #5E5CE6; --teal: #40C8E0; --pink: #FF375F; --purple: #BF5AF2; --gray: #8E8E93;
+  --seg-on: #636366; --bar: rgba(0, 0, 0, .78); --hud: rgba(60, 60, 60, .9); --logo-plate: #FFFFFF;
+}
+
+*, *::before, *::after { box-sizing: inherit; }
+html { height: 100%; scroll-padding-top: env(safe-area-inset-top, 0px); }
+body {
+  margin: 0; height: 100%; background: var(--bg); color: var(--label);
+  font-family: var(--font); font-size: 16px; line-height: 1.35; letter-spacing: -.011em;
+  -webkit-font-smoothing: antialiased; -webkit-tap-highlight-color: transparent;
+}
+button, input { font: inherit; color: inherit; letter-spacing: inherit; }
+button { background: none; border: 0; padding: 0; cursor: pointer; text-align: inherit; }
+:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; border-radius: 6px; }
+.num { font-feature-settings: "tnum" 1; }
+
+/* ---------------------------------------------------------- Gerüst ---- */
+.shell { height: 100%; display: grid; grid-template-rows: 1fr; grid-template-columns: minmax(0, 1fr); }
+.stage { min-height: 0; min-width: 0; height: 100%; }
+.split { height: 100%; display: grid; grid-template-columns: 330px 1fr; }
+.shell[data-tab="import"] .split { display: none; }
+.shell[data-tab="settings"] #importPane { display: none; }
+
+/* Tab-Leiste: auf dem Desktop schwebend oben (iPadOS), mobil unten */
+.tabbar {
+  position: fixed; z-index: 10; left: 50%; transform: translateX(-50%);
+  top: calc(7px + env(safe-area-inset-top, 0px));
+  display: flex; gap: 2px; padding: 3px; border-radius: 22px;
+  background: var(--bar); border: .5px solid var(--sep);
+  -webkit-backdrop-filter: saturate(180%) blur(20px); backdrop-filter: saturate(180%) blur(20px);
+  box-shadow: 0 4px 18px rgba(0,0,0,.08);
+}
+.tabbar button {
+  position: relative; display: flex; align-items: center; gap: 7px;
+  padding: 7px 18px; border-radius: 19px; font-size: 15px; font-weight: 600; color: var(--label-2);
+}
+.tabbar button svg { width: 18px; height: 18px; display: none; }
+.tabbar button[aria-selected="true"] { background: var(--card); color: var(--label); box-shadow: 0 1px 4px rgba(0,0,0,.1); }
+.tab-badge {
+  min-width: 17px; height: 17px; padding: 0 5px; border-radius: 9px; background: var(--red); color: #fff;
+  font-size: 11px; font-weight: 600; line-height: 17px; text-align: center; font-feature-settings: "tnum" 1;
+}
+@media (min-width: 761px) { .list .navbar .nav-r { visibility: hidden; } }
+
+.banner { display: flex; gap: 12px; padding: 12px 16px; align-items: center; }
+.banner .icon { background: var(--blue); width: 26px; height: 26px; border-radius: 50%; }
+.banner p { margin: 0; flex: 1; font-size: 15px; }
+.pane { height: 100%; overflow-y: auto; position: relative; }
+.pane.list { border-right: .5px solid var(--sep); }
+
+.navbar {
+  position: sticky; top: 0; z-index: 5;
+  display: grid; grid-template-columns: 1fr auto 1fr; align-items: center;
+  height: 52px; padding: 0 16px;
+  background: var(--bar);
+  -webkit-backdrop-filter: saturate(180%) blur(20px); backdrop-filter: saturate(180%) blur(20px);
+  border-bottom: .5px solid transparent;
+}
+.navbar .nav-l { justify-self: start; }
+.navbar .nav-c { font-weight: 600; font-size: 17px; }
+.navbar .nav-r { justify-self: end; display: flex; gap: 18px; align-items: center; }
+.navlink { color: var(--blue); font-size: 17px; display: inline-flex; align-items: center; gap: 2px; }
+.navlink.bold { font-weight: 600; }
+.navlink:disabled { color: var(--label-3); cursor: default; }
+.navlink svg { width: 12px; height: 20px; }
+.back { display: none; }
+
+.content { padding: 0 20px 48px; max-width: 760px; margin: 0 auto; }
+.list .content { padding: 0 16px 40px; }
+
+.large-title { font-size: 34px; font-weight: 700; letter-spacing: -.025em; line-height: 1.15; margin: 4px 4px 18px; }
+.subtitle { color: var(--label-2); font-size: 15px; margin: -12px 4px 22px; }
+
+/* --------------------------------------------------------- Gruppen ---- */
+.group { margin-bottom: 28px; }
+.group-head { color: var(--label-2); font-size: 13px; margin: 0 16px 7px; }
+.group-foot { color: var(--label-2); font-size: 13px; line-height: 1.4; margin: 7px 16px 0; }
+.card { background: var(--card); border-radius: 12px; overflow: hidden; }
+
+.row {
+  display: flex; align-items: center; gap: 12px; min-height: 46px; padding-left: 16px; width: 100%;
+  position: relative;
+}
+button.row:active, .row.tap:active { background: var(--fill); }
+.row-body {
+  flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px;
+  align-self: stretch; padding: 11px 16px 11px 0;
+  border-bottom: .5px solid var(--sep);
+}
+.card > .row:last-child .row-body, .card > :last-child .row-body { border-bottom: 0; }
+.row-main { flex: 1; min-width: 0; }
+.row-title { font-size: 16px; }
+.row-sub { color: var(--label-2); font-size: 13px; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.row-value { color: var(--label-2); font-size: 16px; white-space: nowrap; }
+.chev { width: 8px; height: 13px; color: var(--label-3); flex: none; }
+.check { width: 15px; height: 13px; color: var(--blue); flex: none; }
+.lock { width: 13px; height: 15px; color: var(--label-3); flex: none; }
+.row.action .row-title { color: var(--blue); }
+.row.danger .row-title { color: var(--red); }
+
+.icon {
+  width: 30px; height: 30px; border-radius: 7px; flex: none;
+  display: grid; place-items: center; color: #fff; font-size: 15px; font-weight: 600; letter-spacing: 0;
+}
+.icon svg { width: 17px; height: 17px; }
+
+.row[aria-current="true"] { background: var(--blue); }
+.row[aria-current="true"] .row-title,
+.row[aria-current="true"] .row-sub,
+.row[aria-current="true"] .row-value,
+.row[aria-current="true"] .chev { color: #fff; }
+.row[aria-current="true"] .row-body { border-bottom-color: transparent; }
+@media (min-width: 761px) { .row[aria-current="true"] .icon { background: rgba(255,255,255,.24) !important; } }
+
+/* iOS-Schalter */
+.switch { position: relative; width: 51px; height: 31px; flex: none; }
+.switch input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; }
+.switch .t { position: absolute; inset: 0; border-radius: 16px; background: var(--fill); transition: background .2s; pointer-events: none; }
+.switch .t::after {
+  content: ""; position: absolute; top: 2px; left: 2px; width: 27px; height: 27px; border-radius: 50%;
+  background: #fff; box-shadow: 0 3px 8px rgba(0,0,0,.15), 0 1px 1px rgba(0,0,0,.16);
+  transition: transform .2s;
+}
+.switch input:checked + .t { background: var(--green); }
+.switch input:checked + .t::after { transform: translateX(20px); }
+.switch input:disabled + .t { opacity: .4; }
+.switch input:focus-visible + .t { outline: 2px solid var(--blue); outline-offset: 2px; }
+
+/* Eingabe in einer Zeile */
+.row-input {
+  flex: 1; min-width: 0; border: 0; background: none; text-align: right; color: var(--label-2);
+  padding: 0; outline: none;
+}
+.row-input:focus { color: var(--label); }
+
+/* Zusammenfassung */
+.summary { display: flex; gap: 12px; padding: 14px 16px; align-items: flex-start; }
+.summary .icon { background: var(--blue); width: 26px; height: 26px; border-radius: 50%; }
+.summary p { margin: 2px 0 0; font-size: 15px; line-height: 1.45; }
+
+/* Segmented Control */
+.seg {
+  display: grid; grid-template-columns: repeat(3, 1fr); background: var(--fill);
+  border-radius: 9px; padding: 2px; margin: 12px 16px;
+}
+.seg button {
+  font-size: 13px; font-weight: 500; padding: 6px 4px; border-radius: 7px; text-align: center;
+  line-height: 1.25;
+}
+.seg button[aria-checked="true"] {
+  background: var(--seg-on); font-weight: 600;
+  box-shadow: 0 3px 8px rgba(0,0,0,.12), 0 3px 1px rgba(0,0,0,.04);
+}
+
+/* Vorschau CDH-Auftrag */
+.preview { padding: 4px 16px 16px; display: flex; flex-direction: column; gap: 8px; }
+.cdh { border-radius: 10px; background: var(--bg); overflow: hidden; }
+.cdh .oh { font-size: 13px; font-weight: 600; padding: 8px 12px; }
+.cdh .ln { font-size: 13px; padding: 6px 12px; display: flex; gap: 10px; border-top: .5px solid var(--sep); font-feature-settings: "tnum" 1; }
+.cdh .ln.sep { color: var(--label-2); background: var(--fill); }
+.cdh .q { min-width: 24px; text-align: right; color: var(--label-2); }
+
+/* Kalender */
+.days { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; padding: 10px 12px 14px; }
+.days button {
+  aspect-ratio: 1; max-width: 42px; width: 100%; justify-self: center; border-radius: 50%;
+  font-size: 15px; text-align: center; font-feature-settings: "tnum" 1;
+}
+.days button[aria-pressed="true"] { background: var(--blue); color: #fff; font-weight: 600; }
+.days button:not([aria-pressed="true"]):hover { background: var(--fill); }
+
+.warn .icon { background: var(--orange); }
+
+.logo { background: var(--logo-plate); border-radius: 8px; padding: 5px 7px; display: inline-block; margin: 2px 4px 0; }
+.logo img { display: block; height: 22px; width: auto; }
+
+.empty-detail { display: grid; place-items: center; height: 70%; color: var(--label-2); }
+
+/* -------------------------------------------------------- Overlays ---- */
+.backdrop {
+  position: fixed; inset: 0; background: rgba(0,0,0,.4); z-index: 20;
+  display: grid; place-items: center; padding: 20px;
+  animation: fade .2s ease-out;
+}
+@keyframes fade { from { opacity: 0; } }
+@keyframes rise { from { transform: translateY(24px); opacity: 0; } }
+.sheet {
+  width: 100%; max-width: 540px; max-height: calc(100% - 40px); overflow-y: auto;
+  background: var(--bg); border-radius: 14px; animation: rise .25s ease-out;
+}
+.sheet .navbar { position: sticky; background: var(--bar); border-radius: 14px 14px 0 0; }
+.sheet .content { padding: 20px 16px 28px; }
+.form-row { display: flex; align-items: center; gap: 12px; min-height: 46px; padding-left: 16px; }
+.form-row .row-body { gap: 12px; }
+.form-row label { width: 120px; flex: none; }
+.form-row input { flex: 1; min-width: 0; border: 0; background: none; outline: none; padding: 0; }
+.form-row input::placeholder { color: var(--label-3); }
+
+.alert-box {
+  width: 270px; background: var(--card); border-radius: 14px; overflow: hidden; text-align: center;
+  animation: rise .2s ease-out;
+}
+.alert-box .txt { padding: 19px 16px 17px; }
+.alert-box h4 { margin: 0 0 4px; font-size: 17px; font-weight: 600; }
+.alert-box p { margin: 0; font-size: 13px; line-height: 1.4; }
+.alert-box .btns { display: grid; grid-template-columns: 1fr 1fr; border-top: .5px solid var(--sep); }
+.alert-box .btns button { padding: 11px; color: var(--blue); font-size: 17px; text-align: center; }
+.alert-box .btns button + button { border-left: .5px solid var(--sep); font-weight: 600; }
+
+.hud {
+  position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%) scale(.96);
+  background: var(--hud); color: #fff; padding: 14px 20px; border-radius: 14px;
+  font-size: 15px; text-align: center; max-width: 280px; opacity: 0; pointer-events: none;
+  transition: opacity .2s, transform .2s; z-index: 30;
+  -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px);
+}
+.hud.show { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+
+.dirty-pill {
+  font-size: 12px; color: var(--label-2); background: var(--fill); border-radius: 10px; padding: 2px 8px;
+  font-weight: 500;
+}
+
+
+/* ------------------------------------------------------ Bestellungen ---- */
+.selc {
+  width: 22px; height: 22px; border-radius: 50%; flex: none;
+  border: 1.5px solid var(--label-3); display: grid; place-items: center;
+}
+.selc svg { width: 12px; height: 10px; color: #fff; opacity: 0; }
+[aria-checked="true"] > .selc, [aria-checked="true"] .selc { background: var(--blue); border-color: var(--blue); }
+[aria-checked="true"] > .selc svg, [aria-checked="true"] .selc svg { opacity: 1; }
+.selc.off { opacity: .35; }
+.row.indent { padding-left: 62px; }
+.row.indent .row-title { font-size: 15px; }
+.warn-text { color: var(--orange); }
+.ok-text { color: var(--green); }
+
+.big-btn {
+  display: block; width: 100%; background: var(--blue); color: #fff; font-weight: 600; font-size: 17px;
+  border-radius: 12px; padding: 14px; text-align: center;
+}
+.big-btn:disabled { background: var(--fill); color: var(--label-3); cursor: default; }
+
+.hero { text-align: center; padding: 34px 20px 26px; }
+.hero .icon { width: 56px; height: 56px; border-radius: 14px; margin: 0 auto 14px; background: var(--blue); }
+.hero .icon svg { width: 30px; height: 30px; }
+.hero h2 { margin: 0 0 6px; font-size: 20px; font-weight: 600; }
+.hero p { margin: 0 auto 20px; color: var(--label-2); font-size: 15px; max-width: 34ch; }
+
+.toolbar {
+  position: sticky; bottom: 0; z-index: 4;
+  display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 12px;
+  padding: 10px max(16px, calc((100% - 760px) / 2 + 20px));
+  background: var(--bar); border-top: .5px solid var(--sep);
+  -webkit-backdrop-filter: saturate(180%) blur(20px); backdrop-filter: saturate(180%) blur(20px);
+}
+.toolbar .mid { font-size: 13px; color: var(--label-2); text-align: center; }
+.toolbar .r { justify-self: end; }
+
+.spin {
+  width: 22px; height: 22px; flex: none; border-radius: 50%;
+  border: 2.5px solid var(--fill); border-top-color: var(--blue);
+  animation: spin .8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.state { width: 22px; height: 22px; flex: none; border-radius: 50%; display: grid; place-items: center; }
+.state.wait { border: 1.5px solid var(--label-3); }
+.state.done { background: var(--green); }
+.state.done svg { width: 12px; height: 10px; color: #fff; }
+
+.pos { display: flex; gap: 12px; align-items: baseline; }
+.pos .q { min-width: 26px; color: var(--label-2); font-feature-settings: "tnum" 1; }
+.pos .p { margin-left: auto; text-align: right; font-feature-settings: "tnum" 1; white-space: nowrap; }
+.pos .p .row-sub { margin-top: 1px; }
+
+.addr { font-size: 15px; line-height: 1.45; }
+
+/* ----------------------------------------------------- Admin-Passwort ---- */
+.pw-field {
+  width: 100%; margin-top: 14px; padding: 8px 10px; border-radius: 8px; border: .5px solid var(--sep);
+  background: var(--bg); outline: none; font-size: 15px; letter-spacing: .08em;
+}
+.pw-field:focus { border-color: var(--blue); }
+.pw-err { color: var(--red); font-size: 13px; margin-top: 8px; min-height: 17px; }
+@keyframes shake { 20%, 60% { transform: translateX(-8px); } 40%, 80% { transform: translateX(8px); } }
+.alert-box.shake { animation: shake .35s; }
+.admin-row .icon { background: var(--orange); }
+
+/* --------------------------------------------------------- Assistent ---- */
+.steps { display: flex; gap: 6px; justify-content: center; padding: 4px 0 18px; }
+.steps span { width: 7px; height: 7px; border-radius: 50%; background: var(--label-3); }
+.steps span.on { background: var(--blue); width: 20px; border-radius: 4px; }
+.steps span.done { background: var(--blue); opacity: .45; }
+.wiz-lead { text-align: center; margin: 0 8px 20px; }
+.wiz-lead h3 { margin: 0 0 6px; font-size: 22px; font-weight: 700; letter-spacing: -.02em; }
+.wiz-lead p { margin: 0; color: var(--label-2); font-size: 15px; }
+.form-row input[type="password"] { font-feature-settings: "tnum" 1; letter-spacing: .08em; }
+.state.fail { background: var(--red); }
+.state.warn { background: var(--orange); }
+.state.warn svg, .state.fail svg { width: 12px; height: 12px; color: #fff; }
+.who { color: var(--label-2); font-size: 13px; margin: -12px 16px 0; }
+
+/* ------------------------------------------------------ Aktionsblatt ---- */
+.actions { width: 100%; max-width: 380px; display: flex; flex-direction: column; gap: 8px; animation: rise .22s ease-out; }
+.actions .grp { background: var(--card); border-radius: 14px; overflow: hidden; }
+.actions .ttl { padding: 13px 16px; text-align: center; color: var(--label-2); font-size: 13px; border-bottom: .5px solid var(--sep); }
+.actions button { display: block; width: 100%; text-align: center; padding: 16px; font-size: 18px; color: var(--blue); }
+.actions button + button { border-top: .5px solid var(--sep); }
+.actions button .n { color: var(--label-2); font-size: 15px; }
+.actions .cancel { font-weight: 600; }
+
+.xl { width: 100%; border-collapse: collapse; font-size: 13px; font-feature-settings: "tnum" 1; }
+.xl th { text-align: left; font-weight: 600; color: var(--label-2); padding: 7px 12px; background: var(--fill); }
+.xl td { padding: 7px 12px; border-top: .5px solid var(--sep); }
+.xl td.q { text-align: right; width: 44px; }
+.xl tr.grp td { font-weight: 600; background: var(--bg); }
+.xl-wrap { overflow-x: auto; }
+.sheets { display: flex; gap: 6px; padding: 12px 16px 0; }
+.sheets span { font-size: 12px; padding: 4px 10px; border-radius: 6px; background: var(--fill); color: var(--label-2); }
+
+/* ----------------------------------------------------------- Mobil ---- */
+@media (max-width: 760px) {
+  .shell { grid-template-rows: 1fr auto; }
+  .split { grid-template-columns: 1fr; }
+  .pane.list { border-right: 0; }
+  .split[data-view="list"] .pane.detail { display: none; }
+  .split[data-view="detail"] .pane.list { display: none; }
+  .tabbar {
+    position: static; transform: none; border-radius: 0; box-shadow: none; border: 0;
+    border-top: .5px solid var(--sep); display: grid; grid-template-columns: 1fr 1fr; padding: 6px 0 2px;
+  }
+  .tabbar button {
+    flex-direction: column; gap: 2px; padding: 2px 0 4px; border-radius: 0; font-size: 10.5px; font-weight: 500;
+    color: var(--gray); justify-content: center;
+  }
+  .tabbar button svg { display: block; width: 26px; height: 26px; }
+  .tabbar button[aria-selected="true"] { background: none; box-shadow: none; color: var(--blue); }
+  .tab-badge { position: absolute; top: 0; left: calc(50% + 8px); }
+  .back { display: inline-flex; }
+  .content { padding: 0 16px 40px; }
+  .row[aria-current="true"] { background: none; }
+  .row[aria-current="true"] .row-title { color: var(--label); }
+  .row[aria-current="true"] .row-sub, .row[aria-current="true"] .row-value { color: var(--label-2); }
+  .row[aria-current="true"] .chev { color: var(--label-3); }
+  .row[aria-current="true"] .row-body { border-bottom-color: var(--sep); }
+  .backdrop { place-items: end center; padding: 0; }
+  .backdrop.center { place-items: center; padding: 20px; }
+  .sheet { max-width: none; border-radius: 14px 14px 0 0; max-height: 92%; }
+  .form-row label { width: 96px; }
+  .actions { max-width: none; padding: 0 8px 8px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+.pw-err { white-space: pre-line; }
+.fatal { max-width: 520px; margin: 18vh auto 0; padding: 0 20px; text-align: center; }
+.fatal h1 { font-size: 22px; margin: 0 0 8px; }
+.fatal p { color: var(--label-2); white-space: pre-line; }
+.placeholder { padding: 32px 20px; text-align: center; color: var(--label-2); }
+</style>
+</head>
+<body>
+<div class="shell" id="shell" data-tab="settings">
+  <main class="stage">
+    <section class="pane single" id="importPane" aria-label="Import"></section>
+    <div class="split" id="split" data-view="list">
+      <section class="pane list" id="list"></section>
+      <section class="pane detail" id="detail"></section>
+    </div>
+  </main>
+  <nav class="tabbar" id="tabbar" aria-label="Bereiche"></nav>
+</div>
+<div id="overlay"></div>
+<div class="hud" id="hud" role="status" aria-live="polite"></div>
+
+<script>
+// ------------------------------------------------------------------ Daten
+// Welle 5: Alle Daten kommen aus Python (einstellungen_api.EinstellungenApi,
+// über pywebview als window.pywebview.api). Hier liegt keine Logik, die
+// über Rechte entscheidet — Admin-Modus und geschützte Felder prüft Python.
+let initial = [];
+let initialGlobal = { prefixes: [] };
+let LOG = [];
+let USER = { name: "" };
+let TOKEN = "";
+let ADMIN_PW_SET = true;
+
+const ADMIN_MIN = 10;
+let adminUntil = 0;
+const isAdmin = () => Date.now() < adminUntil;
+const adminLeft = () => Math.max(1, Math.ceil((adminUntil - Date.now()) / 60000));
+
+let shops = [];
+let global = { prefixes: [] };
+let current = null;
+let tab = "settings";
+let unlocked = {};
+let overlay = null;
+let methodsLoaded = new Set();   // Shops, deren Versandarten schon geholt wurden
+let busy = false;
+let geladen = false;             // erst nach laden() zeichnen
+
+const api = () => window.pywebview.api;
+
+function anwenden(st) {
+  initial = st.shops; initialGlobal = st.global; LOG = st.log;
+  USER = { name: st.user }; TOKEN = st.token; ADMIN_PW_SET = st.adminPasswortGesetzt;
+  adminUntil = st.admin.aktiv ? Date.now() + st.admin.rest_sekunden * 1000 : 0;
+  // Bereits geholte Versandarten behalten (reine Anzeige)
+  const methods = Object.fromEntries(shops.map((s) => [s.id, s.methods]));
+  initial.forEach((s) => { if (methods[s.id]?.length) s.methods = methods[s.id]; });
+  shops = structuredClone(initial); global = structuredClone(initialGlobal);
+  if (!current || !(current.startsWith("__") || shopById(current))) current = shops[0]?.id || "__log";
+}
+
+async function laden() {
+  const st = await api().laden();
+  if (!st.ok) { fatal("Einstellungen nicht verfügbar", st.fehler); return; }
+  anwenden(st); unlocked = {}; geladen = true;
+  if (!narrow()) $("#split").dataset.view = "detail";
+  render();
+}
+
+function fatal(title, text) {
+  document.body.innerHTML = `<div class="fatal"><h1>${esc(title)}</h1><p>${esc(text)}</p></div>`;
+}
+
+function meldung(title, text) {
+  overlay = { kind: "alert" };
+  $("#overlay").innerHTML = `
+    <div class="backdrop center" data-a="close">
+      <div class="alert-box" role="alertdialog" aria-modal="true" aria-label="${esc(title)}">
+        <div class="txt"><h4>${esc(title)}</h4><p class="pw-err" style="color:inherit">${esc(text)}</p></div>
+        <div class="btns" style="grid-template-columns:1fr"><button data-a="close">OK</button></div>
+      </div>
+    </div>`;
+}
+
+async function sichern() {
+  if (busy || !changeCount()) return;
+  busy = true;
+  try {
+    const erg = await api().sichern({ shops, global, token: TOKEN });
+    if (!erg.ok) { meldung("Nicht gesichert", erg.fehler); return; }
+    anwenden(erg); unlocked = {};
+    render();
+    const n = erg.gesichert.length;
+    hud(n ? `Gesichert: ${n} ${n === 1 ? "Änderung" : "Änderungen"}` : "Nichts zu sichern");
+  } finally { busy = false; }
+}
+
+async function versandartenHolen(s) {
+  if (!s || methodsLoaded.has(s.id) || !s.zugang) return;
+  methodsLoaded.add(s.id);
+  const erg = await api().versandarten(s.id);
+  if (!erg.ok) return;             // ohne Versandarten kein Abgleich, sonst nichts
+  for (const list of [shops, initial]) {
+    const x = list.find((y) => y.id === s.id); if (x) x.methods = erg.methoden;
+  }
+  if (current === s.id) renderDetail();
+}
+
+// Für oberflaeche.py: ungesicherte Änderungen beim Schließen
+window.ungesichert = () => changeCount();
+
+// ----------------------------------------------------------------- Hilfen
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const shopById = (id) => shops.find((s) => s.id === id);
+const shop = () => shopById(current);
+const narrow = () => matchMedia("(max-width: 760px)").matches;
+const eur = (n) => n.toLocaleString("de-DE", { style: "currency", currency: "EUR" });
+const TODAY = new Date();
+const dateSlug = TODAY.toISOString().slice(0, 10);
+
+const I = {
+  chev: `<svg class="chev" viewBox="0 0 8 13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1.5 1.5 6.5 6.5 1.5 11.5"/></svg>`,
+  back: `<svg viewBox="0 0 12 20" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2 2 10l8 8"/></svg>`,
+  check: `<svg class="check" viewBox="0 0 15 13" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1.5 7 5.5 11 13.5 1.5"/></svg>`,
+  tick: `<svg viewBox="0 0 12 10" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1.5 5.2 4.5 8.2 10.5 1.8"/></svg>`,
+  lock: `<svg class="lock" viewBox="0 0 13 15" fill="currentColor" aria-hidden="true"><path d="M3 6V4.5a3.5 3.5 0 0 1 7 0V6h.5A1.5 1.5 0 0 1 12 7.5v6A1.5 1.5 0 0 1 10.5 15h-8A1.5 1.5 0 0 1 1 13.5v-6A1.5 1.5 0 0 1 2.5 6H3Zm1.5 0h4V4.5a2 2 0 0 0-4 0V6Z"/></svg>`,
+  info: `<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><circle cx="8" cy="4.2" r="1.3"/><rect x="6.9" y="6.6" width="2.2" height="6.4" rx="1.1"/></svg>`,
+  warn: `<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><rect x="6.9" y="2.5" width="2.2" height="7.5" rx="1.1"/><circle cx="8" cy="12.6" r="1.3"/></svg>`,
+  spark: `<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 1.5c.4 3 1.6 4.8 5.5 6.5-3.9 1.7-5.1 3.5-5.5 6.5-.4-3-1.6-4.8-5.5-6.5C6.4 6.3 7.6 4.5 8 1.5Z"/></svg>`,
+  tray: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><path d="M3 11.5 5 4.5h10l2 7v4H3v-4Z"/><path d="M3 11.5h4l1 2h4l1-2h4"/></svg>`,
+  clock: `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="6"/><path d="M8 4.8V8l2.2 1.6"/></svg>`,
+  share: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5v10M6.5 6 10 2.5 13.5 6M5 9H4v8.5h12V9h-1"/></svg>`,
+  gear: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.8v2.4M12 18.8v2.4M21.2 12h-2.4M5.2 12H2.8M18.5 5.5l-1.7 1.7M7.2 16.8l-1.7 1.7M18.5 18.5l-1.7-1.7M7.2 7.2 5.5 5.5"/></svg>`,
+  tray24: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><path d="M3.5 14 6 5h12l2.5 9v5h-17v-5Z"/><path d="M3.5 14h5l1.2 2.4h4.6L15.5 14h5"/></svg>`,
+  down: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 3v10M5.5 8.5 10 13l4.5-4.5M4 16.5h12"/></svg>`,
+};
+
+function hud(msg) {
+  const h = $("#hud"); h.textContent = msg; h.classList.add("show");
+  clearTimeout(hud.t); hud.t = setTimeout(() => h.classList.remove("show"), 2200);
+}
+
+// Nur Anzeige, wird nie gesichert (siehe einstellungen_api.NUR_ANZEIGE)
+const NUR_ANZEIGE = new Set(["methods", "color", "zugang"]);
+
+function changeCount() {
+  let n = 0;
+  shops.forEach((s, i) => { for (const k of Object.keys(s)) if (!NUR_ANZEIGE.has(k) && JSON.stringify(s[k]) !== JSON.stringify(initial[i][k])) n++; });
+  if (JSON.stringify(global) !== JSON.stringify(initialGlobal)) n++;
+  return n;
+}
+
+function summary(s) {
+  if (!s.active) return `${esc(s.name)} ist ausgeschaltet und wird beim Import übersprungen.`;
+  const wann = s.days.length ? `Am ${s.days.map((d) => d + ".").join(", ")} des Monats` : "Bei jedem Lauf";
+  const welche = s.statuses.length === 2 ? "Bestellungen in Bearbeitung und in Wartestellung"
+    : s.statuses[0] === "processing" ? "Bestellungen in Bearbeitung" : "Bestellungen in Wartestellung";
+  const wie = {
+    einzeln: "und legt jede als eigenen Auftrag in CDH an",
+    trenn: "bündelt sie je Lieferort zu einem Auftrag, mit einer Trennzeile pro Besteller",
+    voll: "bündelt sie je Lieferort und fasst gleiche Artikel zu einer Zeile zusammen",
+  }[s.bundling];
+  const danach = s.after === "completed" ? " Im Shop stehen sie danach auf „Abgeschlossen“." : "";
+  return `${wann} holt der Import alle ${welche} aus ${esc(s.name)}, ${wie}.${danach}`;
+}
+
+
+// ------------------------------------------------------------ Seitenleiste
+function renderList() {
+  const n = changeCount();
+  const row = (id, icon, color, title, value) => `
+    <button class="row" data-a="nav" data-id="${id}" aria-current="${id === current}">
+      <span class="icon" style="background:var(--${color})">${icon}</span>
+      <span class="row-body">
+        <span class="row-main"><span class="row-title">${title}</span></span>
+        <span class="row-value num">${value}</span>${I.chev}
+      </span>
+    </button>`;
+  $("#list").innerHTML = `
+    <div class="navbar">
+      <span class="nav-l"></span><span class="nav-c"></span>
+      <span class="nav-r">${n ? `<button class="navlink bold" data-a="save">Sichern</button>` : ""}</span>
+    </div>
+    <div class="content">
+      <div class="logo"><img alt="TEXMA" src="data:image/png;base64,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"></div>
+      <h1 class="large-title" style="margin-top:10px">Einstellungen</h1>
+      <div class="group">
+        <div class="group-head">Shops</div>
+        <div class="card">
+          ${shops.map((s) => row(s.id, esc(s.name.charAt(0)), s.active ? s.color : "gray", esc(s.name), s.active ? esc(s.debitor) : "Aus")).join("")}
+          <button class="row action" data-a="wizard"><span class="row-body"><span class="row-main"><span class="row-title">Shop hinzufügen</span></span>${isAdmin() ? "" : I.lock}</span></button>
+        </div>
+      </div>
+      <div class="group">
+        <div class="group-head">Für alle Shops</div>
+        <div class="card">
+          ${row("__global", I.spark, "purple", "Veredelungen", global.prefixes.length)}
+          ${row("__log", I.clock, "gray", "Änderungsverlauf", "")}
+        </div>
+      </div>
+      ${isAdmin() ? `<div class="group"><div class="card">
+        <div class="row admin-row"><span class="icon">${I.lock.replace('class="lock"', 'style="width:13px;height:15px;color:#fff"')}</span>
+          <span class="row-body"><span class="row-main"><span class="row-title">Admin-Modus</span><div class="row-sub">Noch ${adminLeft()} Min.</div></span>
+          <button class="navlink" data-a="admin-end" style="font-size:15px">Beenden</button></span></div>
+      </div></div>` : ""}
+      <div class="who">Angemeldet als ${esc(USER.name)}</div>
+    </div>`;
+}
+
+function navbar() {
+  const n = changeCount();
+  return `<div class="navbar">
+    <span class="nav-l">
+      <button class="navlink back" data-a="back">${I.back}Einstellungen</button>
+      ${n && !narrow() ? `<button class="navlink" data-a="discard">Verwerfen</button>` : ""}
+    </span>
+    <span class="nav-c"></span>
+    <span class="nav-r"><button class="navlink bold" data-a="save" ${n ? "" : "disabled"}>Sichern</button></span>
+  </div>`;
+}
+
+function navImport() {
+  return `<div class="navbar">
+    <span class="nav-l"></span><span class="nav-c"></span>
+    <span class="nav-r"></span>
+  </div>`;
+}
+
+function renderTabbar() {
+  const n = changeCount();
+  $("#tabbar").innerHTML = [["import", "Import", I.tray24], ["settings", "Einstellungen", I.gear]].map(([id, l, ic]) => `
+    <button role="tab" data-a="tab" data-tab="${id}" aria-selected="${tab === id}">
+      ${ic}<span>${l}</span>${id === "settings" && n ? `<span class="tab-badge" aria-label="${n} ungesichert">${n}</span>` : ""}
+    </button>`).join("");
+  $("#shell").dataset.tab = tab;
+}
+
+function dirtyBanner() {
+  const n = changeCount();
+  if (!n) return "";
+  return `<div class="group"><div class="card"><div class="banner">
+    <span class="icon">${I.info}</span>
+    <p>${n} ungesicherte ${n === 1 ? "Änderung" : "Änderungen"} in den Einstellungen. Der Import arbeitet mit dem gesicherten Stand.</p>
+    <button class="navlink" data-a="tab" data-tab="settings" style="font-size:15px">Öffnen</button>
+  </div></div></div>`;
+}
+
+
+// ------------------------------------------------------- Import (Welle 6)
+function renderOrders() {
+  $("#importPane").innerHTML = `${navImport()}
+    <div class="content">
+      <h1 class="large-title">Import</h1>
+      <div class="group"><div class="card"><div class="placeholder">
+        Der Import über diese Oberfläche folgt in Welle 6.<br>
+        Bis dahin wie gewohnt <b>WOO_to_CDH.exe</b> starten — sie arbeitet mit den hier gesicherten Einstellungen.
+      </div></div></div>
+      ${dirtyBanner()}
+    </div>`;
+}
+
+// ------------------------------------------------- Einstellungen je Shop
+function renderSettings() {
+  const s = shop();
+  versandartenHolen(s);
+  const bundled = s.bundling !== "einzeln";
+  $("#detail").innerHTML = `
+    ${navbar()}
+    <div class="content">
+      <h1 class="large-title">${esc(s.name)}</h1>
+      <div class="group"><div class="card">
+        <div class="summary"><span class="icon">${I.info}</span><p>${summary(s)}</p></div>
+      </div></div>
+
+      <div class="group">
+        <div class="card">
+          <label class="row"><span class="row-body">
+            <span class="row-main"><span class="row-title">Shop abfragen</span></span>
+            <span class="switch"><input type="checkbox" data-c="active" ${s.active ? "checked" : ""}><span class="t"></span></span>
+          </span></label>
+          ${unlocked[s.id] ? `
+          <label class="row"><span class="row-body">
+            <span class="row-title">Debitornummer</span>
+            <input class="row-input num" data-c="debitor" value="${esc(s.debitor)}" inputmode="numeric" autocomplete="off">
+          </span></label>` : `
+          <button class="row" data-a="unlock"><span class="row-body">
+            <span class="row-main"><span class="row-title">Debitornummer</span></span>
+            <span class="row-value num">${esc(s.debitor)}</span>${I.lock}
+          </span></button>`}
+          <div class="row"><span class="row-body">
+            <span class="row-main"><span class="row-title">Shop</span></span>
+            <span class="row-value" style="max-width:55%;overflow:hidden;text-overflow:ellipsis">${esc(s.url)}</span>${I.lock}
+          </span></div>
+          <button class="row" data-a="access"><span class="row-body">
+            <span class="row-main"><span class="row-title">Zugang</span></span>
+            <span class="row-value">${s.zugang ? "Hinterlegt" : `<span class="warn-text">Fehlt</span>`}</span>${isAdmin() ? I.chev : I.lock}
+          </span></button>
+        </div>
+        <div class="group-foot">${unlocked[s.id]
+          ? "Aufträge landen in CDH beim Kunden mit dieser Nummer. Eine falsche Nummer bucht auf den falschen Kunden."
+          : "Felder mit Schloss brauchen das Admin-Passwort. Zugangsschlüssel sind nie sichtbar, lassen sich aber erneuern."}</div>
+      </div>
+
+      <div class="group">
+        <div class="group-head">Welche Bestellungen</div>
+        <div class="card">
+          ${[["processing", "In Bearbeitung"], ["on-hold", "In Wartestellung"]].map(([v, l]) => `
+            <button class="row" data-a="status" data-v="${v}" role="checkbox" aria-checked="${s.statuses.includes(v)}">
+              <span class="row-body"><span class="row-main"><span class="row-title">${l}</span></span>
+              ${s.statuses.includes(v) ? I.check : ""}</span>
+            </button>`).join("")}
+        </div>
+        <div class="group-foot">Nur Bestellungen mit diesem Status werden abgeholt. Nach dem Import stehen sie auf „Abgeschlossen“ und kommen nicht noch einmal.</div>
+      </div>
+
+      <div class="group">
+        <div class="group-head">Wann</div>
+        <div class="card">
+          <label class="row"><span class="row-body">
+            <span class="row-main"><span class="row-title">Bei jedem Lauf</span></span>
+            <span class="switch"><input type="checkbox" data-c="alldays" ${s.days.length ? "" : "checked"}><span class="t"></span></span>
+          </span></label>
+          ${s.days.length ? `
+          <div class="days" aria-label="Tage im Monat">
+            ${Array.from({ length: 31 }, (_, i) => i + 1).map((d) =>
+              `<button data-a="day" data-d="${d}" aria-pressed="${s.days.includes(d)}">${d}</button>`).join("")}
+          </div>` : ""}
+        </div>
+        <div class="group-foot">${s.days.length
+          ? "Fällt der Tag aufs Wochenende und niemand startet den Import, warten die Bestellungen bis zum nächsten markierten Tag."
+          : "Für Shops, die zu einem Stichtag gesammelt abgerechnet werden, einzelne Tage wählen."}</div>
+      </div>
+
+      <div class="group">
+        <div class="group-head">Nach dem Import</div>
+        <div class="card">
+          ${[["", "Status nicht ändern"], ["completed", "Auf „Abgeschlossen“ setzen"]].map(([v, l]) => `
+            <button class="row" data-a="after" data-v="${v}" role="radio" aria-checked="${s.after === v}">
+              <span class="row-body"><span class="row-main"><span class="row-title">${l}</span></span>
+              ${s.after === v ? I.check : ""}</span>
+            </button>`).join("")}
+        </div>
+        <div class="group-foot">Die Kundenmail zu „Abgeschlossen“ ist im Shop ausgeschaltet.</div>
+      </div>
+
+      <div class="group">
+        <div class="group-head">Bündelung</div>
+        <div class="card">
+          <div class="seg" role="radiogroup" aria-label="Bündelung">
+            ${[["einzeln", "Einzeln"], ["trenn", "Mit Trennzeilen"], ["voll", "Zusammengefasst"]].map(([v, l]) =>
+              `<button role="radio" data-a="bundling" data-v="${v}" aria-checked="${s.bundling === v}">${l}</button>`).join("")}
+          </div>
+          <div class="preview">${preview(s.bundling)}</div>
+          <label class="row" style="border-top:.5px solid var(--sep)"><span class="row-body">
+            <span class="row-main"><span class="row-title">Name in Bestellnummer</span>
+              <div class="row-sub num">${bundled ? "Bei Bündelung nicht verfügbar" : "3939 Markus Schwarz"}</div></span>
+            <span class="switch"><input type="checkbox" data-c="nameInNo" ${s.nameInNo && !bundled ? "checked" : ""} ${bundled ? "disabled" : ""}><span class="t"></span></span>
+          </span></label>
+        </div>
+        <div class="group-foot">${{
+          einzeln: "Jede Bestellung wird ein eigener CDH-Auftrag.",
+          trenn: "Ein Auftrag pro Lieferort. Trennzeilen zeigen, wer was bestellt hat. Veredelungen stehen gesammelt am Ende.",
+          voll: "Ein Auftrag pro Lieferort, gleiche Artikel addiert. Wer was bekommt, steht dann nur in der Excel-Datei.",
+        }[s.bundling]}</div>
+      </div>
+
+      <div class="group">
+        <div class="group-head">Kundenadresse</div>
+        <div class="card">${senderBlock(s)}</div>
+        <div class="group-foot">An CDH geht nur die Debitornummer. CDH setzt die Anschrift aus dem Kundenstamm ein und ändert ihn nie.</div>
+      </div>
+
+      ${lieferGroup(s)}
+      ${bundled ? `
+      <div class="group">
+        <div class="group-head">Lieferort ohne feste Adresse</div>
+        <div class="card">
+          ${[["cdh", "Kundenadresse aus CDH"], ["firma", "Rechnungsadresse aus der Bestellung"], ["versand", "Versandadresse der ersten Bestellung"], ["sperren", "Import sperren"]].map(([v, l]) => `
+            <button class="row" data-a="unknown" data-v="${v}" role="radio" aria-checked="${s.unknownOrt === v}">
+              <span class="row-body"><span class="row-main"><span class="row-title">${l}</span></span>
+              ${s.unknownOrt === v ? I.check : ""}</span>
+            </button>`).join("")}
+        </div>
+        <div class="group-foot">Gilt, wenn eine Bestellung an einen Lieferort geht, für den oben keine Adresse hinterlegt ist. „Kundenadresse aus CDH“ lässt die Lieferanschrift leer, CDH liefert an den Kundenstamm. „Sperren“ fällt vor dem Import auf.</div>
+      </div>` : ""}
+
+      <div class="group">
+        <div class="group-head">Artikelsumme in der Excel</div>
+        <div class="card">
+          <label class="row"><span class="row-body">
+            <span class="row-main"><span class="row-title">Summenblatt anlegen</span></span>
+            <span class="switch"><input type="checkbox" data-c="excelSum" ${s.excelSum ? "checked" : ""}><span class="t"></span></span>
+          </span></label>
+          ${s.excelSum ? `
+          <div class="seg" role="radiogroup" aria-label="Summe je" style="grid-template-columns:1fr 1fr">
+            ${[["ort", "Je Lieferort"], ["gesamt", "Gesamt"]].map(([v, l]) =>
+              `<button role="radio" data-a="sumby" data-v="${v}" aria-checked="${s.excelSumBy === v}">${l}</button>`).join("")}
+          </div>
+          <label class="row" style="border-top:.5px solid var(--sep)"><span class="row-body">
+            <span class="row-main"><span class="row-title">Veredelungen mitzählen</span></span>
+            <span class="switch"><input type="checkbox" data-c="excelSumVed" ${s.excelSumVed ? "checked" : ""}><span class="t"></span></span>
+          </span></label>` : ""}
+        </div>
+        <div class="group-foot">Zweites Blatt, das gleiche Artikel über alle Bestellungen addiert, z. B. als Bestellliste für den Lieferanten. Unabhängig von der Bündelung für CDH.</div>
+      </div>
+
+      <div class="group">
+        <div class="group-head">Zusatzfelder in der Excel</div>
+        <div class="card">
+          ${s.excel.map((x, i) => `
+            <button class="row" data-a="edit-excel" data-i="${i}"><span class="row-body">
+              <span class="row-main"><span class="row-title">${esc(x.label)}</span><div class="row-sub">${esc(x.key)}</div></span>
+              ${I.chev}
+            </span></button>`).join("")}
+          <button class="row action" data-a="add-excel"><span class="row-body"><span class="row-main"><span class="row-title">Feld hinzufügen</span></span></span></button>
+        </div>
+        <div class="group-foot">Produktoptionen aus dem Shop, die zusätzlich in die Kontrollliste sollen. Sie gehen nicht an CDH.</div>
+      </div>
+    </div>`;
+}
+
+function lieferGroup(s) {
+  const low = (x) => x.trim().toLowerCase();
+  const known = new Set(s.orte.map((o) => low(o.ort)));
+  const methods = s.methods || [];
+  const inShop = new Set(methods.map(low));
+
+  const addrKey = (o) => [o.name1, o.street, o.plz, o.city].map((x) => low(x || "")).join("|");
+  const rows = s.orte.map((o, i) => {
+    const missingInShop = methods.length && !inShop.has(low(o.ort));
+    const twin = s.orte.find((x, j) => j < i && addrKey(x) === addrKey(o));
+    return `<button class="row" data-a="edit-ort" data-i="${i}"><span class="row-body">
+      <span class="row-main"><span class="row-title">${esc(o.ort)}</span>
+      <div class="row-sub">${missingInShop
+        ? `<span class="warn-text">Keine Versandart mit diesem Namen im Shop</span>`
+        : twin ? `Gleiche Anschrift wie ${esc(twin.ort)}, eigener Auftrag`
+        : `${esc(o.name2 ? o.name2 + ", " : "")}${esc(o.street)}, ${esc(o.country)}-${esc(o.plz)} ${esc(o.city)}`}</div></span>
+      ${I.chev}
+    </span></button>`;
+  });
+  const open = methods.filter((m) => !known.has(low(m))).map((m) => `
+    <button class="row" data-a="add-ort" data-ort="${esc(m)}"><span class="row-body">
+      <span class="row-main"><span class="row-title">${esc(m)}</span>
+      <div class="row-sub"><span class="warn-text">Versandart im Shop ohne feste Adresse</span></div></span>
+      <span class="row-value" style="color:var(--blue)">Anlegen</span>
+    </span></button>`);
+
+  const foot = methods.length
+    ? `Abgeglichen mit den Versandarten im Shop${open.length || rows.some((r) => r.includes("warn-text")) ? ". Gelb markierte passen nicht zusammen — meist ein abweichender Name." : ", alles passt."}`
+    : s.orte.length
+      ? "Der Name muss genauso heißen wie die Versandart im Shop."
+      : "Keine festen Adressen. Jede Bestellung behält die Versandadresse, die im Shop eingegeben wurde.";
+
+  return `<div class="group">
+    <div class="group-head">Feste Lieferadressen</div>
+    <div class="card">
+      ${rows.join("")}${open.join("")}
+      <button class="row action" data-a="add-ort"><span class="row-body"><span class="row-main"><span class="row-title">Lieferort hinzufügen</span></span></span></button>
+    </div>
+    <div class="group-foot">${foot}</div>
+  </div>`;
+}
+
+function renderLog() {
+  $("#detail").innerHTML = `
+    ${navbar()}
+    <div class="content">
+      <h1 class="large-title">Änderungsverlauf</h1>
+      <div class="group"><div class="card">
+        ${LOG.map((l) => `<div class="row"><span class="row-body"><span class="row-main">
+          <span class="row-title">${esc(l.what)}</span><div class="row-sub">${esc(l.who)}, ${esc(l.when)}</div>
+        </span></span></div>`).join("")}
+      </div>
+      <div class="group-foot">Jedes Sichern wird mit Windows-Benutzer und Zeit festgehalten, auch im Admin-Modus. Die vorherige Fassung liegt im Ordner Backup.</div></div>
+    </div>`;
+}
+
+function senderBlock(s) {
+  return `<div class="row"><span class="row-body"><span class="row-main"><span class="row-title">Aus dem CDH-Kundenstamm</span>
+    <div class="row-sub">Kunde ${esc(s.debitor)}, gilt für jeden Auftrag</div></span></span></div>`;
+}
+
+function preview(mode) {
+  const ln = (q, t) => `<div class="ln"><span class="q">${q}×</span>${t}</div>`;
+  const sep = (t) => `<div class="ln sep">${t}</div>`;
+  if (mode === "einzeln") return `
+    <div class="cdh"><div class="oh">Auftrag 2766 Anna Weber</div>${ln(1, "Hoody black, M")}${ln(1, "Stick Logo")}</div>
+    <div class="cdh"><div class="oh">Auftrag 2770 Tim Roth</div>${ln(1, "Hoody black, M")}${ln(2, "Polo weiß, L")}${ln(3, "Stick Logo")}</div>`;
+  if (mode === "trenn") return `
+    <div class="cdh"><div class="oh">Auftrag Cham</div>
+      ${sep("2766 / Anna Weber")}${ln(1, "Hoody black, M")}
+      ${sep("2770 / Tim Roth")}${ln(1, "Hoody black, M")}${ln(2, "Polo weiß, L")}
+      ${sep("Veredelungen")}${ln(4, "Stick Logo")}</div>`;
+  return `
+    <div class="cdh"><div class="oh">Auftrag Cham</div>
+      ${sep("Cham / 2 Bestellungen")}${ln(2, "Hoody black, M")}${ln(2, "Polo weiß, L")}${ln(4, "Stick Logo")}</div>`;
+}
+
+function renderGlobal() {
+  $("#detail").innerHTML = `
+    ${navbar()}
+    <div class="content">
+      <h1 class="large-title">Veredelungen</h1>
+      <div class="group">
+        <div class="card">
+          ${global.prefixes.map((p, i) => `
+            <button class="row" data-a="edit-prefix" data-i="${i}"><span class="row-body">
+              <span class="row-main"><span class="row-title">${esc(p.label)}</span></span>
+              <span class="row-value num">${esc(p.prefix)}</span>${isAdmin() ? I.chev : I.lock}
+            </span></button>`).join("")}
+          <button class="row action" data-a="add-prefix"><span class="row-body"><span class="row-main"><span class="row-title">Präfix hinzufügen</span></span>${isAdmin() ? "" : I.lock}</span></button>
+        </div>
+        <div class="group-foot">Positionen, deren Artikelnummer so beginnt, gelten als Veredelung. Beim Bündeln werden sie zusammengezählt, wenn Artikelnummer und Preis gleich sind.</div>
+      </div>
+    </div>`;
+}
+
+// --------------------------------------------------------------- Overlays
+const FORMS = {
+  ort: { title: "Lieferort", fields: [
+    ["ort", "Lieferort", "wie Versandart im Shop", true], ["name1", "Firma", "", true], ["name2", "z. Hd.", "optional"],
+    ["street", "Straße", "", true], ["plz", "PLZ", "", true], ["city", "Ort", "", true], ["country", "Land", "DE"] ] },
+  excel: { title: "Zusatzfeld", fields: [ ["key", "Feld im Shop", "Data Name", true], ["label", "Spalte", "Überschrift", true] ] },
+  prefix: { title: "Veredelung", fields: [ ["prefix", "Beginnt mit", "z. B. 004/", true], ["label", "Bedeutung", "z. B. Stick", true] ] },
+};
+
+function sheetShell(title, left, right, body) {
+  return `<div class="backdrop" data-a="close">
+    <div class="sheet" role="dialog" aria-modal="true" aria-label="${esc(title)}">
+      <div class="navbar">
+        <span class="nav-l">${left}</span><span class="nav-c">${esc(title)}</span><span class="nav-r">${right}</span>
+      </div>
+      <div class="content">${body}</div>
+    </div></div>`;
+}
+
+function openSheet(type, index, shopId = current, prefill = null) {
+  const s = shopById(shopId);
+  const existing = type === "ort" ? s.orte[index] : type === "excel" ? s.excel[index]
+    : type === "prefix" ? global.prefixes[index] : null;
+  const src = existing || prefill;
+  overlay = { kind: "form", type, index, shopId, isNew: index == null };
+  const f = FORMS[type];
+  $("#overlay").innerHTML = sheetShell(f.title,
+    `<button class="navlink" data-a="close">Abbrechen</button>`,
+    `<button class="navlink bold" data-a="sheet-done">Fertig</button>`,
+    `<div class="group" id="formgroup"><div class="card">
+      ${f.fields.map(([k, l, ph]) => `
+        <div class="form-row"><span class="row-body">
+          <label for="ff-${k}">${l}</label>
+          <input id="ff-${k}" data-k="${k}" value="${esc(src?.[k] ?? "")}" placeholder="${esc(ph)}" autocomplete="off">
+        </span></div>`).join("")}
+    </div></div>
+    ${!overlay.isNew ? `
+    <div class="group"><div class="card">
+      <button class="row danger" data-a="sheet-delete"><span class="row-body"><span class="row-main"><span class="row-title">${f.title} löschen</span></span></span></button>
+    </div></div>` : ""}`);
+  setTimeout(() => {
+    const inputs = [...document.querySelectorAll("#overlay input[data-k]")];
+    const target = inputs.find((i) => !i.value) || inputs[0];
+    if (target && !$("#formgroup").hidden) target.focus();
+  }, 60);
+}
+
+function closeOverlay() {
+  if (overlay?.kind === "import" && overlay.running) return;
+  overlay = null; $("#overlay").innerHTML = "";
+}
+
+function sheetDone() {
+  const { type, index, isNew, shopId } = overlay;
+  const s = shopById(shopId);
+  const val = {};
+  document.querySelectorAll("#overlay input[data-k]").forEach((i) => (val[i.dataset.k] = i.value.trim()));
+  const missing = FORMS[type].fields.filter(([k, , , req]) => req && !val[k]).map(([, l]) => l);
+  if (missing.length) { hud(`Bitte ausfüllen: ${missing.join(", ")}`); return; }
+  if ("country" in val && !val.country) val.country = "DE";
+  if (type === "ort") isNew ? s.orte.push(val) : (s.orte[index] = val);
+  if (type === "excel") isNew ? s.excel.push(val) : (s.excel[index] = val);
+  if (type === "prefix") isNew ? global.prefixes.push(val) : (global.prefixes[index] = val);
+  closeOverlay(); render();
+}
+
+function sheetDelete() {
+  const { type, index, shopId } = overlay; const s = shopById(shopId);
+  if (type === "ort") s.orte.splice(index, 1);
+  if (type === "excel") s.excel.splice(index, 1);
+  if (type === "prefix") global.prefixes.splice(index, 1);
+  closeOverlay(); render();
+}
+
+
+function openAlert() {
+  overlay = { kind: "alert" };
+  $("#overlay").innerHTML = `
+    <div class="backdrop center" data-a="close">
+      <div class="alert-box" role="alertdialog" aria-modal="true">
+        <div class="txt"><h4>Debitornummer ändern?</h4>
+          <p>Aufträge dieses Shops landen in CDH beim Kunden mit der neuen Nummer.</p></div>
+        <div class="btns">
+          <button data-a="close">Abbrechen</button>
+          <button data-a="alert-ok">Ändern</button>
+        </div>
+      </div>
+    </div>`;
+  setTimeout(() => $("#overlay [data-a=alert-ok]").focus(), 30);
+}
+
+
+// ------------------------------------------------------------ Admin
+function requireAdmin(title, msg, then) {
+  if (isAdmin()) { then(); return; }
+  if (!ADMIN_PW_SET) { meldung("Kein Admin-Passwort", "In zugang.yaml ist noch kein Admin-Passwort hinterlegt.\nSetzen: python migrate_config.py --admin-password …"); return; }
+  overlay = { kind: "pw", then, tries: 0 };
+  $("#overlay").innerHTML = `
+    <div class="backdrop center" data-a="close">
+      <div class="alert-box" role="alertdialog" aria-modal="true" aria-label="${esc(title)}">
+        <div class="txt"><h4>${esc(title)}</h4><p>${esc(msg)}</p>
+          <input class="pw-field" id="pw" type="password" placeholder="Admin-Passwort" autocomplete="off" aria-label="Admin-Passwort">
+          <div class="pw-err" id="pw-err" aria-live="polite"></div></div>
+        <div class="btns">
+          <button data-a="close">Abbrechen</button>
+          <button data-a="pw-ok">Entsperren</button>
+        </div>
+      </div>
+    </div>`;
+  setTimeout(() => $("#pw")?.focus(), 40);
+}
+
+async function pwSubmit() {
+  const o = overlay;
+  if (o.pending) return;
+  o.pending = true;
+  const erg = await api().admin_anmelden($("#pw").value);
+  o.pending = false;
+  if (erg.ok) {
+    adminUntil = Date.now() + erg.rest_sekunden * 1000;
+    const then = o.then; overlay = null; $("#overlay").innerHTML = "";
+    render(); then();
+    return;
+  }
+  const box = document.querySelector(".alert-box");
+  box.classList.remove("shake"); void box.offsetWidth; box.classList.add("shake");
+  $("#pw-err").textContent = erg.fehler;
+  $("#pw").value = ""; $("#pw").focus();
+}
+
+function adminEnd() {
+  adminUntil = 0; unlocked = {};
+  api().admin_abmelden();
+  if (overlay && ["wizard", "access"].includes(overlay.kind)) closeOverlay();
+  render(); hud("Admin-Modus beendet");
+}
+
+// Ablauf prüfen und Restzeit aktualisieren
+setInterval(() => {
+  if (!adminUntil) return;
+  if (!isAdmin()) { adminEnd(); return; }
+  renderList();
+}, 15000);
+
+
+// ---------------------------------------------------------- Interaktion
+function renderDetail() {
+  if (current === "__global") return renderGlobal();
+  if (current === "__log") return renderLog();
+  return renderSettings();
+}
+function render() { if (!geladen) return; renderTabbar(); renderOrders(); renderList(); renderDetail(); }
+
+document.addEventListener("click", (e) => {
+  const el = e.target.closest("[data-a]");
+  if (!el) return;
+  const a = el.dataset.a;
+  const s = shopById(current);
+
+  switch (a) {
+    case "tab": tab = el.dataset.tab; closeOverlay(); render(); break;
+    case "nav": current = el.dataset.id; $("#split").dataset.view = "detail"; render(); $("#detail").scrollTop = 0; break;
+    case "back": $("#split").dataset.view = "list"; break;
+    case "close": if (e.target === el || el.tagName === "BUTTON") closeOverlay(); break;
+
+    case "wizard": requireAdmin("Shop hinzufügen", "Dabei werden Zugangsschlüssel hinterlegt.", () => hud("Shop anlegen kommt mit Welle 7.")); break;
+    case "access": requireAdmin("Zugang erneuern", "Ersetzt die Schlüssel, mit denen der Shop abgefragt wird.", () => hud("Zugang erneuern kommt mit Welle 7.")); break;
+    case "todo": hud(el.dataset.msg || "Im Entwurf ohne Funktion."); break;
+    case "unknown": s.unknownOrt = el.dataset.v; render(); break;
+    case "sumby": s.excelSumBy = el.dataset.v; render(); break;
+
+    case "unlock":
+      requireAdmin("Debitornummer ändern", "Aufträge landen in CDH beim Kunden mit der neuen Nummer.", () => {
+        unlocked[current] = true; render(); setTimeout(() => $("[data-c=debitor]")?.focus(), 30);
+      }); break;
+    case "pw-ok": pwSubmit(); break;
+    case "admin-end": adminEnd(); break;
+    case "alert-ok": unlocked[s.id] = true; closeOverlay(); render(); setTimeout(() => $("[data-c=debitor]")?.focus(), 30); break;
+    case "status": {
+      const set = new Set(s.statuses); const v = el.dataset.v;
+      set.has(v) ? set.delete(v) : set.add(v);
+      if (!set.size) { hud("Mindestens ein Status muss gewählt sein."); return; }
+      s.statuses = ["processing", "on-hold"].filter((x) => set.has(x)); render(); break;
+    }
+    case "day": {
+      const d = +el.dataset.d; const set = new Set(s.days);
+      set.has(d) ? set.delete(d) : set.add(d);
+      if (!set.size) { hud("Mindestens ein Tag, oder „Bei jedem Lauf“ einschalten."); return; }
+      s.days = [...set].sort((x, y) => x - y); render(); break;
+    }
+    case "after": s.after = el.dataset.v; render(); break;
+    case "bundling": s.bundling = el.dataset.v; render(); break;
+    case "edit-ort": openSheet("ort", +el.dataset.i); break;
+    case "add-ort": openSheet("ort", null, current, el.dataset.ort ? { ort: el.dataset.ort, country: "DE" } : null); break;
+    case "edit-excel": openSheet("excel", +el.dataset.i); break;
+    case "add-excel": openSheet("excel", null); break;
+    case "edit-prefix": { const i = +el.dataset.i; requireAdmin("Veredelungen ändern", "Gilt für alle Shops.", () => openSheet("prefix", i)); break; }
+    case "add-prefix": requireAdmin("Veredelungen ändern", "Gilt für alle Shops.", () => openSheet("prefix", null)); break;
+    case "sheet-done": sheetDone(); break;
+    case "sheet-delete": sheetDelete(); break;
+    case "save": sichern(); break;
+    case "discard":
+      shops = structuredClone(initial); global = structuredClone(initialGlobal); unlocked = {};
+      render(); hud("Änderungen verworfen."); break;
+  }
+});
+
+document.addEventListener("change", (e) => {
+  const c = e.target.dataset?.c; if (!c) return;
+  // Debitornummer wird schon beim Tippen übernommen ("input"). Hier nicht neu
+  // zeichnen: Das change-Ereignis kommt beim Verlassen des Feldes — genau
+  // beim Klick auf „Sichern“, der sonst am neu gezeichneten Knopf verpufft.
+  if (c === "debitor") return;
+  const s = shop();
+  if (c === "active") s.active = e.target.checked;
+  if (c === "alldays") s.days = e.target.checked ? [] : [1];
+  if (c === "nameInNo") s.nameInNo = e.target.checked;
+  if (c === "excelSum") s.excelSum = e.target.checked;
+  if (c === "excelSumVed") s.excelSumVed = e.target.checked;
+  render();
+});
+
+document.addEventListener("input", (e) => {
+  if (e.target.dataset?.c !== "debitor") return;
+  const s = shop();
+  s.debitor = e.target.value.replace(/\D/g, "");
+  if (e.target.value !== s.debitor) e.target.value = s.debitor;
+  renderList(); renderTabbar();
+  const n = changeCount();
+  const sv = document.querySelector("#detail [data-a=save]"); if (sv) sv.disabled = !n;
+});
+
+document.addEventListener("keydown", (e) => {
+  if (!overlay) return;
+  if (e.key === "Escape") closeOverlay();
+  if (e.key === "Enter" && overlay.kind === "form" && e.target.tagName === "INPUT") sheetDone();
+  if (e.key === "Enter" && overlay.kind === "wizard" && e.target.tagName === "INPUT") wizNext();
+  if (e.key === "Enter" && overlay.kind === "pw") pwSubmit();
+});
+
+if (!narrow()) $("#split").dataset.view = "detail";
+// pywebview stellt window.pywebview.api erst nach "pywebviewready" bereit
+if (window.pywebview?.api?.laden) laden();
+else window.addEventListener("pywebviewready", laden);
+</script>
+</body>
+</html>

@@ -112,6 +112,13 @@ Jeweils mit Tests:
   automatisch gesperrt. Geschützt: Shop hinzufügen, Zugang erneuern,
   Debitornummer, Veredelungs-Präfixe.
 - Inter lokal einbetten, kein Nachladen aus dem Netz.
+- **Feste Shop-IDs statt Namen** als Schlüssel zwischen `einstellungen.yaml`
+  und `zugang.yaml`. Heute ordnet `zugang.yaml` die Zugangsdaten über den
+  Shop-Namen zu — wird ein Shop in der Oberfläche umbenannt, verliert er
+  seinen Zugang. Jeder Shop bekommt eine unveränderliche `id` (wie im
+  Entwurf: `caf`, `ensinger` …), `zugang.yaml` wird darauf umgestellt
+  (Migration mit Probelauf). Der Name bleibt Anzeige und Schlüssel für
+  `lieferadressen.yaml`.
 
 **STOPP — Sichtung am echten Rechner.**
 

@@ -1793,6 +1793,17 @@ def _load_split_config() -> dict:
     return cfg
 
 
+def fehlende_zugangsdaten(shop_cfg: dict) -> list[str]:
+    """Welche Zugangsfelder fehlen oder sind leer? Leer = alles da.
+
+    Fehlt ein Shop in zugang.yaml (oder ist der Eintrag unvollständig), kommt
+    er ohne consumer_key/-secret aus _load_split_config(). Ohne diese Prüfung
+    endet das in einem KeyError beim Anlegen des WooClient.
+    """
+    return [f for f in ("consumer_key", "consumer_secret")
+            if not str(shop_cfg.get(f) or "").strip()]
+
+
 def config_vorhanden() -> bool:
     """Gibt es überhaupt eine Konfiguration (geteilt oder alt)?"""
     return (EINSTELLUNGEN_PATH.exists() and ZUGANG_PATH.exists()) \
@@ -1868,6 +1879,15 @@ def main() -> int:
             if not shop_cfg.get("enabled", True):
                 logging.info("Shop %s ist deaktiviert — übersprungen.",
                              shop_cfg.get("name", shop_cfg.get("url")))
+                continue
+            fehlt = fehlende_zugangsdaten(shop_cfg)
+            if fehlt:
+                logging.error("Shop %s: Zugangsdaten fehlen (%s) — in "
+                              "zugang.yaml unter dem Shop-Namen eintragen. "
+                              "Shop übersprungen.",
+                              shop_cfg.get("name", shop_cfg.get("url")),
+                              ", ".join(fehlt))
+                total_err += 1
                 continue
             try:
                 s = process_shop(shop_cfg, cfg)

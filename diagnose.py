@@ -335,6 +335,12 @@ def main() -> int:
         return 2
 
     for s in shops:
+        fehlt = w.fehlende_zugangsdaten(s)
+        if fehlt:
+            print(f"{ERR}  Shop {s.get('name', s.get('url'))}: Zugangsdaten "
+                  f"fehlen ({', '.join(fehlt)}) — übersprungen.",
+                  file=sys.stderr)
+            continue
         diagnose_shop(s)
 
     return 0

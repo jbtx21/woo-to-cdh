@@ -13,6 +13,9 @@ ab und zeigt an.
 Aufruf:
     python diagnose.py               # alle Shops aus der Konfiguration
     python diagnose.py CAF-Shop      # nur den Shop mit diesem Namen
+    python diagnose.py Ensinger-Shop --felder
+                                     # welche Zusatzfelder gibt es? (Namen,
+                                     # Häufigkeit, Muster — keine Werte)
 """
 
 from __future__ import annotations
@@ -419,6 +422,85 @@ def diagnose(shop_cfg: dict,
 
 
 # ---------------------------------------------------------------------------
+# Feldübersicht — welche Meta-Felder liefert der Shop? (Frage 6)
+# ---------------------------------------------------------------------------
+
+def muster(wert: Any) -> str:
+    """Form eines Werts ohne den Wert selbst: 4711 → ####, Ja → xx.
+    Personalnummern und Namen sind personenbezogen und gehören nicht in
+    Konsole oder Chat."""
+    if isinstance(wert, (list, dict)):
+        return "(Liste)"
+    s = str(wert if wert is not None else "").strip()
+    if not s:
+        return "(leer)"
+    m = "".join("#" if c.isdigit() else "x" if c.isalpha() else c for c in s)
+    return m if len(m) <= 16 else m[:16] + "…"
+
+
+def felder_uebersicht(abruf: Callable[..., tuple[int, Any]],
+                      anzahl: int = 50) -> dict:
+    """Alle Meta-Felder der letzten `anzahl` Bestellungen (jeder Status), an
+    der Bestellung und an den Positionen. Nur lesend. Je Feld: key,
+    display_key, in wie vielen Bestellungen, Muster der Werte."""
+    status, orders = abruf("/orders", {"per_page": anzahl,
+                                       "orderby": "date", "order": "desc"})
+    if status != 200 or not isinstance(orders, list):
+        return {"fehler": f"Abruf fehlgeschlagen (Status {status})"}
+    felder: dict = {"bestellung": {}, "position": {}}
+
+    def merken(ziel, m, oid):
+        key = str(m.get("key") or "")
+        f = ziel.setdefault(key, {"key": key, "anzeige": "", "bestellungen": set(),
+                                  "muster": set()})
+        f["anzeige"] = f["anzeige"] or str(m.get("display_key") or "")
+        f["bestellungen"].add(oid)
+        f["muster"].add(muster(m.get("display_value", m.get("value"))))
+
+    for o in orders:
+        for m in o.get("meta_data") or []:
+            merken(felder["bestellung"], m, o.get("id"))
+        for it in o.get("line_items") or []:
+            for m in it.get("meta_data") or []:
+                merken(felder["position"], m, o.get("id"))
+
+    def liste(d):
+        out = [{"key": f["key"], "anzeige": f["anzeige"],
+                "bestellungen": len(f["bestellungen"]),
+                "muster": sorted(f["muster"])[:4],
+                "kandidat": "personal" in (f["key"] + f["anzeige"]).lower()}
+               for f in d.values()]
+        return sorted(out, key=lambda f: (-f["bestellungen"], f["key"]))
+
+    return {"anzahl": len(orders), "bestellung": liste(felder["bestellung"]),
+            "position": liste(felder["position"])}
+
+
+def felder_ausgeben(shop_cfg: dict) -> None:
+    base, auth = _basis_und_auth(shop_cfg)
+    erg = felder_uebersicht(lambda path, params=None: get(base, auth, path, params))
+    line("═")
+    print(f"  FELDER — {shop_cfg.get('name', shop_cfg['url'])}")
+    line("═")
+    if "fehler" in erg:
+        bullet(ERR, erg["fehler"])
+        return
+    print(f"  Letzte {erg['anzahl']} Bestellungen, jeder Status. Nur Feldnamen und "
+          "Muster (# Ziffer, x Buchstabe), keine Werte.")
+    for titel, teil in (("An der Bestellung (Checkout-Felder)", "bestellung"),
+                        ("An der Position (PPOM-Felder)", "position")):
+        print(f"\n  {titel}:")
+        if not erg[teil]:
+            print("    (keine)")
+        for f in erg[teil]:
+            pfeil = "  ← Personalnummer?" if f["kandidat"] else ""
+            anzeige = f" „{f['anzeige']}“" if f["anzeige"] and f["anzeige"] != f["key"] else ""
+            print(f"    {f['key']}{anzeige}  ·  in {f['bestellungen']} Bestellungen"
+                  f"  ·  {', '.join(f['muster'])}{pfeil}")
+    print()
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
@@ -490,7 +572,9 @@ def main() -> int:
               "noch config.yaml.", file=sys.stderr)
         return 2
 
-    wanted = sys.argv[1] if len(sys.argv) > 1 else None
+    argumente = [a for a in sys.argv[1:] if not a.startswith("--")]
+    nur_felder = "--felder" in sys.argv[1:]
+    wanted = argumente[0] if argumente else None
     shops, quelle = lade_shops(wanted)
     print(f"(Konfiguration geladen aus: {quelle})")
 
@@ -509,7 +593,7 @@ def main() -> int:
                   f"fehlen ({', '.join(fehlt)}) — übersprungen.",
                   file=sys.stderr)
             continue
-        diagnose_shop(s)
+        felder_ausgeben(s) if nur_felder else diagnose_shop(s)
 
     return 0
 

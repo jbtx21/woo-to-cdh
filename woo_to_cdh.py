@@ -1097,6 +1097,46 @@ def _parse_extra_meta_config(shop_cfg: dict) -> list[tuple]:
     return result
 
 
+JA_WERTE = {"ja", "yes", "1", "true", "on"}
+
+
+def _zusatzfeld_regeln(shop_cfg: dict) -> dict:
+    """Zusatzfelder mit „checkout_key": {key: (checkout_key, team_key)}.
+
+    Für Felder, die es zweimal gibt — z. B. Personalnummer bei Ensinger:
+    als PPOM-Feld an der Position (Teambestellung, Nummer der Kollegin) und
+    als Checkout-Feld an der Bestellung (Selbstbestellung).
+
+        extra_excel_meta:
+          - key: personalnummer
+            label: Personalnummer
+            checkout_key: <Feld an der Bestellung>   # diagnose.py --felder
+            team_key: teambestellung                 # Standard
+    """
+    regeln = {}
+    for e in shop_cfg.get("extra_excel_meta") or []:
+        if isinstance(e, dict) and str(e.get("checkout_key") or "").strip():
+            regeln[str(e.get("key") or "").strip()] = (
+                str(e["checkout_key"]).strip(),
+                str(e.get("team_key") or "teambestellung").strip())
+    return regeln
+
+
+def _zusatzfeld_wert(order: dict, item: dict | None, key: str, regeln: dict) -> str:
+    """Wert eines Zusatzfelds. Mit Regel: Teambestellung „Ja" → Feld an der
+    Position (PPOM), sonst → Checkout-Feld der Bestellung; ist das leer,
+    doch das Positionsfeld."""
+    if key not in regeln:
+        return _read_order_meta(order, key, item)
+    checkout_key, team_key = regeln[key]
+    team = _read_order_meta(order, team_key, item).strip().lower() in JA_WERTE
+    if not team:
+        wert = _read_order_meta(order, checkout_key)
+        if wert:
+            return wert
+    return _read_order_meta(order, key, item)
+
+
 def _meta_matches(entry: dict, wanted: set) -> bool:
     """Prüft key und display_key eines Meta-Eintrags gegen die Suchbegriffe."""
     for field in ("key", "display_key"):
@@ -1221,8 +1261,9 @@ def _row_from_order_position(order: dict, item: dict, shop_cfg: dict,
     # Zusätzliche Meta-Felder aus dem Shop, hinten angehängt. Die 21
     # Standardspalten bleiben dadurch an ihrer Position.
     # item wird mitgegeben, weil PPOM-Felder an der Position hängen.
+    regeln = _zusatzfeld_regeln(shop_cfg)
     for key, _label in _parse_extra_meta_config(shop_cfg):
-        row.append(_read_order_meta(order, key, item))
+        row.append(_zusatzfeld_wert(order, item, key, regeln))
 
     return row
 
@@ -1282,7 +1323,7 @@ def write_excel_export(target_path: Path, orders: list, shop_cfg: dict,
     if extra_meta:
         gefunden = [
             label for key, label in extra_meta
-            if any(_read_order_meta(o, key, it)
+            if any(_zusatzfeld_wert(o, it, key, _zusatzfeld_regeln(shop_cfg))
                    for o in orders
                    for it in (o.get("line_items") or []))
         ]

@@ -208,8 +208,13 @@ def _ui_auf_shop(neu: dict, alt_ui: dict, shop: dict, glob: dict) -> None:
                 shop.pop("aggregate_all_positions", None)
     if geaendert("excel"):
         if neu["excel"]:
-            shop["extra_excel_meta"] = [{"key": x["key"], "label": x["label"]}
-                                        for x in neu["excel"]]
+            # Angaben, die die Oberfläche nicht zeigt (checkout_key, team_key
+            # für die Personalnummer), bleiben am Feld erhalten.
+            alt = {str(e.get("key") or "").strip(): e for e in shop.get("extra_excel_meta") or []
+                   if isinstance(e, dict)}
+            shop["extra_excel_meta"] = [
+                {**{k: v for k, v in alt.get(x["key"], {}).items() if k not in ("key", "label")},
+                 "key": x["key"], "label": x["label"]} for x in neu["excel"]]
         else:
             shop.pop("extra_excel_meta", None)
     if geaendert("unknownOrt"):

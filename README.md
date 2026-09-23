@@ -655,6 +655,22 @@ Bei Ensinger konfiguriert, aus der PPOM-Gruppe „MitarbeiterIn":
 Das PPOM-Feld `mitarbeiterin_place` ist eine reine Beschriftung und wird
 nicht exportiert.
 
+**Personalnummer bei Selbstbestellungen:** Bei Ensinger gibt es die
+Personalnummer zweimal: als PPOM-Feld an der Position (Teambestellung, Nummer
+der Kollegin) und als Checkout-Feld an der Bestellung (Selbstbestellung).
+Mit `checkout_key` entscheidet die Teambestellung:
+
+```yaml
+      - key: personalnummer
+        label: Personalnummer
+        checkout_key: <Feld an der Bestellung>   # ermitteln: diagnose.py --felder
+        team_key: teambestellung                 # Standard, kann entfallen
+```
+
+Teambestellung „Ja" → PPOM-Feld, sonst → Checkout-Feld; ist das leer, doch
+das PPOM-Feld. Die Oberfläche zeigt `checkout_key` nicht, behält es beim
+Sichern aber bei.
+
 Fehlt `openpyxl`, entfällt nur die Excel-Datei. Der CDH-Import läuft normal
 weiter, im Log steht eine Warnung.
 
@@ -754,6 +770,13 @@ bedeutet, dass im Shop Maße fehlen — dort wird der Preis in CDH leer bleiben.
 Hinweis: Die Konsolen-Diagnose fragt immer `processing,on-hold` ab, unabhängig
 vom `included_statuses` des Shops. Bei Allgaier können hier also Bestellungen
 auftauchen, die der echte Lauf überspringt.
+
+**Felder eines Shops:** `python diagnose.py Ensinger-Shop --felder` listet
+alle Meta-Felder der letzten 50 Bestellungen (jeder Status), getrennt nach
+Bestellung (Checkout-Felder) und Position (PPOM-Felder). Ausgegeben werden
+Name, Anzeigename, Häufigkeit und das Muster der Werte (`#` Ziffer,
+`x` Buchstabe), nie die Werte selbst. Felder mit „personal" im Namen sind
+markiert. So findet man z. B. `checkout_key` für die Personalnummer.
 
 **Als Funktion** (für den Shop-Assistenten): `diagnose.diagnose(shop_cfg)`
 liefert die fünf Punkte des Entwurfs als `Pruefpunkt(titel, stufe, text,

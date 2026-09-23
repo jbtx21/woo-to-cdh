@@ -322,14 +322,30 @@ Bestellungen, die nur von dort aus hätten kommen sollen, fehlen. **Zu tun
 (Regel 7/8, nach Freigabe):** Verknüpfung auf COMPUTER-1 auf
 `WOO_to_CDH.exe` im Hauptordner umstellen, die Kopie in `wex-archiv\`
 (inkl. Konfiguration mit Schlüsseln) entfernen.
-5. **Admins:** Wer bekommt das Passwort?
-6. **Personalnummer an der Ensinger-Kasse:** Es gibt ein Checkout-Feld
-   Personalnummer an der Bestellung, zusätzlich zum PPOM-Feld am Produkt. Der
-   interne Schlüssel ist unbekannt; bei Selbstbestellungen bleibt die
-   Excel-Spalte deshalb leer. Schlüssel per API ermitteln, dann: Teambestellung
-   „Ja" → PPOM-Feld, sonst → Checkout-Feld.
-7. **Lenzing:** Soll es als eigene Versandart angelegt werden? Die feste
-   Adresse steht bereit, greift aber erst mit exakt diesem Namen.
+5. ✅ **Admins** (Antwort 23.09.2026): Ein normales Passwort reicht, es soll
+   nur verhindern, dass versehentlich etwas geändert wird. `admin.users`
+   bleibt leer, jeder mit dem Passwort darf. Kein Code nötig, das war schon
+   so vorgesehen.
+6. **Personalnummer an der Ensinger-Kasse:** Entscheidung 23.09.2026: den
+   Schlüssel per API ermitteln. Umgesetzt:
+   - `python diagnose.py Ensinger-Shop --felder` listet alle Felder der letzten
+     50 Bestellungen, an der Bestellung und an den Positionen. Ausgegeben werden
+     nur Name, Häufigkeit und Muster (`####`), keine Werte und keine
+     Schlüssel. Mögliche Personalnummer-Felder sind markiert. Nur lesend; der
+     Aufruf ist nach Regel 8 erlaubt, weil er auf V: nichts verändert.
+   - Neue Angabe `checkout_key` in `extra_excel_meta`: Teambestellung „Ja" →
+     PPOM-Feld an der Position, sonst → Checkout-Feld an der Bestellung; ist
+     das leer, doch das PPOM-Feld. Die Oberfläche behält `checkout_key`
+     beim Sichern (Fehler gefunden und behoben).
+   **Offen:** Die Ausgabe von `--felder` am Entwicklungsrechner erzeugen. Aus
+   der Cloud-Sitzung gibt es keinen Zugang zum Shop. Danach nach dem 01.10.
+   `checkout_key` bei Ensinger eintragen.
+7. ✅ **Lenzing** (Antwort 23.09.2026): gleiche Lieferadresse wie
+   Seewalchen, aber eine getrennte Abteilung. Umsetzung ohne Code: eigene
+   Versandart „Lenzing" im Ensinger-Shop, damit im Sammel-Modus ein eigener
+   CDH-Auftrag entsteht; in `lieferadressen.yaml` dieselbe Anschrift wie
+   Seewalchen, die Abteilung steht in „z. Hd.". So war es in den Testdaten
+   schon angelegt. Versandart anlegen und Anschrift prüfen: nach dem 01.10.
 8. ✅ **Log-Text:** „5 bereits exportierte Bestellungen" erscheint bei jedem
    Shop, ist aber die Gesamtzahl. Erledigt in Welle 3: je Shop gezählt, dazu
    am Laufende „N Bestellung(en) exportiert" je Shop.

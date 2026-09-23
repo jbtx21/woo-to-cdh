@@ -1,0 +1,10 @@
+# Golden-WEX werden Byte für Byte verglichen — Git darf Zeilenenden nicht umwandeln
+tests/golden/*.wex  binary
+
+# Quelltext und Doku einheitlich mit LF
+*.py    text eol=lf
+*.md    text eol=lf
+*.yaml  text eol=lf
+*.json  text eol=lf
+*.html  text eol=lf
+*.ps1   text eol=crlf

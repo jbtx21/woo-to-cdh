@@ -1,0 +1,156 @@
+# TEXMA WooCommerce → CDH Bridge (WEX-Variante)
+# Konfigurationsdatei
+#
+# Diese Datei liegt im selben Ordner wie woo_to_cdh.py und die EXE:
+#   V:\Warenwirtschaftssystem\WooCommerce Import\
+# Logs werden daneben im Unterordner logs\ abgelegt.
+
+# Zielordner für die erzeugten WEX-Dateien.
+# Liegt ebenfalls auf V:, damit jeder Client drauf zugreifen kann.
+# CDH_WEX.EXE kann Dateien auch direkt vom Netzlaufwerk importieren.
+cdh_import_folder: 'V:\Warenwirtschaftssystem\WooCommerce Import\wex-archiv'
+
+# Zielordner für die Excel-Kontrollausdrucke (Produktion + Backup).
+# Pro WEX-Datei entsteht eine gleichnamige .xlsx mit einer Zeile je
+# Bestellposition — Spalten wie im Advanced-Order-Export-Plugin.
+# Veredelungen werden hier NICHT zusammengefasst, damit die Produktion
+# sieht, welche Bestellung wie viele Sticker/Drucke braucht.
+excel_export_folder: 'V:\Warenwirtschaftssystem\WooCommerce Import\excel-archiv'
+
+# Zielordner für die Excel-Kontrollausdrucke — parallel zu den WEX,
+# eine Excel pro erzeugter WEX (bei Sammel-Modus: eine Excel pro Lieferort).
+# Format entspricht dem Advanced-Order-Export-Plugin (21 Spalten).
+excel_export_folder: 'V:\Warenwirtschaftssystem\WooCommerce Import\excel-archiv'
+
+# Pfad zur CDH-WEX-Erfassungs-EXE. Wird auf dem Rechner ausgeführt, der
+# die EXE gerade startet — muss dort also lokal installiert sein.
+cdh_exe: 'C:\CDH\CDH_WEX.EXE'
+
+# Artikelnummern-Präfixe, die eine Position als Veredelung kennzeichnen.
+# Solche Positionen werden im Sammel-Modus (Allgaier, Ensinger) über alle
+# Bestellungen eines Lieferorts zusammengefasst, sofern Artikelnummer und
+# Preise identisch sind.
+#
+# Neue Veredelungsart? Einfach hier ergänzen — die EXE muss dafür NICHT
+# neu gebaut werden, die Liste wird bei jedem Start frisch gelesen.
+veredelung_prefixes:
+  - '004/'   # Stick
+  - '316/'   # Druck
+  - '234/'   # Silberreflex
+
+# Empfängername in die CDH-Bestellnummer schreiben, also z.B.
+# "3939 Anna Weber" statt nur "3939".
+# Gilt nur für Shops im Standard-Modus. Im Sammel-Modus (Allgaier,
+# Ensinger) enthält die Bestellnummer bereits alle Nummern eines
+# Lieferorts; die Namen stehen dort in den Trennzeilen.
+order_no_with_name: true
+
+# Log-Level: DEBUG | INFO | WARNING | ERROR
+log_level: INFO
+
+# Bestellstatus, der nach erfolgreichem Export in WooCommerce gesetzt wird.
+# Leer lassen oder auskommentieren, wenn der Status unverändert bleiben soll.
+# Global hier oder pro Shop überschreibbar.
+#
+# "completed" ist bei TEXMA der Endzustand in WooCommerce: Ab dem CDH-Export
+# läuft die weitere Abwicklung in CDH. Die Kundenmail "Bestellung
+# abgeschlossen" ist in WooCommerce deaktiviert.
+status_after_export: completed
+
+# Liste aller Shops, die abgefragt werden sollen.
+shops:
+
+  # Standard-Statusfilter (alle Shops ohne eigene "included_statuses"):
+  #   processing + on-hold
+  # Kann pro Shop überschrieben werden (siehe Allgaier).
+
+  - name: CAF-Shop
+    enabled: true
+    url: https://shop.texma-gmbh.de/caf-shop/
+    consumer_key:     'ck_NEU_ROTIEREN'
+    consumer_secret:  'cs_NEU_ROTIEREN'
+    datev_no: 19541
+    order_type: AB
+
+  - name: Stoll-Shop
+    enabled: true
+    url: https://shop.texma-gmbh.de/stoll-shop/
+    consumer_key:     'ck_NEU_ROTIEREN'
+    consumer_secret:  'cs_NEU_ROTIEREN'
+    datev_no: 19377
+    order_type: AB
+
+  - name: Xond-Shop
+    enabled: true
+    url: https://shop.texma-gmbh.de/xond-shop/
+    consumer_key:     'ck_NEU_ROTIEREN'
+    consumer_secret:  'cs_NEU_ROTIEREN'
+    datev_no: 19705
+    order_type: AB
+
+  - name: SFS-Shop
+    enabled: true
+    url: https://shop.texma-gmbh.de/sfs-shop/
+    consumer_key:     'ck_NEU_ROTIEREN'
+    consumer_secret:  'cs_NEU_ROTIEREN'
+    datev_no: 19616
+    order_type: AB
+
+  - name: Allgaier-Shop
+    enabled: false                     # nach Keys eintragen auf true setzen
+    url: https://shop.texma-gmbh.de/allgaier/
+    consumer_key:     'ck_DEIN_KEY_HIER'
+    consumer_secret:  'cs_DEIN_SECRET_HIER'
+    datev_no: 10698
+    order_type: AB
+    included_statuses: [processing]    # NUR "In Bearbeitung", KEIN on-hold
+    combine_by_delivery: true          # Alle Bestellungen pro Lieferort in EINE Sammel-WEX
+
+  - name: Ensinger-Shop
+    enabled: false                     # nach Keys eintragen auf true setzen
+    url: https://shop.texma-gmbh.de/ensinger-shop/
+    consumer_key:     'ck_DEIN_KEY_HIER'
+    consumer_secret:  'cs_DEIN_SECRET_HIER'
+    datev_no: 14020
+    order_type: AB
+    # Import nur am Monatsersten. Weitere Tage ergänzen, wenn der 1.
+    # auf ein Wochenende fallen kann, z.B. [1, 2, 3] — die Duplikat-
+    # sicherung verhindert, dass dabei etwas doppelt importiert wird.
+    import_on_days: [1]
+    combine_by_delivery: true          # Alle Bestellungen pro Lieferort in EINE Sammel-WEX
+    aggregate_all_positions: true      # Gleiche Artikelvarianten über alle
+                                       # Bestellungen addieren, keine Trenner
+                                       # pro Person. Zuordnung steht in der Excel.
+    # Feste Hauptkundenadresse für den <Sender>-Block.
+    # NÖTIG, weil die Besteller im Mitarbeitershop keine Rechnungsadresse
+    # erfassen — ohne diesen Block ginge ein leerer Sender an CDH.
+    # ---> Werte aus dem CDH-Kundenstammsatz zu Debitor 14020 eintragen.
+    sender_address:
+      name1:    'BITTE EINTRAGEN — Firmenname lt. CDH'
+      street:   'BITTE EINTRAGEN — Straße'
+      postcode: 'BITTE EINTRAGEN — PLZ'
+      city:     'BITTE EINTRAGEN — Ort'
+      country:  DE
+    # Zusätzliche Meta-Felder, die NUR in der Excel landen (hinten
+    # angehängt, die 21 Standardspalten bleiben unverändert).
+    # Quelle: PPOM Fields im Ensinger-Shop, Gruppe "MitarbeiterIn".
+    # Die Werte hängen an der Position, nicht an der Bestellung — eine
+    # Bestellung kann also mehrere Personen enthalten.
+    # Kommt eine Spalte leer, stimmt der Data Name nicht — das Log sagt es.
+    extra_excel_meta:
+      - key: teambestellung
+        label: Teambestellung
+      - key: mitarbeiterin
+        label: Vorname (MitarbeiterIn)
+      - key: mitarbeiterin_2
+        label: Nachname (MitarbeiterIn)
+      - key: personalnummer
+        label: Personalnummer
+
+  - name: KVSW-Shop
+    enabled: false                     # nach Keys eintragen auf true setzen
+    url: https://shop.texma-gmbh.de/kvsw-re-shop/
+    consumer_key:     'ck_DEIN_KEY_HIER'
+    consumer_secret:  'cs_DEIN_SECRET_HIER'
+    datev_no: 19742
+    order_type: AB

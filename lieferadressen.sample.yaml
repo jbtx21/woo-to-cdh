@@ -1,0 +1,33 @@
+# Feste Lieferadressen je Shop und Lieferort — VORLAGE
+# ====================================================
+#
+# Die echte Datei heißt lieferadressen.yaml, liegt auf
+#   V:\Warenwirtschaftssystem\WooCommerce Import\
+# und wird vom Innendienst gepflegt. Sie gehört NICHT ins Repo
+# (enthält Namen und Anschriften von Ansprechpartnern).
+#
+# Aufbau:
+#   <Shop-Name wie in config.yaml>:
+#     <Lieferort = Versandart im Shop>:
+#       name1, name2 (optional), street, postcode, city, country
+#
+# Zwei Lieferorte dürfen dieselbe Anschrift haben — sie bleiben
+# trotzdem getrennte CDH-Aufträge (Beispiel: Seewalchen und Lenzing).
+
+Beispiel-Shop:
+
+  Hauptwerk:
+    name1:    Beispiel GmbH
+    name2:    z. Hd. Empfang
+    street:   Musterstraße 1
+    postcode: '12345'
+    city:     Musterstadt
+    country:  DE
+
+  Zweigwerk:
+    name1:    Beispiel GmbH
+    name2:    z. Hd. Empfang
+    street:   Musterstraße 1
+    postcode: '12345'
+    city:     Musterstadt
+    country:  DE

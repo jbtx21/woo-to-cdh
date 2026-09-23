@@ -1,0 +1,51 @@
+﻿<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<!--CDH-dietronic-WEX-Werbemittel-Exchange-XML-File-->
+<!--WEXVersion=1.0-->
+<PurchaseOrder XmlStandard="1" SystemId="CDH">
+  <OrderHeader>
+    <Sender>
+      <DatevNo>10000</DatevNo>
+      <NameAddress>
+        <Name1>Beispiel Fahrzeugbau GmbH</Name1>
+        <Name2 />
+        <Street>Industriestraße 4</Street>
+        <PostalCodeCity>71083</PostalCodeCity>
+        <City>Herrenberg</City>
+        <Country>DE</Country>
+        <Email>einkauf@beispiel.test</Email>
+      </NameAddress>
+    </Sender>
+    <Delivery>
+      <ModeOfShippment>Standardversand</ModeOfShippment>
+      <NameAddress>
+        <Name1>Beispiel Fahrzeugbau GmbH</Name1>
+        <Name2>Laura Hess</Name2>
+        <Street>Lindenweg 7</Street>
+        <PostalCodeCity>71154</PostalCodeCity>
+        <City>Nufringen</City>
+        <Country>DE</Country>
+        <Email>einkauf@beispiel.test</Email>
+      </NameAddress>
+    </Delivery>
+    <OrderNo>402 Laura Hess</OrderNo>
+    <OrderDate>14.09.2026</OrderDate>
+    <OrderId>AB</OrderId>
+  </OrderHeader>
+  <ListOfOrderDetails>
+    <OrderDetails>
+      <Quantity>2</Quantity>
+      <ArticleNo1>042/POLO-M</ArticleNo1>
+      <Description1>Poloshirt Damen</Description1>
+      <DescriptionText2>navy, M</DescriptionText2>
+      <SellingPrice>24.9</SellingPrice>
+      <BuyingPrice>12.1</BuyingPrice>
+    </OrderDetails>
+    <OrderDetails>
+      <Quantity>2</Quantity>
+      <ArticleNo1>004/STICK-LOGO</ArticleNo1>
+      <Description1>Stick Logo</Description1>
+      <SellingPrice>6.5</SellingPrice>
+      <BuyingPrice>3.2</BuyingPrice>
+    </OrderDetails>
+  </ListOfOrderDetails>
+</PurchaseOrder>

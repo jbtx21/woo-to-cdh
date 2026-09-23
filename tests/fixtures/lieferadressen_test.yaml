@@ -1,0 +1,16 @@
+# Testdaten — erfundene Anschriften
+Mitarbeiter-Shop:
+  Seewalchen:
+    name1: Beispiel Austria GmbH
+    name2: z. Hd. Empfang
+    street: Werkplatz 1
+    postcode: '4863'
+    city: Seewalchen
+    country: AT
+  Lenzing:
+    name1: Beispiel Austria GmbH
+    name2: z. Hd. Empfang
+    street: Werkplatz 1
+    postcode: '4863'
+    city: Seewalchen
+    country: AT

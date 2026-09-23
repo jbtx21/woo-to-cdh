@@ -1,0 +1,60 @@
+﻿<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<!--CDH-dietronic-WEX-Werbemittel-Exchange-XML-File-->
+<!--WEXVersion=1.0-->
+<PurchaseOrder XmlStandard="1" SystemId="CDH">
+  <OrderHeader>
+    <Sender>
+      <DatevNo>10000</DatevNo>
+      <NameAddress>
+        <Name1>Beispiel Austria GmbH</Name1>
+        <Name2 />
+        <Street>Werkplatz 1</Street>
+        <PostalCodeCity>4863</PostalCodeCity>
+        <City>Seewalchen</City>
+        <Country>AT</Country>
+        <Email>e.pichler@beispiel.test</Email>
+      </NameAddress>
+    </Sender>
+    <Delivery>
+      <ModeOfShippment>Lenzing</ModeOfShippment>
+      <NameAddress>
+        <Name1>Beispiel Austria GmbH</Name1>
+        <Name2>z. Hd. Empfang</Name2>
+        <Street>Werkplatz 1</Street>
+        <PostalCodeCity>4863</PostalCodeCity>
+        <City>Seewalchen</City>
+        <Country>AT</Country>
+        <Email>e.pichler@beispiel.test</Email>
+      </NameAddress>
+    </Delivery>
+    <OrderNo>2772+2773</OrderNo>
+    <OrderDate>01.10.2026</OrderDate>
+    <OrderId>AB</OrderId>
+  </OrderHeader>
+  <ListOfOrderDetails>
+    <OrderDetails>
+      <Quantity>1</Quantity>
+      <ArticleNo1 />
+      <Description1>Lenzing</Description1>
+      <DescriptionText2>2 Bestellungen</DescriptionText2>
+      <SellingPrice>0.00</SellingPrice>
+      <BuyingPrice>0.00</BuyingPrice>
+    </OrderDetails>
+    <OrderDetails>
+      <Quantity>3</Quantity>
+      <ArticleNo1>ENS-HOODY-M</ArticleNo1>
+      <Description1>Hoody (Unisex)</Description1>
+      <DescriptionText2>mindful blue, M</DescriptionText2>
+      <SellingPrice>31.73</SellingPrice>
+      <BuyingPrice>18.45</BuyingPrice>
+    </OrderDetails>
+    <OrderDetails>
+      <Quantity>1</Quantity>
+      <ArticleNo1>ENS-HOODY-L</ArticleNo1>
+      <Description1>Hoody (Unisex)</Description1>
+      <DescriptionText2>mindful blue, L</DescriptionText2>
+      <SellingPrice>31.73</SellingPrice>
+      <BuyingPrice>18.45</BuyingPrice>
+    </OrderDetails>
+  </ListOfOrderDetails>
+</PurchaseOrder>

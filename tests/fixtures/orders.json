@@ -1,0 +1,94 @@
+{
+  "_hinweis": "Anonymisierte Testbestellungen. Namen und Anschriften sind erfunden.",
+
+  "einzeln": {
+    "id": 1402, "number": "402", "status": "processing",
+    "date_created": "2026-09-14T09:12:00", "customer_note": "Bitte bis Freitag",
+    "billing": {"company": "Beispiel Fahrzeugbau GmbH", "first_name": "Laura", "last_name": "Hess",
+                "address_1": "Industriestraße 4", "address_2": "", "postcode": "71083",
+                "city": "Herrenberg", "country": "DE", "email": "einkauf@beispiel.test"},
+    "shipping": {"company": "", "first_name": "Laura", "last_name": "Hess",
+                 "address_1": "Lindenweg 7", "address_2": "", "postcode": "71154",
+                 "city": "Nufringen", "country": "DE"},
+    "shipping_lines": [{"method_title": "Standardversand"}],
+    "meta_data": [],
+    "line_items": [
+      {"sku": "042/POLO-M", "name": "Poloshirt Damen - navy, M", "quantity": 2,
+       "product_id": 10, "variation_id": 11, "total": "49.80",
+       "meta_data": [{"key": "pa_farbe", "display_value": "navy"}, {"key": "pa_groesse", "display_value": "M"}]},
+      {"sku": "004/STICK-LOGO", "name": "Stick Logo", "quantity": 1,
+       "product_id": 20, "variation_id": 0, "total": "6.50", "meta_data": []},
+      {"sku": "004/STICK-LOGO", "name": "Stick Logo", "quantity": 1,
+       "product_id": 20, "variation_id": 0, "total": "6.50", "meta_data": []}
+    ]
+  },
+
+  "trenn": [
+    {"id": 3939, "number": "3939", "status": "processing", "date_created": "2026-09-14T09:12:00",
+     "billing": {"company": "Beispiel Agrar GmbH", "first_name": "Anna", "last_name": "Weber",
+                 "address_1": "Mühlgasse 12", "postcode": "89604", "city": "Allmendingen", "country": "DE",
+                 "email": "einkauf@agrar.test"},
+     "shipping": {"first_name": "Anna", "last_name": "Weber", "address_1": "Hauptstraße 1",
+                  "postcode": "75392", "city": "Deckenpfronn", "country": "DE"},
+     "shipping_lines": [{"method_title": "Bondorf"}], "meta_data": [],
+     "line_items": [
+       {"sku": "396/SHIRT-4XL", "name": "Safety T-Shirt, warnrot - 4XL", "quantity": 2,
+        "product_id": 30, "variation_id": 31, "total": "107.18",
+        "meta_data": [{"key": "groesse", "display_value": "4XL"}]},
+       {"sku": "234/SRFX-LOGO", "name": "Silberreflex Logo", "quantity": 7,
+        "product_id": 40, "variation_id": 0, "total": "0.00", "meta_data": []}
+     ]},
+    {"id": 3940, "number": "3940", "status": "processing", "date_created": "2026-09-14T10:00:00",
+     "billing": {"company": "Beispiel Agrar GmbH", "first_name": "Tim", "last_name": "Roth",
+                 "address_1": "Mühlgasse 12", "postcode": "89604", "city": "Allmendingen", "country": "DE",
+                 "email": "einkauf@agrar.test"},
+     "shipping": {"first_name": "Tim", "last_name": "Roth", "address_1": "Dorfweg 3",
+                  "postcode": "89605", "city": "Altheim", "country": "DE"},
+     "shipping_lines": [{"method_title": "Bondorf"}], "meta_data": [],
+     "line_items": [
+       {"sku": "396/SHIRT-4XL", "name": "Safety T-Shirt, warnrot - 4XL", "quantity": 1,
+        "product_id": 30, "variation_id": 31, "total": "53.59",
+        "meta_data": [{"key": "groesse", "display_value": "4XL"}]},
+       {"sku": "234/SRFX-LOGO", "name": "Silberreflex Logo", "quantity": 5,
+        "product_id": 40, "variation_id": 0, "total": "0.00", "meta_data": []}
+     ]}
+  ],
+
+  "mitarbeitershop": [
+    {"id": 2771, "number": "2771", "status": "processing", "date_created": "2026-10-01T08:00:00",
+     "billing": {"first_name": "Lena", "last_name": "Kurz", "email": "l.kurz@beispiel.test"},
+     "shipping": {"first_name": "Lena", "last_name": "Kurz"},
+     "shipping_lines": [{"method_title": "Seewalchen"}], "meta_data": [],
+     "line_items": [
+       {"sku": "ENS-HOODY-M", "name": "Hoody (Unisex) - mindful blue, M", "quantity": 1,
+        "product_id": 50, "variation_id": 51, "total": "18.00",
+        "meta_data": [{"key": "pa_farbe", "display_value": "mindful blue"}, {"key": "pa_groesse", "display_value": "M"},
+                      {"key": "teambestellung", "value": "ja", "display_value": "Ja", "display_key": "Sie bestellen für jemand anderen?"},
+                      {"key": "mitarbeiterin", "value": "Jonas", "display_key": "Vorname"},
+                      {"key": "mitarbeiterin_2", "value": "Brandt", "display_key": "Nachname"},
+                      {"key": "personalnummer", "value": "P-1001", "display_key": "Personalnummer"}]}
+     ]},
+    {"id": 2772, "number": "2772", "status": "processing", "date_created": "2026-10-01T08:10:00",
+     "billing": {"first_name": "Eva", "last_name": "Pichler", "email": "e.pichler@beispiel.test"},
+     "shipping": {"first_name": "Eva", "last_name": "Pichler"},
+     "shipping_lines": [{"method_title": "Lenzing"}], "meta_data": [],
+     "line_items": [
+       {"sku": "ENS-HOODY-M", "name": "Hoody (Unisex) - mindful blue, M", "quantity": 1,
+        "product_id": 50, "variation_id": 51, "total": "18.00",
+        "meta_data": [{"key": "pa_farbe", "display_value": "mindful blue"}, {"key": "pa_groesse", "display_value": "M"},
+                      {"key": "teambestellung", "value": "nein", "display_value": "Nein"}]}
+     ]},
+    {"id": 2773, "number": "2773", "status": "processing", "date_created": "2026-10-01T08:20:00",
+     "billing": {"first_name": "Karl", "last_name": "Moser", "email": "k.moser@beispiel.test"},
+     "shipping": {"first_name": "Karl", "last_name": "Moser"},
+     "shipping_lines": [{"method_title": "Lenzing"}], "meta_data": [],
+     "line_items": [
+       {"sku": "ENS-HOODY-M", "name": "Hoody (Unisex) - mindful blue, M", "quantity": 2,
+        "product_id": 50, "variation_id": 51, "total": "36.00",
+        "meta_data": [{"key": "pa_groesse", "display_value": "M"}, {"key": "pa_farbe", "display_value": "mindful blue"}]},
+       {"sku": "ENS-HOODY-L", "name": "Hoody (Unisex) - mindful blue, L", "quantity": 1,
+        "product_id": 50, "variation_id": 52, "total": "18.00",
+        "meta_data": [{"key": "pa_farbe", "display_value": "mindful blue"}, {"key": "pa_groesse", "display_value": "L"}]}
+     ]}
+  ]
+}

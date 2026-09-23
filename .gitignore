@@ -1,0 +1,33 @@
+# --- Zugangsdaten und Betriebsdaten: gehören auf V:, nie ins Repo ---
+config.yaml
+zugang.yaml
+einstellungen.yaml
+lieferadressen.yaml
+exported.log
+running.lock
+logs/
+wex-archiv/
+excel-archiv/
+Backup/
+*.wex
+!tests/golden/*.wex
+*.xlsx
+*.xls
+
+# --- Build ---
+build/
+dist/
+*.spec
+*.exe
+
+# --- Python ---
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+venv/
+
+# --- System ---
+.DS_Store
+Thumbs.db
+desktop.ini

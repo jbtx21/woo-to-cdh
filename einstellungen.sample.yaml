@@ -71,20 +71,14 @@ shops:
     combine_by_delivery: true
     aggregate_all_positions: true
     # Lieferort ohne feste Adresse in lieferadressen.yaml:
-    #   cdh (Standard: Anschrift leer, CDH nimmt die Standardadresse) ·
-    #   firma (Kundenadresse) · versand (Versandadresse der ersten
-    #   Bestellung) · sperren (Lieferort wird nicht importiert)
+    #   cdh (Standard: Anschrift leer, CDH liefert an den Kundenstamm) ·
+    #   firma (Rechnungsadresse der ersten Bestellung) · versand
+    #   (Versandadresse der ersten Bestellung) · sperren (nicht importieren)
     unknown_delivery: cdh
     # Summenblatt in der Excel: je Lieferort, mit Veredelungen
     excel_summary: true
     excel_summary_by: ort
     excel_summary_veredelungen: true
-    sender_address:
-      name1:    'BITTE EINTRAGEN — Firmenname lt. CDH'
-      street:   'BITTE EINTRAGEN — Straße'
-      postcode: 'BITTE EINTRAGEN — PLZ'
-      city:     'BITTE EINTRAGEN — Ort'
-      country:  DE
     extra_excel_meta:
       - key: teambestellung
         label: Teambestellung

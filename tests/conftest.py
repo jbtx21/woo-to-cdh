@@ -142,9 +142,7 @@ def umgebung(tmp_path, monkeypatch, orders):
             {**shop, "name": "Agrar-Shop", "url": "https://shop.example/agrar/",
              "combine_by_delivery": True},
             {**shop, "name": "Mitarbeiter-Shop", "url": "https://shop.example/mitarbeiter/",
-             "combine_by_delivery": True, "aggregate_all_positions": True,
-             "sender_address": {"name1": "Beispiel Austria GmbH", "street": "Werkplatz 1",
-                                "postcode": "4863", "city": "Seewalchen", "country": "AT"}},
+             "combine_by_delivery": True, "aggregate_all_positions": True},
         ],
     }
     return {"cfg": cfg, "tmp": tmp_path, "cdh": cdh}

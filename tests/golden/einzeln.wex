@@ -6,13 +6,13 @@
     <Sender>
       <DatevNo>10000</DatevNo>
       <NameAddress>
-        <Name1>Beispiel Fahrzeugbau GmbH</Name1>
+        <Name1 />
         <Name2 />
-        <Street>Industriestraße 4</Street>
-        <PostalCodeCity>71083</PostalCodeCity>
-        <City>Herrenberg</City>
-        <Country>DE</Country>
-        <Email>einkauf@beispiel.test</Email>
+        <Street />
+        <PostalCodeCity />
+        <City />
+        <Country />
+        <Email />
       </NameAddress>
     </Sender>
     <Delivery>

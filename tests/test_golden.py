@@ -53,8 +53,7 @@ def test_golden_trennzeilen_cdh_standard(orders, client, tmp_path):
 
 
 def test_golden_zusammengefasst(orders, client, delivery_table, tmp_path):
-    sender = {"name1": "Beispiel Austria GmbH", "street": "Werkplatz 1", "postcode": "4863", "city": "Seewalchen", "country": "AT"}
-    data = [build(o, client, sender_address=sender) for o in orders["mitarbeitershop"][1:]]
+    data = [build(o, client) for o in orders["mitarbeitershop"][1:]]
     c = w.build_combined_wex_data(data, {"datev_no": 10000, "aggregate_all_positions": True}, "Lenzing")
     w.apply_delivery_address(c, "Mitarbeiter-Shop", "Lenzing", delivery_table)
     _check("sammel_zusammengefasst.wex", c, tmp_path)

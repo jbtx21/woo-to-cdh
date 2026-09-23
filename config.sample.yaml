@@ -123,24 +123,14 @@ shops:
                                        # Bestellungen addieren, keine Trenner
                                        # pro Person. Zuordnung steht in der Excel.
     # Lieferort ohne feste Adresse in lieferadressen.yaml:
-    #   cdh (Standard: Anschrift leer, CDH nimmt die Standardadresse) ·
-    #   firma (Kundenadresse) · versand (Versandadresse der ersten
-    #   Bestellung) · sperren (Lieferort wird nicht importiert)
+    #   cdh (Standard: Anschrift leer, CDH liefert an den Kundenstamm) ·
+    #   firma (Rechnungsadresse der ersten Bestellung) · versand
+    #   (Versandadresse der ersten Bestellung) · sperren (nicht importieren)
     unknown_delivery: cdh
     # Summenblatt in der Excel: je Lieferort, mit Veredelungen
     excel_summary: true
     excel_summary_by: ort
     excel_summary_veredelungen: true
-    # Feste Hauptkundenadresse für den <Sender>-Block.
-    # NÖTIG, weil die Besteller im Mitarbeitershop keine Rechnungsadresse
-    # erfassen — ohne diesen Block ginge ein leerer Sender an CDH.
-    # ---> Werte aus dem CDH-Kundenstammsatz zu Debitor 14020 eintragen.
-    sender_address:
-      name1:    'BITTE EINTRAGEN — Firmenname lt. CDH'
-      street:   'BITTE EINTRAGEN — Straße'
-      postcode: 'BITTE EINTRAGEN — PLZ'
-      city:     'BITTE EINTRAGEN — Ort'
-      country:  DE
     # Zusätzliche Meta-Felder, die NUR in der Excel landen (hinten
     # angehängt, die 21 Standardspalten bleiben unverändert).
     # Quelle: PPOM Fields im Ensinger-Shop, Gruppe "MitarbeiterIn".

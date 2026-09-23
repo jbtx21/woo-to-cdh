@@ -87,9 +87,10 @@ Zug. Die Oberfläche braucht zwei Schritte:
 
 Jeweils mit Tests:
 
-- **Prüfregeln:** Kundenadresse fehlt → ~~Shop gesperrt~~ CDH-Standardadresse
-  (siehe Entscheidung unten). Lieferort ohne feste Adresse → je Einstellung
-  CDH-Standard, Kundenadresse, Versandadresse oder Sperre. EK fehlt → nur Hinweis.
+- **Prüfregeln:** ~~Kundenadresse fehlt → Shop gesperrt~~ entfällt, der Sender
+  trägt nur die DatevNo (siehe CDH-Test unten). Lieferort ohne feste Adresse →
+  je Einstellung CDH-Standard, Rechnungsadresse, Versandadresse oder Sperre.
+  EK fehlt → nur Hinweis.
 - **Versandarten** aus den WooCommerce-Versandzonen
   (`/shipping/zones`, `/shipping/zones/{id}/methods`), Abgleich mit den
   Lieferadressen: fehlende Adressen, Adressen ohne passende Versandart.
@@ -109,13 +110,26 @@ als verwaist gelten. **Nach dem 01.10. auf V: nachziehen:** `006/` in
 `veredelung_prefixes` der echten Konfiguration (sie überschreibt die
 Standardliste), für Ensinger `excel_summary` festlegen.
 
-**Entscheidung 23.09.2026 — Adressen:** Fehlt eine Adresse (Kundenadresse
-unvollständig, Lieferanschrift unvollständig, Lieferort ohne feste Adresse),
-bleibt die Anschrift im WEX leer und CDH nimmt die Standardadresse aus dem
-Kundenstamm. Keine Shop-Sperre mehr wegen fehlender Kundenadresse.
-`unknown_delivery` Standard `cdh`. Golden `sammel_cdh_standard.wex` neu.
-Voraussetzung, beim ersten Testimport prüfen: CDH überschreibt den
-Kundenstamm bei leerer Anschrift nicht (Frage 2).
+**CDH-Test 23.09.2026** (Jannik, Testkunde 99999, Aufträge 57420–57422):
+
+| Test | WEX | Ergebnis in CDH |
+|---|---|---|
+| 1 | Sender-Anschrift leer, Lieferung gefüllt | Auftragskopf aus dem Kundenstamm, Lieferadresse wie im WEX |
+| 2 | Sender gefüllt, Lieferung leer | Sender-Anschrift nur im Auftragskopf, Kundenstamm unverändert; keine Lieferadresse, CDH liefert an den Kopf |
+| 3 | Sender abweichend, Lieferung gefüllt | Sender nur im Kopf, Kundenstamm unverändert, Lieferadresse wie im WEX |
+
+Die DatevNo ist die Kundennummer in CDH. Gibt es sie nicht, legt CDH einen
+temporären Kunden an — **die DatevNo muss in CDH existieren.**
+
+**Entscheidung 23.09.2026 — Adressen (umgesetzt):** Sender-Anschrift immer
+leer, einschließlich E-Mail; nur die DatevNo wird geschickt, CDH füllt den
+Kopf aus dem Kundenstamm. `sender_address` und die Prüfregel „Kundenadresse
+unvollständig" entfallen; ein noch gesetztes `sender_address` erzeugt einen
+Hinweis im Log und wird ignoriert. Lieferanschrift unvollständig oder
+Lieferort ohne feste Adresse → Lieferanschrift leer, CDH liefert an den Kopf
+(`unknown_delivery` Standard `cdh`). Golden-WEX: alle Sender-Blöcke leer,
+`sammel_cdh_standard.wex` neu. **Nach dem 01.10. auf V:** `sender_address`
+aus dem Ensinger-Block entfernen (sonst nur Log-Hinweis).
 
 **STOPP — Sichtung.**
 
@@ -191,8 +205,9 @@ Vor Welle 3 klären:
 1. ✅ **E-Mail im Sender-Block.** Entschieden: Bei Sammelaufträgen leer,
    außer in `sender_address` gesetzt. Umgesetzt in Welle 3, Golden-WEX
    aktualisiert.
-2. **Kundenstamm:** Überschreibt CDH beim WEX-Import den Kundenstammsatz aus dem
-   Sender-Block, oder nur die Anschrift im Auftrag?
+2. ✅ **Kundenstamm:** Beantwortet durch den CDH-Test vom 23.09.2026 (Welle 4):
+   Der Sender landet nur im Auftragskopf, der Kundenstamm bleibt unverändert.
+   Der Sender trägt seitdem nur noch die DatevNo.
 3. **Exit-Code** von `CDH_WEX.EXE` bei fehlgeschlagenem Import — steht seit dem
    Warte-Fix im Log. Ungleich 0 bei Fehlern, dann kann die Oberfläche
    Fehlschläge rot markieren.

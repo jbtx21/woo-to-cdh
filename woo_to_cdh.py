@@ -326,14 +326,11 @@ def build_wex_data(order: dict, shop_cfg: dict, client: WooClient,
     ship = order.get("shipping") or {}
     billing = order.get("billing") or {}
 
-    # --- Sender = Hauptkunde in CDH = RECHNUNGSADRESSE --------------------
-    # Laut WEX-Spec enthält der Sender-Block nur Debitorennummer und
-    # Hauptkundenadresse — also die Firmenanschrift, die zur DatevNo gehört.
-    # Bei Allgaier ist das immer "Allgaier Agrarhandel, Allmendingen",
-    # unabhängig davon, wer bestellt hat.
-    # Der Name des Bestellers gehört NICHT hierher: Er würde sonst bei jeder
-    # Bestellung den Ansprechpartner im Kundenstammsatz überschreiben.
-    # Er steht im Delivery-Block (und bei Sammelaufträgen in den Trennzeilen).
+    # --- Rechnungsadresse aus dem Shop ------------------------------------
+    # Geht NICHT in den <Sender>-Block: Dort steht nur die DatevNo, CDH
+    # füllt den Auftragskopf aus dem Kundenstamm (Entscheidung und CDH-Test
+    # 23.09.2026). Der Name des Bestellers steht im Delivery-Block (und bei
+    # Sammelaufträgen in den Trennzeilen).
     bill_person = f"{billing.get('first_name', '')} {billing.get('last_name', '')}".strip()
     name1 = (billing.get("company") or "").strip()
     if not name1:
@@ -347,21 +344,10 @@ def build_wex_data(order: dict, shop_cfg: dict, client: WooClient,
     city = billing.get("city") or ""
     country = billing.get("country") or "DE"
     email = billing.get("email") or ""
-
-    # Feste Hauptkundenadresse aus der Config hat Vorrang.
-    # Nötig für Mitarbeitershops: Dort erfassen die Besteller keine
-    # Rechnungsadresse, die WooCommerce-Felder bleiben leer. Ohne diesen
-    # Block ginge ein leerer Sender an CDH — und CDH könnte damit den
-    # Kundenstammsatz überschreiben.
-    sender_cfg = shop_cfg.get("sender_address") or {}
-    if sender_cfg:
-        name1 = str(sender_cfg.get("name1") or name1).strip()
-        street = str(sender_cfg.get("street") or street).strip()
-        postcode = str(sender_cfg.get("postcode") or postcode).strip()
-        city = str(sender_cfg.get("city") or city).strip()
-        country = str(sender_cfg.get("country") or country).strip()
-        if sender_cfg.get("email"):
-            email = str(sender_cfg["email"]).strip()
+    # name1…country sind die Rechnungsadresse aus dem Shop. In den
+    # <Sender>-Block kommen sie NICHT (write_cdh_wex schreibt dort nur die
+    # DatevNo) — gebraucht werden sie als Rückfall für die Lieferanschrift
+    # und für unknown_delivery: firma.
 
     # --- Delivery = LIEFERADRESSE -----------------------------------------
     # Versandfelder haben Vorrang, Rechnung nur als Fallback (z.B. wenn im
@@ -715,9 +701,9 @@ def build_combined_wex_data(orders_data: list[dict], shop_cfg: dict,
     In beiden Fällen gilt: OrderNo enthält alle Bestellnummern mit "+"
     verbunden, die Kopfadresse kommt aus der ersten Bestellung.
 
-    Die E-Mail bleibt leer, außer sie ist in sender_address gesetzt. Die
-    E-Mail der ersten Bestellung gehört einem einzelnen Besteller — gleiche
-    Fehlerklasse wie ein Personenname in Name2 (Entscheidung 23.09.2026).
+    Die E-Mail bleibt leer: Die E-Mail der ersten Bestellung gehört einem
+    einzelnen Besteller — gleiche Fehlerklasse wie ein Personenname in Name2
+    (Entscheidung 23.09.2026).
     """
     if not orders_data:
         raise OrderBuildError("build_combined_wex_data: keine Bestellungen "
@@ -728,8 +714,6 @@ def build_combined_wex_data(orders_data: list[dict], shop_cfg: dict,
     combined_no = "+".join(order_nos)
 
     aggregate_all = bool(shop_cfg.get("aggregate_all_positions"))
-    sender_email = str((shop_cfg.get("sender_address") or {}).get("email")
-                       or "").strip()
 
     all_positions: list[dict] = []
 
@@ -763,7 +747,7 @@ def build_combined_wex_data(orders_data: list[dict], shop_cfg: dict,
             "postcode":         first["postcode"],
             "city":             first["city"],
             "country":          first["country"],
-            "email":            sender_email,
+            "email":            "",
             "del_name1":        first["name1"],
             "del_name2":        "",
             "del_street":       first["street"],
@@ -818,17 +802,17 @@ def build_combined_wex_data(orders_data: list[dict], shop_cfg: dict,
         "datev_no":         first["datev_no"],
         "contact_person":   first.get("contact_person", ""),
         "mode_of_shipment": delivery_location or first.get("mode_of_shipment", ""),
-        # Sender = Rechnungsadresse der Firma. Die ist bei allen Bestellungen
-        # eines Shops identisch, deshalb ist "first" hier unkritisch.
-        # Name2 (Ansprechpartner) bleibt leer: Der Sammelauftrag gehört
-        # keiner einzelnen Person — die Namen stehen in den Trennzeilen.
+        # Rechnungsadresse der ersten Bestellung — geht nicht in den Sender
+        # (dort nur DatevNo), dient als Lieferanschrift bei
+        # unknown_delivery: firma. Name2 bleibt leer: Der Sammelauftrag
+        # gehört keiner einzelnen Person.
         "name1":            first["name1"],
         "name2":            "",
         "street":           first["street"],
         "postcode":         first["postcode"],
         "city":             first["city"],
         "country":          first["country"],
-        "email":            sender_email,
+        "email":            "",
         # Delivery: bewusst die Firmenadresse, NICHT die private
         # Lieferadresse der ersten Bestellung. Ein Sammelauftrag bündelt
         # mehrere Empfänger; welcher Standort gemeint ist, steht in
@@ -931,17 +915,17 @@ def write_cdh_wex(target_path: Path, data: dict) -> None:
     parts.append('<PurchaseOrder XmlStandard="1" SystemId="CDH">\n')
     parts.append('  <OrderHeader>\n')
 
-    # Sender: Absender (= Besteller im Shop)
+    # Sender: nur die DatevNo, Anschrift immer leer. CDH füllt den
+    # Auftragskopf dann aus dem Kundenstamm; der Kundenstamm selbst wird
+    # durch den Sender nie geändert (CDH-Test mit Kunde 99999, 23.09.2026).
+    # Die DatevNo muss in CDH existieren, sonst legt CDH einen temporären
+    # Kunden an.
     parts.append('    <Sender>\n')
     parts.append(_xml_tag("DatevNo", data["datev_no"], "      "))
     parts.append('      <NameAddress>\n')
-    parts.append(_xml_tag("Name1",          data["name1"],       "        "))
-    parts.append(_xml_tag("Name2",          data["name2"],       "        "))
-    parts.append(_xml_tag("Street",         data["street"],      "        "))
-    parts.append(_xml_tag("PostalCodeCity", data["postcode"],    "        "))
-    parts.append(_xml_tag("City",           data["city"],        "        "))
-    parts.append(_xml_tag("Country",        data["country"],     "        "))
-    parts.append(_xml_tag("Email",          data["email"],       "        "))
+    for tag in ("Name1", "Name2", "Street", "PostalCodeCity", "City",
+                "Country", "Email"):
+        parts.append(_xml_tag(tag, "", "        "))
     parts.append('      </NameAddress>\n')
     parts.append('    </Sender>\n')
 
@@ -1499,18 +1483,18 @@ def _status_after_export(shop_cfg: dict, global_cfg: dict) -> str:
 # CDH nimmt die Standardadresse aus dem Kundenstamm (Entscheidung 23.09.2026).
 UNKNOWN_DELIVERY = {
     "cdh":      "Standardadresse aus CDH (Anschrift leer)",
-    "firma":    "Kundenadresse verwenden",
+    "firma":    "Rechnungsadresse aus dem Shop",
     "versand":  "Versandadresse der ersten Bestellung",
     "sperren":  "Import sperren",
 }
-_SENDER_PFLICHT = (("name1", "Firma"), ("street", "Straße"),
-                   ("postcode", "PLZ"), ("city", "Ort"))
+_ANSCHRIFT_PFLICHT = (("name1", "Firma"), ("street", "Straße"),
+                      ("postcode", "PLZ"), ("city", "Ort"))
 
 
 def _regel_lieferort_ohne_adresse(einheit: "Einheit", orders_data: list,
                                   shop_cfg: dict, tabelle_da: bool) -> None:
     """Sammel-Modus, Lieferort ohne feste Adresse: je nach unknown_delivery
-    CDH-Standardadresse (Standard), Kundenadresse, Versandadresse der
+    CDH-Standardadresse (Standard), Rechnungsadresse aus dem Shop, Versandadresse der
     ersten Bestellung oder Sperre."""
     regel = str(shop_cfg.get("unknown_delivery") or "cdh").strip().lower()
     if regel not in UNKNOWN_DELIVERY:
@@ -1548,11 +1532,10 @@ def _regel_lieferort_ohne_adresse(einheit: "Einheit", orders_data: list,
             "Keine feste Lieferadresse hinterlegt — es gilt die Firmenadresse.")
 
 
-def _fehlende_kundenadresse(data: dict, praefix: str = "") -> list[str]:
-    """Pflichtfelder der Anschrift, die fehlen oder Platzhalter sind.
-    praefix="del_" prüft die Lieferanschrift."""
+def _fehlende_anschrift(data: dict, praefix: str = "del_") -> list[str]:
+    """Pflichtfelder der Lieferanschrift, die fehlen oder Platzhalter sind."""
     fehlt = []
-    for key, label in _SENDER_PFLICHT:
+    for key, label in _ANSCHRIFT_PFLICHT:
         wert = str(data.get(praefix + key) or "").strip()
         if not wert or "BITTE EINTRAGEN" in wert.upper():
             fehlt.append(label)
@@ -1562,30 +1545,18 @@ def _fehlende_kundenadresse(data: dict, praefix: str = "") -> list[str]:
 def _pruefregeln(erg: "ShopErgebnis") -> None:
     """
     Prüfregeln nach dem Bau der Einheiten:
-      - Kundenadresse (Sender) unvollständig → Sender-Anschrift leer, CDH
-        nimmt die Standardadresse zur DatevNo (Entscheidung 23.09.2026).
-        Hing die Lieferanschrift an der Kundenadresse, wird sie ebenfalls
-        geleert. Nur Hinweis, keine Sperre.
+      - Lieferanschrift unvollständig → Anschrift leer, CDH liefert an den
+        Auftragskopf (= Kundenstamm). Nur Hinweis, keine Sperre.
       - EK fehlt → nur Hinweis, der Preis bleibt in CDH leer.
+    Der Sender enthält ohnehin nur die DatevNo (siehe write_cdh_wex).
     Gesperrte Einheiten zählen als Fehler, damit der Konsolenlauf nicht
     still „0 Fehler“ meldet.
     """
     for e in erg.einheiten:
         data = e.wex_data
-        fehlt = _fehlende_kundenadresse(data)
-        if fehlt:
-            for k in ("name1", "name2", "street", "postcode", "city", "country"):
-                data[k] = ""
-            text = (f"Kundenadresse unvollständig ({', '.join(fehlt)}) — "
-                    f"Anschrift leer, CDH nimmt die Standardadresse zu "
-                    f"Debitor {data.get('datev_no')}.")
-            e.warnungen.append(text)
-            logging.warning("[%s] %s: %s", erg.shop, e.titel, text)
-
-        # Gleiche Regel für die Lieferanschrift: lieber leer (CDH-Standard)
-        # als halb gefüllt oder mit Platzhalter.
+        # Lieber leer (CDH-Standard) als halb gefüllt oder mit Platzhalter.
         if not data.get("delivery_leer"):
-            fehlt = _fehlende_kundenadresse(data, "del_")
+            fehlt = _fehlende_anschrift(data)
             if fehlt:
                 data["delivery_leer"] = True
                 text = (f"Lieferanschrift unvollständig ({', '.join(fehlt)}) — "
@@ -1680,6 +1651,11 @@ def _shop_abrufen(shop_cfg: dict, global_cfg: dict, exported_locally: set,
                         or global_cfg.get("excel_export_folder"))
     erg.excel_folder = (Path(excel_folder_cfg) if excel_folder_cfg
                         else erg.target_folder.parent / "excel-archiv")
+
+    if shop_cfg.get("sender_address"):
+        logging.warning("[%s] sender_address wird ignoriert — der Sender "
+                        "enthält nur die DatevNo, CDH nimmt die Anschrift "
+                        "aus dem Kundenstamm. Eintrag entfernen.", shop_name)
 
     combine_mode = bool(shop_cfg.get("combine_by_delivery"))
     _versandarten_pruefen(erg, combine_mode)

@@ -27,30 +27,35 @@ def _shop(u, name):
     return next(s for s in u["cfg"]["shops"] if s["name"] == name)
 
 
-# --- Prüfregel: Kundenadresse fehlt → CDH-Standardadresse ------------------
+# --- Sender: nur DatevNo (CDH-Test 23.09.2026) ------------------------------
 
-def test_kundenadresse_fehlt_sender_leer(umgebung, tmp_path):
-    del _shop(umgebung, "Mitarbeiter-Shop")["sender_address"]
+def test_sender_immer_nur_datevno(umgebung, tmp_path):
+    for e in _abrufen(umgebung).einheiten():
+        sender = _wex(e, tmp_path).split("<Sender>")[1].split("</Sender>")[0]
+        assert "<DatevNo>10000</DatevNo>" in sender
+        for tag in ("Name1", "Name2", "Street", "PostalCodeCity", "City",
+                    "Country", "Email"):
+            assert f"<{tag} />" in sender, (e.titel, tag)
+
+
+def test_sender_address_nur_hinweis_im_log(umgebung, caplog, tmp_path):
+    _shop(umgebung, "Mitarbeiter-Shop")["sender_address"] = {
+        "name1": "Beispiel Austria GmbH", "street": "Werkplatz 1"}
+    with caplog.at_level(logging.WARNING):
+        pruef = _abrufen(umgebung)
+    assert any("[Mitarbeiter-Shop] sender_address wird ignoriert" in r.getMessage()
+               for r in caplog.records)
+    e = next(e for e in pruef.einheiten() if e.titel == "Lenzing")
+    assert "Werkplatz 1" not in _wex(e, tmp_path).split("<Delivery>")[0]
+    assert not any(s.sperren for s in pruef.shops) and pruef.fehler == 0
+
+
+def test_mitarbeitershop_ohne_rechnungsadresse_kein_problem(umgebung):
+    """Besteller ohne Rechnungsanschrift (Ensinger) — früher der Grund für
+    sender_address, heute ohne Hinweis und ohne Sperre."""
     pruef = _abrufen(umgebung)
-    sh = next(s for s in pruef.shops if s.shop == "Mitarbeiter-Shop")
-    assert not sh.sperren and pruef.fehler == 0
-    lenzing = next(e for e in pruef.einheiten() if e.titel == "Lenzing")
-    assert any("Kundenadresse unvollständig (Straße, PLZ, Ort)" in t
-               for t in lenzing.warnungen)
-    xml = _wex(lenzing, tmp_path)
-    sender = xml.split("<Sender>")[1].split("</Sender>")[0]
-    for tag in ("Name1", "Street", "PostalCodeCity", "City", "Country"):
-        assert f"<{tag} />" in sender
-    assert "<DatevNo>10000</DatevNo>" in sender
-    # Feste Lieferadresse bleibt davon unberührt
-    assert "<Street>Werkplatz 1</Street>" in xml.split("<Delivery>")[1]
-
-
-def test_platzhalter_in_sender_address_wird_geleert(umgebung):
-    _shop(umgebung, "Mitarbeiter-Shop")["sender_address"]["street"] = "BITTE EINTRAGEN — Straße"
-    e = next(e for e in _abrufen(umgebung).einheiten() if e.titel == "Lenzing")
-    assert e.wex_data["street"] == "" and e.wex_data["name1"] == ""
-    assert any("(Straße)" in t for t in e.warnungen)
+    for e in pruef.einheiten():
+        assert not any("Kundenadresse" in t for t in e.warnungen)
 
 
 def test_einzel_ohne_lieferanschrift(umgebung, orders, tmp_path):
@@ -64,27 +69,19 @@ def test_einzel_ohne_lieferanschrift(umgebung, orders, tmp_path):
     assert any(t.startswith("Lieferanschrift unvollständig") for t in e.warnungen)
 
 
-def test_einzel_ohne_rechnungsanschrift(umgebung, orders, tmp_path):
-    o = orders["einzeln"]
-    o["billing"].update({"company": "", "address_1": "", "postcode": "", "city": ""})
-    FakeWoo.orders_by_url["https://shop.example/einzeln/"] = [o]
-    e = next(e for e in _abrufen(umgebung).einheiten() if e.titel == "402")
-    xml = _wex(e, tmp_path)
-    assert "<Street />" in xml.split("<Sender>")[1].split("</Sender>")[0]
-    # Versandadresse der Bestellung bleibt im Delivery-Block
-    assert "<Street>Lindenweg 7</Street>" in xml.split("<Delivery>")[1]
-
-
-def test_kundenadresse_und_lieferung_leer(umgebung, tmp_path):
-    """Sammel ohne feste Adresse, Kundenadresse unvollständig, Regel firma:
-    die Lieferanschrift hing an der Kundenadresse → ebenfalls leer."""
+def test_firma_ohne_rechnungsanschrift_lieferung_leer(umgebung, orders, tmp_path):
+    """unknown_delivery: firma, aber die erste Bestellung hat keine
+    vollständige Rechnungsanschrift → Lieferanschrift leer statt halb."""
     agrar = _shop(umgebung, "Agrar-Shop")
     agrar["unknown_delivery"] = "firma"
-    agrar["sender_address"] = {"street": "BITTE EINTRAGEN"}
+    for o in orders["trenn"]:
+        o["billing"]["address_1"] = ""
+    FakeWoo.orders_by_url["https://shop.example/agrar/"] = orders["trenn"]
     e = next(e for e in _abrufen(umgebung).einheiten() if e.titel == "Bondorf")
     delivery = _wex(e, tmp_path).split("<Delivery>")[1]
     assert "<Name1 />" in delivery and "<Street />" in delivery
     assert "<ModeOfShippment>Bondorf</ModeOfShippment>" in delivery
+    assert any("Lieferanschrift unvollständig (Straße)" in t for t in e.warnungen)
 
 
 def test_vollstaendige_adressen_keine_sperre(umgebung):
@@ -101,8 +98,6 @@ def test_lieferort_ohne_adresse_standard_cdh(umgebung, tmp_path):
     assert "<ModeOfShippment>Bondorf</ModeOfShippment>" in delivery
     for tag in ("Name1", "Name2", "Street", "PostalCodeCity", "City", "Country"):
         assert f"<{tag} />" in delivery
-    # Sender bleibt die vollständige Kundenadresse
-    assert "<Street />" not in _wex(e, tmp_path).split("<Sender>")[1].split("</Sender>")[0]
 
 
 def test_lieferort_ohne_adresse_firma(umgebung):

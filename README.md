@@ -178,30 +178,28 @@ solche Artikel mit ⚠.
 
 Die häufigste Fehlerquelle. Beide Blöcke haben eine feste Bedeutung:
 
-| Block        | Inhalt                          | Quelle in WooCommerce |
-|--------------|----------------------------------|-----------------------|
-| `<Sender>`   | Hauptkunde, gehört zur DatevNo   | **Rechnungsadresse**  |
-| `<Delivery>` | Wohin die Ware geht              | **Versandadresse**    |
+| Block        | Inhalt                          | Quelle |
+|--------------|----------------------------------|--------|
+| `<Sender>`   | **nur die DatevNo**, Anschrift und E-Mail immer leer | Debitornummer des Shops |
+| `<Delivery>` | Wohin die Ware geht              | feste Lieferadresse, sonst Versandadresse der Bestellung |
 
-Erfassen die Besteller keine Rechnungsadresse — typisch für Mitarbeiter-
-shops wie Ensinger — bleiben die WooCommerce-Felder leer und der Sender
-ginge ohne Anschrift an CDH. Dagegen gibt es `sender_address` pro Shop:
+**CDH-Test mit Testkunde 99999 am 23.09.2026** (Aufträge 57420–57422):
 
-```yaml
-    sender_address:
-      name1:    Ensinger GmbH
-      street:   Rudolf-Diesel-Str. 8
-      postcode: '71154'
-      city:     Nufringen
-      country:  DE
-```
+| Test | WEX | Ergebnis in CDH |
+|---|---|---|
+| 1 | Sender-Anschrift leer, Lieferung gefüllt | Auftragskopf aus dem Kundenstamm, Lieferadresse wie im WEX |
+| 2 | Sender gefüllt, Lieferung leer | Anschrift aus dem WEX nur im Auftragskopf, **Kundenstamm unverändert**; keine Lieferadresse, CDH liefert an den Kopf |
+| 3 | Sender abweichend, Lieferung gefüllt | wie 2, Lieferadresse wie im WEX |
 
-Die Werte stammen aus dem CDH-Kundenstammsatz zur jeweiligen DatevNo und
-überschreiben die Rechnungsadresse aus dem Shop.
+Daraus: Der Sender trägt nur die DatevNo, CDH füllt den Kopf immer aus dem
+Kundenstamm. `sender_address` ist abgeschafft; steht es noch in einer
+Konfiguration, schreibt der Abruf einen Hinweis ins Log und ignoriert es.
 
-`Name2` bleibt im Sender leer. Stünde dort der Besteller, würde CDH bei jeder
-Bestellung den Ansprechpartner im Kundenstammsatz überschreiben. Der Name des
-Empfängers steht im Delivery-Block.
+**Die DatevNo muss in CDH als Kunde existieren.** Gibt es sie nicht, legt
+CDH einen temporären Kunden ohne Anschrift an — Debitornummer im Shop-Block
+daher beim Anbinden in CDH nachsehen (Abschnitt 12).
+
+Der Name des Empfängers steht nur im Delivery-Block, nie im Sender.
 
 `ModeOfShippment` trägt den Lieferort — bei Allgaier und Ensinger ist das die
 Versandart im Shop, also der Standort (z.B. „Bondorf", „Cham").
@@ -300,13 +298,12 @@ auflistet.
 
 Bestellungen ohne Versandart landen in der Gruppe `ohne-lieferort`.
 
-Adressen im Sammel-Modus: In **beiden** Blöcken steht die Firmenadresse. Ein
-Sammelauftrag bündelt mehrere Empfänger — die Privatadresse der ersten
-Bestellung wäre dort falsch. Der Standort steht in `ModeOfShippment`.
-
-Aus demselben Grund bleibt `<Email>` im Sammel-Modus leer, außer
-`sender_address` enthält `email` (Entscheidung 23.09.2026). Im
-Standard-Modus steht weiter die E-Mail aus der Rechnungsadresse.
+Adressen im Sammel-Modus: Der Lieferblock bekommt die feste Lieferadresse
+des Lieferorts, sonst entscheidet `unknown_delivery` (Standard: leer, CDH
+liefert an den Kundenstamm). Die Privatadresse der ersten Bestellung wäre
+dort falsch — ein Sammelauftrag bündelt mehrere Empfänger. Der Standort
+steht in `ModeOfShippment`. `<Email>` bleibt im Sammel-Modus leer; im
+Standard-Modus steht im Lieferblock die E-Mail aus der Bestellung.
 
 Aktive Shops: Allgaier (mit Trennzeilen), Ensinger (voll zusammengefasst)
 
@@ -401,20 +398,16 @@ python -m PyInstaller --onefile --windowed --name Lieferadressen adressen_gui.py
 Der Abruf (`abrufen`) prüft vor dem Import. Gesperrtes wird nicht
 importiert und zählt im Konsolenlauf als Fehler.
 
-Grundsatz (Entscheidung 23.09.2026): **Fehlt eine Adresse, bleibt die
-Anschrift im WEX leer und CDH nimmt die Standardadresse aus dem
-Kundenstamm zur DatevNo.** `DatevNo` und `ModeOfShippment` bleiben stehen.
+Grundsatz (Entscheidung und CDH-Test 23.09.2026, Abschnitt 5): Der Sender
+trägt nur die DatevNo. **Fehlt eine Lieferanschrift, bleibt sie leer und CDH
+liefert an den Auftragskopf aus dem Kundenstamm.** `ModeOfShippment` bleibt
+stehen.
 
 | Regel | Folge |
 |---|---|
-| Kundenadresse (Sender: Firma, Straße, PLZ, Ort) unvollständig oder „BITTE EINTRAGEN" | Sender-Anschrift leer → CDH-Standardadresse, Hinweis |
-| Lieferanschrift unvollständig | Delivery-Anschrift leer → CDH-Standardadresse, Hinweis |
-| Sammel-Modus, Lieferort ohne feste Adresse | je `unknown_delivery`: `cdh` (Standard, Anschrift leer → CDH-Standardadresse), `firma` (Kundenadresse), `versand` (Versandadresse der ersten Bestellung), `sperren` (dieser Lieferort gesperrt) |
+| Lieferanschrift unvollständig (Firma, Straße, PLZ, Ort) oder „BITTE EINTRAGEN" | Anschrift leer → Lieferung an den Kundenstamm, Hinweis |
+| Sammel-Modus, Lieferort ohne feste Adresse | je `unknown_delivery`: `cdh` (Standard, Anschrift leer), `firma` (Rechnungsadresse der ersten Bestellung), `versand` (Versandadresse der ersten Bestellung), `sperren` (dieser Lieferort gesperrt) |
 | EK fehlt bei einem Artikel | nur Hinweis, der EK bleibt in CDH leer |
-
-**Noch zu bestätigen am echten CDH** (offene Frage 2): dass CDH bei leerer
-Anschrift tatsächlich die Standardadresse nimmt und den Kundenstamm nicht
-leer überschreibt. Erster Test mit einer Testbestellung.
 
 ---
 
@@ -536,10 +529,9 @@ Alle Felder stehen in `einstellungen.yaml` — **außer** `consumer_key` und
 | `included_statuses`    | Statusfilter, Standard `[processing, on-hold]` |
 | `import_on_days`       | Nur an diesen Tagen im Monat importieren |
 | `combine_by_delivery`  | Sammel-Modus |
-| `sender_address`       | Feste Hauptkundenadresse für den `<Sender>`-Block |
 | `aggregate_all_positions` | Im Sammel-Modus alle gleichen Artikelvarianten addieren, ohne Trennzeilen |
 | `extra_excel_meta`     | Zusätzliche Bestell-Meta-Felder als Excel-Spalten |
-| `unknown_delivery`     | Sammel-Modus, Lieferort ohne feste Adresse: `cdh` (Standard, CDH-Standardadresse), `firma`, `versand`, `sperren` |
+| `unknown_delivery`     | Sammel-Modus, Lieferort ohne feste Adresse: `cdh` (Standard, Lieferung an den Kundenstamm), `firma`, `versand`, `sperren` |
 | `excel_summary`        | Summenblatt in der Excel (Standard aus) |
 | `excel_summary_by`     | `ort` (Standard) oder `gesamt` |
 | `excel_summary_veredelungen` | Veredelungen im Summenblatt (Standard an) |
@@ -748,7 +740,9 @@ schreibt nichts.
 | „WEX Importer bereits ausgeführt" | Zwei CDH-Importe gleichzeitig | Darf nicht auftreten. Im Log prüfen, ob „warte auf 'Ende'" steht — sonst läuft eine alte Fassung mit `Popen` |
 | Log: „CDH-Import war nach 15 Minuten noch geöffnet" | Ein CDH-Fenster wurde nicht geschlossen | Fenster schließen, genannte WEX aus dem `wex-archiv` nachholen |
 | „Import läuft an … seit …" | Anderer Rechner importiert gerade (`running.lock`) | Warten. Ist der Rechner abgestürzt, wird die Sperre nach 10 Minuten ohne Heartbeat übernommen |
-| Log: „Kundenadresse unvollständig … CDH nimmt die Standardadresse" | Rechnungsanschrift bzw. `sender_address` unvollständig | Kein Fehler. Soll eine feste Anschrift rausgehen: `sender_address` ergänzen |
+| Log: „Lieferanschrift unvollständig … CDH nimmt die Standardadresse" | Versandadresse der Bestellung unvollständig | Kein Fehler, CDH liefert an den Kundenstamm |
+| Log: „sender_address wird ignoriert" | Altlast in der Konfiguration | Eintrag im Shop-Block löschen |
+| In CDH ein temporärer Kunde ohne Anschrift | DatevNo existiert in CDH nicht | `datev_no` im Shop-Block korrigieren |
 | Log: „Lieferadresse ohne passende Versandart" | Schlüssel in `lieferadressen.yaml` passt zu keiner Versandart | Schreibweise wie im Shop übernehmen |
 | EK-Felder in CDH leer | Maße im Shop nicht gepflegt | Diagnose zeigt betroffene Artikel |
 | Bestellung fehlt in CDH | CDH-Fenster ohne „Ende" geschlossen | WEX aus `wex-archiv\` per Doppelklick nachholen |

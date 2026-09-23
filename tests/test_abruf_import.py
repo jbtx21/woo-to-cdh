@@ -223,7 +223,7 @@ def test_sammel_email_leer(orders, client):
     assert c["email"] == ""
 
 
-def test_sammel_email_aus_sender_address(orders, client):
+def test_sammel_email_auch_mit_sender_address_leer(orders, client):
     from conftest import build
     sender = {"name1": "Agrar GmbH", "email": "auftrag@agrar.test"}
     data = [build(o, client, sender_address=sender) for o in orders["trenn"]]
@@ -231,7 +231,7 @@ def test_sammel_email_aus_sender_address(orders, client):
         c = w.build_combined_wex_data(
             data, {"datev_no": 10000, "sender_address": sender,
                    "aggregate_all_positions": agg}, "Bondorf")
-        assert c["email"] == "auftrag@agrar.test"
+        assert c["email"] == ""
 
 
 def test_einzelauftrag_email_unveraendert(orders, client):

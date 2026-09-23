@@ -177,6 +177,18 @@ für den ersten Start (EXE-Build in Welle 8).
 - Liste der letzten WEX-Dateien mit „Erneut an CDH übergeben".
 - Hinweis bei ungesicherten Einstellungen: Import arbeitet mit dem gesicherten Stand.
 
+Umsetzung auf `welle-06-import` (Stand 23.09.2026, wartet auf Sichtung):
+`import_api.py` (Schnittstelle, Hintergrund-Thread, `running.lock` für den
+ganzen Lauf), Tab „Import" in `ui/index.html` als Startseite. In
+`woo_to_cdh.py` nur Ergänzungen: `importieren()` nimmt ein `Importergebnis`
+mit Protokoll je Einheit an, `start_cdh_wex_import` merkt sich den Exit-Code in
+`CDH_LETZTER_EXIT` (Verhalten unverändert), `praefixe_uebernehmen()`
+ausgelagert. Golden-WEX unverändert. Exit ≠ 0 zeigt die Oberfläche als „bitte
+in CDH prüfen", bis Frage 3 geklärt ist. „Erneut an CDH" übergibt nur eine
+Datei aus dem wex-archiv, ohne Shop-Status und ohne `exported.log`.
+Getestet mit Chromium gegen die echte Schnittstelle (Fake-Shop, Fake-CDH),
+**nicht** in pywebview/WebView2.
+
 **STOPP — erster echter Import nur mit einer Testbestellung, im Beisein von
 Jannik. Konsolen-EXE bleibt parallel einsatzbereit.**
 

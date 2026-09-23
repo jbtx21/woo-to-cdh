@@ -1488,6 +1488,10 @@ class Importergebnis:
     je_shop: dict = field(default_factory=dict)   # shop → Anzahl Bestellungen
     abgebrochen: bool = False
     nicht_bearbeitet: list = field(default_factory=list)   # Einheiten
+    # Je bearbeiteter Einheit: key, status, datei, cdh (übergeben?), exit,
+    # meldung. status: fertig | pruefen (CDH-Exit ≠ 0) | nicht_uebergeben
+    # (WEX liegt im Archiv, CDH lief nicht) | doppelt | fehler
+    protokoll: list = field(default_factory=list)
 
 
 def _tages_gate(shop_cfg: dict, shop_name: str) -> str:
@@ -1893,6 +1897,9 @@ def _einheit_importieren(e: Einheit, imp: Importergebnis) -> bool:
                         "inzwischen in exported.log.",
                         shop_name, e.titel, ", ".join(doppelt))
         imp.fehler += n
+        imp.protokoll.append({"key": e.key, "status": "doppelt", "datei": "",
+                              "cdh": False, "exit": None, "meldung":
+                              f"Inzwischen schon importiert ({', '.join(doppelt)})"})
         return False
 
     try:
@@ -1906,6 +1913,9 @@ def _einheit_importieren(e: Einheit, imp: Importergebnis) -> bool:
                               "konnte nicht geschrieben werden: %s",
                               shop_name, e.titel, ex)
         imp.fehler += n
+        imp.protokoll.append({"key": e.key, "status": "fehler", "datei": "",
+                              "cdh": False, "exit": None, "meldung":
+                              f"WEX nicht geschrieben: {ohne_schluessel(ex)}"})
         return False
 
     # Excel-Kontrollausdruck parallel (best effort — ein Fehler soll den
@@ -1969,12 +1979,22 @@ def _einheit_importieren(e: Einheit, imp: Importergebnis) -> bool:
     imp.dateien.append(str(target_path))
 
     # CDH_WEX.EXE starten — blockiert, bis der Benutzer "Ende" klickt.
-    start_cdh_wex_import(target_path, s.global_cfg)
+    uebergeben = start_cdh_wex_import(target_path, s.global_cfg)
+    exit_code = CDH_LETZTER_EXIT if uebergeben else None
+    if not uebergeben:
+        status, meldung = "nicht_uebergeben", ("Nicht an CDH übergeben — WEX liegt im "
+                                               "Archiv, bitte erneut übergeben.")
+    elif exit_code not in (0, None):
+        status, meldung = "pruefen", f"CDH meldet Exit {exit_code} — bitte in CDH prüfen."
+    else:
+        status, meldung = "fertig", ""
+    imp.protokoll.append({"key": e.key, "status": status, "datei": target_path.name,
+                          "cdh": uebergeben, "exit": exit_code, "meldung": meldung})
     return True
 
 
 def importieren(auswahl, fortschritt_callback=None,
-                abbruch_flag=None) -> Importergebnis:
+                abbruch_flag=None, ergebnis: Importergebnis | None = None) -> Importergebnis:
     """
     Die ausgewählten Einheiten nacheinander importieren.
 
@@ -1985,7 +2005,9 @@ def importieren(auswahl, fortschritt_callback=None,
                          Einheit läuft immer zu Ende.
     """
     auswahl = list(auswahl)
-    imp = Importergebnis()
+    # ergebnis: vorab angelegtes Objekt, damit die Oberfläche das Protokoll
+    # schon während des Laufs lesen kann.
+    imp = ergebnis if ergebnis is not None else Importergebnis()
     for i, e in enumerate(auswahl, start=1):
         if _ist_gesetzt(abbruch_flag):
             imp.abgebrochen = True
@@ -2001,6 +2023,9 @@ def importieren(auswahl, fortschritt_callback=None,
             logging.exception("[%s] %s: unerwarteter Fehler beim Import: %s",
                               e.shop, e.titel, ex)
             imp.fehler += len(e.orders)
+            imp.protokoll.append({"key": e.key, "status": "fehler", "datei": "",
+                                  "cdh": False, "exit": None,
+                                  "meldung": f"Unerwarteter Fehler: {ohne_schluessel(ex)}"})
             ok = False
         if fortschritt_callback:
             fortschritt_callback(i, len(auswahl), e, "fertig" if ok else "fehler")
@@ -2066,6 +2091,8 @@ def start_cdh_wex_import(wex_path: Path, global_cfg: dict) -> bool:
     WEX-Datei bleibt dann im wex-archiv und lässt sich per Doppelklick
     nachholen.
     """
+    global CDH_LETZTER_EXIT
+    CDH_LETZTER_EXIT = None
     exe = global_cfg.get("cdh_exe") or r"C:\CDH\CDH_WEX.EXE"
     if not Path(exe).exists():
         logging.warning("CDH-WEX-EXE nicht gefunden: %s — Import nicht "
@@ -2090,9 +2117,15 @@ def start_cdh_wex_import(wex_path: Path, global_cfg: dict) -> bool:
     # Sicherheitsnetz, falls CDH_WEX.EXE nur ein Starter war
     _wait_until_cdh_closed(exe, "nach dem Start")
 
+    CDH_LETZTER_EXIT = result.returncode
     logging.info("CDH-WEX-Import abgeschlossen (Exit %d): %s",
                  result.returncode, wex_path.name)
     return True
+
+
+# Exit-Code des letzten CDH_WEX.EXE-Laufs (None: nicht gelaufen). Für die
+# Oberfläche; ob CDH bei Fehlern ≠ 0 liefert, ist noch offen (Frage 3).
+CDH_LETZTER_EXIT: int | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -2418,6 +2451,20 @@ def load_config(base_dir: Path | None = None) -> tuple[dict, str]:
 # Main
 # ---------------------------------------------------------------------------
 
+def praefixe_uebernehmen(cfg: dict) -> None:
+    """Veredelungs-Präfixe aus der Config übernehmen, falls gesetzt — als
+    Text ("004/") oder mit Bezeichnung aus der Oberfläche ({prefix, label}).
+    Damit lässt sich ein neuer Präfix ohne EXE-Neubau nachtragen."""
+    global VEREDELUNG_PREFIXES
+    cfg_prefixes = cfg.get("veredelung_prefixes")
+    if cfg_prefixes:
+        VEREDELUNG_PREFIXES = tuple(
+            str(p.get("prefix") if isinstance(p, dict) else p).strip()
+            for p in cfg_prefixes
+            if str(p.get("prefix") if isinstance(p, dict) else p).strip()
+        )
+
+
 def main() -> int:
     if not config_vorhanden():
         print("Konfiguration fehlt: weder einstellungen.yaml + zugang.yaml "
@@ -2441,16 +2488,7 @@ def main() -> int:
 
         # Veredelungs-Präfixe aus der Config übernehmen, falls gesetzt.
         # Damit lässt sich ein neuer Präfix ohne EXE-Neubau nachtragen.
-        cfg_prefixes = cfg.get("veredelung_prefixes")
-        if cfg_prefixes:
-            global VEREDELUNG_PREFIXES
-            # Einträge als Text ("004/") oder mit Bezeichnung aus der
-            # Oberfläche ({prefix: "004/", label: "Stick"}).
-            VEREDELUNG_PREFIXES = tuple(
-                str(p.get("prefix") if isinstance(p, dict) else p).strip()
-                for p in cfg_prefixes
-                if str(p.get("prefix") if isinstance(p, dict) else p).strip()
-            )
+        praefixe_uebernehmen(cfg)
         logging.info("Veredelungs-Präfixe: %s",
                      ", ".join(VEREDELUNG_PREFIXES))
 

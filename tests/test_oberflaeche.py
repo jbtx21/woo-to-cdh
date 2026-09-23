@@ -18,8 +18,10 @@ from pathlib import Path
 import pytest
 import yaml
 
-import einstellungen_api as ea
 import migrate_config as m
+import oberflaeche as ob
+import woo_to_cdh as w
+from conftest import FIXTURES, FakeWoo
 
 sync_api = pytest.importorskip("playwright.sync_api")
 
@@ -30,6 +32,7 @@ if not CHROMIUM:
 
 PASSWORT = "richtig-geheim"
 EINST = {
+    "cdh_import_folder": "wex", "excel_export_folder": "excel",
     "veredelung_prefixes": ["004/", "316/", "006/", "234/"],
     "order_no_with_name": True, "status_after_export": "completed",
     "shops": [
@@ -38,6 +41,8 @@ EINST = {
         {"id": "ensinger", "name": "Ensinger-Shop", "enabled": True,
          "url": "https://shop.example/ensinger-shop/", "datev_no": 14020, "order_type": "AB",
          "import_on_days": [1], "combine_by_delivery": True, "aggregate_all_positions": True},
+        {"id": "agrar", "name": "Agrar-Shop", "enabled": True, "url": "https://shop.example/agrar/",
+         "datev_no": 10698, "order_type": "AB", "combine_by_delivery": True},
     ],
 }
 BRIDGE = """
@@ -67,21 +72,63 @@ class Handler(SimpleHTTPRequestHandler):
 
 @pytest.fixture
 def ordner(tmp_path):
-    (tmp_path / "einstellungen.yaml").write_text(yaml.safe_dump(EINST, sort_keys=False), encoding="utf-8")
+    einst = {**EINST, "cdh_import_folder": str(tmp_path / "wex"),
+             "excel_export_folder": str(tmp_path / "excel")}
+    (tmp_path / "einstellungen.yaml").write_text(yaml.safe_dump(einst, sort_keys=False), encoding="utf-8")
     (tmp_path / "lieferadressen.yaml").write_text(yaml.safe_dump({"Ensinger-Shop": {
         "Cham": {"name1": "Beispiel GmbH", "street": "Werkweg 1", "postcode": "93413",
                  "city": "Cham", "country": "DE"}}}), encoding="utf-8")
     (tmp_path / "zugang.yaml").write_text(yaml.safe_dump({
         "admin": {"password": m.hash_admin_password(PASSWORT, iterations=1000), "users": []},
-        "shops": {"caf": {"consumer_key": "ck_TEST", "consumer_secret": "cs_TEST"}}}), encoding="utf-8")
+        "shops": {"caf": {"consumer_key": "ck_TEST", "consumer_secret": "cs_TEST"},
+                  "agrar": {"consumer_key": "ck_TEST", "consumer_secret": "cs_TEST"}}}), encoding="utf-8")
     return tmp_path
 
 
 @pytest.fixture
-def seite(ordner):
-    api = ea.EinstellungenApi(ordner, benutzer="m.mueller")
-    api._client_factory = lambda *a, **k: type("C", (), {
-        "get_shipping_methods": lambda self: ["Standardversand"]})()
+def cdh(monkeypatch):
+    """Ersatz für CDH_WEX.EXE; mit warte=Event bleibt „das CDH-Fenster offen“."""
+    zustand = {"aufrufe": [], "exit": 0, "warte": None}
+
+    def start(path, cfg):
+        zustand["aufrufe"].append(path.name)
+        if zustand["warte"]:
+            zustand["warte"].wait(10)
+        w.CDH_LETZTER_EXIT = zustand["exit"]
+        return True
+    monkeypatch.setattr(w, "start_cdh_wex_import", start)
+    return zustand
+
+
+@pytest.fixture
+def importseite(ordner, orders, cdh, monkeypatch):
+    """Oberfläche auf dem Import-Tab (Standard beim Start)."""
+    FakeWoo.orders_by_url = {"https://shop.example/caf-shop/": [orders["einzeln"]],
+                             "https://shop.example/agrar/": orders["trenn"],
+                             "https://shop.example/ensinger-shop/": orders["mitarbeitershop"]}
+    FakeWoo.puts, FakeWoo.gets = [], []
+    FakeWoo.zones_by_url = {"https://shop.example/caf-shop/": {0: [{"title": "Standardversand"}]}}
+    monkeypatch.setattr(w, "EXPORTED_LOG_PATH", ordner / "exported.log")
+    monkeypatch.setattr(w, "DELIVERY_ADDRESSES_PATH", ordner / "lieferadressen.yaml")
+    monkeypatch.setattr(w, "LOCK_PATH", ordner / "running.lock")
+    api = ob.OberflaecheApi(ordner, benutzer="m.mueller", client_factory=FakeWoo,
+                            oeffnen=lambda p: None)
+    yield from _browser(api, ordner, cdh)
+    api._abbruch.set()
+    if cdh["warte"]:
+        cdh["warte"].set()
+    api._warten()
+
+
+@pytest.fixture
+def seite(importseite):
+    """Oberfläche auf dem Einstellungs-Tab (Tests aus Welle 5)."""
+    importseite.click("[data-a=tab][data-tab=settings]")
+    importseite.wait_for_selector("text=Angemeldet als m.mueller")
+    return importseite
+
+
+def _browser(api, ordner, cdh):
     handler = type("H", (Handler,), {"api": api})
     server = ThreadingHTTPServer(("127.0.0.1", 0), partial(handler, directory=str(ROOT / "ui")))
     threading.Thread(target=server.serve_forever, daemon=True).start()
@@ -98,8 +145,8 @@ def seite(ordner):
             else (extern.append(route.request.url), route.abort())))
         page.add_init_script(BRIDGE)
         page.goto(f"http://127.0.0.1:{port}/index.html")
-        page.wait_for_selector("text=Angemeldet als m.mueller")
-        page.fehler, page.extern, page.ordner = fehler, extern, ordner
+        page.wait_for_function("typeof geladen !== 'undefined' && geladen")
+        page.fehler, page.extern, page.ordner, page.cdh = fehler, extern, ordner, cdh
         yield page
         browser.close()
     server.shutdown()
@@ -219,7 +266,157 @@ def test_konflikt_mit_anderem_rechner(seite):
     seite.wait_for_selector(".alert-box:has-text('anderen Rechner')")
 
 
-def test_import_tab_platzhalter(seite):
-    seite.click("[data-a=tab][data-tab=import]")
-    assert seite.locator("#importPane").inner_text().count("WOO_to_CDH.exe") == 1
-    assert seite.fehler == []
+def test_import_ist_start_tab(importseite):
+    assert importseite.locator("#importPane .big-btn", has_text="Abrufen").is_visible()
+    assert importseite.fehler == []
+
+
+# --- Welle 6: Import-Tab ------------------------------------------------------
+
+def _abrufen(page):
+    page.click("#importPane [data-a=fetch]")
+    page.wait_for_selector("#importPane .subtitle:has-text('Abgerufen um')")
+
+
+def _nur(page, titel_teil):
+    """Auswahl auf die Einheit(en) beschränken, deren Zeile titel_teil enthält."""
+    page.click("#importPane [data-a=select-all]")          # alle → keine
+    if page.locator("#importPane .toolbar .mid").inner_text() != "Nichts ausgewählt":
+        page.click("#importPane [data-a=select-all]")
+    page.click(f"#importPane .row[role=checkbox]:has-text('{titel_teil}') [data-a=toggle]")
+
+
+def test_abrufen_pruefansicht(importseite):
+    p = importseite
+    _abrufen(p)
+    pane = p.locator("#importPane")
+    assert pane.locator(".row-title", has_text="#402").count() == 1
+    assert pane.locator(".row-title", has_text="Bondorf").count() == 1
+    assert pane.locator(".row.indent").count() == 2                    # 3939, 3940
+    assert "Zugangsdaten fehlen" in pane.inner_text()                   # Ensinger gesperrt
+    assert pane.locator(".toolbar .mid").inner_text() == "3 Bestellungen, 2 Aufträge"
+    assert p.fehler == [] and p.extern == []
+
+
+def test_bestelldetail_so_geht_es_an_cdh(importseite):
+    p = importseite
+    _abrufen(p)
+    p.click("#importPane [data-a=order][data-no='402']")
+    ov = p.locator("#overlay")
+    ov.locator("text=So geht es an CDH").wait_for()
+    text = ov.inner_text()
+    assert "Kunde 19541" in text and "Anschrift aus dem CDH-Kundenstamm" in text
+    assert "Versandadresse aus der Bestellung" in text and "Auftrag in CDH" in text
+    p.click("#overlay [data-a=close] >> nth=-1")
+    p.click("#importPane [data-a=order][data-no='3939']")
+    text = p.locator("#overlay").inner_text()
+    assert "Keine Lieferanschrift" in text and "Gemeinsamer Auftrag für Bondorf" in text
+    assert "Veredelungen" in text                                       # Trennzeile im CDH-Auftrag
+
+
+def test_import_mit_fortschritt(importseite):
+    p = importseite
+    p.cdh["warte"] = threading.Event()
+    _abrufen(p)
+    _nur(p, "#402")
+    assert p.locator("#importPane .toolbar .mid").inner_text() == "1 Bestellung, 1 Auftrag"
+    p.click("#importPane [data-a=import]")
+    p.wait_for_selector("#overlay .row[data-status=laeuft]:has-text('Im CDH-Fenster auf „Ende“ klicken')")
+    assert p.locator("#overlay [data-a=cancel-import]").is_enabled()
+    assert p.evaluate("1 + 1") == 2                                      # Seite reagiert
+    assert (p.ordner / "running.lock").exists()                          # Sperre während des Laufs
+    p.cdh["warte"].set()
+    p.wait_for_selector("#overlay .row[data-status=fertig]")
+    assert "1 Bestellung in 1 Auftrag verarbeitet" in p.locator("#overlay").inner_text()
+    p.click("#overlay [data-a=close] >> nth=-1")
+    assert p.locator("#importPane .row-title", has_text="#402").count() == 0
+    assert "1402|402" in (p.ordner / "exported.log").read_text(encoding="utf-8").replace("\t", "|")
+    p.wait_for_selector("#importPane .row-title:has-text('-402.wex')")      # Letzte WEX-Dateien
+    assert not (p.ordner / "running.lock").exists()
+    assert p.fehler == []
+
+
+def test_import_abbrechen(importseite):
+    p = importseite
+    p.cdh["warte"] = threading.Event()
+    _abrufen(p)
+    p.click("#importPane [data-a=import]")                               # beide Aufträge
+    p.wait_for_selector("#overlay .row[data-status=laeuft]")
+    p.click("#overlay [data-a=cancel-import]")
+    p.wait_for_selector("#overlay [data-a=cancel-import]:has-text('Wird beendet')")
+    p.cdh["warte"].set()
+    p.wait_for_selector("#overlay .row[data-status=abgebrochen]")
+    assert "Abgebrochen nach 1 von 2" in p.locator("#overlay").inner_text()
+    assert len(p.cdh["aufrufe"]) == 1
+    p.click("#overlay [data-a=close] >> nth=-1")
+    assert p.locator("#importPane .toolbar .mid").inner_text().endswith("1 Auftrag")
+
+
+def test_exit_code_bitte_pruefen(importseite):
+    p = importseite
+    p.cdh["exit"] = 3
+    _abrufen(p)
+    _nur(p, "#402")
+    p.click("#importPane [data-a=import]")
+    p.wait_for_selector("#overlay .row[data-status=pruefen]:has-text('CDH meldet Exit 3')")
+    assert "braucht einen Blick" in p.locator("#overlay").inner_text()
+
+
+def test_stichtag_trotzdem(importseite):
+    p = importseite
+    pe = p.ordner / "einstellungen.yaml"
+    cfg = yaml.safe_load(pe.read_text(encoding="utf-8"))
+    from datetime import datetime
+    cfg["shops"][2]["import_on_days"] = [datetime.now().day % 28 + 1]
+    pe.write_text(yaml.safe_dump(cfg, sort_keys=False), encoding="utf-8")
+    _abrufen(p)
+    assert p.locator("#importPane .row-title", has_text="Heute nicht dran").count() == 1
+    p.click("#importPane [data-a=override][data-id=agrar]")
+    p.wait_for_selector("#importPane .row-title:has-text('Bondorf')")
+
+
+def test_excel_uebersicht(importseite):
+    p = importseite
+    _abrufen(p)
+    p.click("#importPane [data-a=excel-menu]")
+    p.click("#overlay [data-a=excel-make][data-scope=__all]")
+    p.wait_for_selector("#overlay :text('Excel erstellt')")
+    text = p.locator("#overlay").inner_text()
+    assert "CAF-Shop" in text and "Agrar-Shop" in text and "3 Bestellungen" in text
+    assert list((p.ordner / "excel" / "uebersicht").glob("Uebersicht-alle-Shops-*.xlsx"))
+    assert not (p.ordner / "exported.log").exists()
+
+
+def test_erneut_an_cdh(importseite):
+    p = importseite
+    _abrufen(p)
+    _nur(p, "#402")
+    p.click("#importPane [data-a=import]")
+    p.wait_for_selector("#overlay .row[data-status=fertig]")
+    p.click("#overlay [data-a=close] >> nth=-1")
+    p.wait_for_selector("#importPane [data-a=erneut]")
+    p.click("#importPane [data-a=erneut] >> nth=0")
+    p.wait_for_selector("#overlay .alert-box:has-text('Nur, wenn der Auftrag in CDH fehlt')")
+    p.click("#overlay [data-a=erneut-ok]")
+    p.wait_for_selector("#overlay .row[data-status=fertig]")
+    assert len(p.cdh["aufrufe"]) == 2 and p.cdh["aufrufe"][0] == p.cdh["aufrufe"][1]
+    zeilen = (p.ordner / "exported.log").read_text(encoding="utf-8").splitlines()
+    assert len(zeilen) == 2                                  # Kopf + 1 — nichts doppelt vermerkt
+
+
+def test_sperre_anderer_rechner(importseite):
+    p = importseite
+    (p.ordner / "running.lock").write_text(json.dumps(
+        {"rechner": "PC-LAGER", "benutzer": "m.mueller", "seit": "2026-10-01T09:14:00"}), encoding="utf-8")
+    _abrufen(p)
+    assert "Import läuft an PC-LAGER (m.mueller) seit 09:14" in p.locator("#importPane").inner_text()
+    assert p.locator("#importPane [data-a=import]").is_disabled()
+
+
+def test_hinweis_ungesicherte_einstellungen(importseite):
+    p = importseite
+    p.click("[data-a=tab][data-tab=settings]")
+    _nav(p, "caf")
+    p.click("[data-a=after][data-v='']")
+    p.click("[data-a=tab][data-tab=import]")
+    assert "Der Import arbeitet mit dem gesicherten Stand" in p.locator("#importPane").inner_text()

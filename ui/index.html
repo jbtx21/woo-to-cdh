@@ -368,7 +368,7 @@ button.row:active, .row.tap:active { background: var(--fill); }
 .xl td.q { text-align: right; width: 44px; }
 .xl tr.grp td { font-weight: 600; background: var(--bg); }
 .xl-wrap { overflow-x: auto; }
-.sheets { display: flex; gap: 6px; padding: 12px 16px 0; }
+.sheets { display: flex; flex-wrap: wrap; gap: 6px; padding: 12px 16px 0; }
 .sheets span { font-size: 12px; padding: 4px 10px; border-radius: 6px; background: var(--fill); color: var(--label-2); }
 
 /* ----------------------------------------------------------- Mobil ---- */
@@ -413,7 +413,7 @@ button.row:active, .row.tap:active { background: var(--fill); }
 </style>
 </head>
 <body>
-<div class="shell" id="shell" data-tab="settings">
+<div class="shell" id="shell" data-tab="import">
   <main class="stage">
     <section class="pane single" id="importPane" aria-label="Import"></section>
     <div class="split" id="split" data-view="list">
@@ -446,7 +446,7 @@ const adminLeft = () => Math.max(1, Math.ceil((adminUntil - Date.now()) / 60000)
 let shops = [];
 let global = { prefixes: [] };
 let current = null;
-let tab = "settings";
+let tab = "import";
 let unlocked = {};
 let overlay = null;
 let methodsLoaded = new Set();   // Shops, deren Versandarten schon geholt wurden
@@ -472,6 +472,7 @@ async function laden() {
   anwenden(st); unlocked = {}; geladen = true;
   if (!narrow()) $("#split").dataset.view = "detail";
   render();
+  letzteLaden();
 }
 
 function fatal(title, text) {
@@ -627,13 +628,6 @@ function navbar() {
   </div>`;
 }
 
-function navImport() {
-  return `<div class="navbar">
-    <span class="nav-l"></span><span class="nav-c"></span>
-    <span class="nav-r"></span>
-  </div>`;
-}
-
 function renderTabbar() {
   const n = changeCount();
   $("#tabbar").innerHTML = [["import", "Import", I.tray24], ["settings", "Einstellungen", I.gear]].map(([id, l, ic]) => `
@@ -655,17 +649,346 @@ function dirtyBanner() {
 
 
 // ------------------------------------------------------- Import (Welle 6)
+// Alle Daten und der Import selbst kommen aus Python (import_api.ImportApi).
+// Die Seite zeigt an und fragt während des Imports regelmäßig den Stand ab.
+let fetched = null;          // { time, shops, sperre } nach dem Abruf
+let fetching = false;
+let overrides = new Set();   // Shop-ids, die trotz Stichtag abgerufen werden
+let selected = new Set();    // Einheiten-keys (Bestellung oder Lieferort-Gruppe)
+let lastImport = null;
+let letzte = [];             // zuletzt erzeugte WEX-Dateien
+const ERLEDIGT = new Set(["fertig", "pruefen", "nicht_uebergeben", "doppelt"]);
+
+const fShop = (id) => fetched?.shops.find((x) => x.id === id);
+const unitByKey = (key) => fetched?.shops.flatMap((s) => s.einheiten).find((u) => u.key === key);
+const importableUnits = () => (fetched ? fetched.shops.flatMap((s) => s.einheiten.filter((u) => !u.gesperrt)) : []);
+const plural = (n, eins, mehr) => `${n} ${n === 1 ? eins : mehr}`;
+const nextDay = (s) => {
+  const d = TODAY.getDate();
+  const next = s.days.find((x) => x > d);
+  if (next) return `${next}. ${TODAY.toLocaleDateString("de-DE", { month: "long" })}`;
+  const m = new Date(TODAY.getFullYear(), TODAY.getMonth() + 1, 1);
+  return `${s.days[0]}. ${m.toLocaleDateString("de-DE", { month: "long" })}`;
+};
+
+async function letzteLaden() {
+  const erg = await api().letzte_wex(15);
+  if (erg.ok) { letzte = erg.dateien; if (tab === "import") renderOrders(); }
+}
+
+async function doFetch() {
+  if (fetching) return;
+  fetching = true; renderOrders();
+  try {
+    const erg = await api().abrufen([...overrides]);
+    if (!erg.ok) { meldung("Abruf nicht möglich", erg.fehler); return; }
+    fetched = { time: new Date(erg.zeit), shops: erg.shops, sperre: erg.sperre };
+    selected = new Set(importableUnits().map((u) => u.key));
+  } finally { fetching = false; renderOrders(); }
+}
+
+function navImport() {
+  const busy = fetching || overlay?.kind === "import";
+  return `<div class="navbar">
+    <span class="nav-l"></span><span class="nav-c"></span>
+    <span class="nav-r">${fetched ? `<button class="navlink" data-a="excel-menu">Excel</button><button class="navlink" data-a="fetch" ${busy ? "disabled" : ""}>Neu abrufen</button>` : ""}</span>
+  </div>`;
+}
+
+function letzteBlock() {
+  if (!letzte.length) return "";
+  return `<div class="group"><div class="group-head">Letzte WEX-Dateien</div><div class="card">
+    ${letzte.map((d) => `<div class="row"><span class="row-body">
+      <span class="row-main"><span class="row-title num">${esc(d.datei)}</span>
+      <div class="row-sub">${[d.shop, d.orders.length ? plural(d.orders.length, "Bestellung", "Bestellungen") + " " + d.orders.map(esc).join(", ") : "", d.zeit].filter(Boolean).map(esc).join(" · ")}</div></span>
+      <button class="navlink" data-a="erneut" data-datei="${esc(d.datei)}" style="font-size:15px">Erneut an CDH</button>
+    </span></div>`).join("")}
+  </div>
+  <div class="group-foot">Nur nachholen, wenn der Auftrag in CDH fehlt — etwa weil das CDH-Fenster ohne „Ende“ geschlossen wurde. Sonst entsteht er doppelt.
+    <button class="navlink" data-a="ordner" data-v="wex" style="font-size:13px">wex-archiv öffnen</button></div></div>`;
+}
+
+function sperreBanner() {
+  if (!fetched?.sperre) return "";
+  return `<div class="group"><div class="card"><div class="banner">
+    <span class="icon" style="background:var(--orange)">${I.warn}</span>
+    <p>${esc(fetched.sperre)}. Importieren geht erst, wenn er fertig ist.</p>
+  </div></div></div>`;
+}
+
 function renderOrders() {
+  if (!fetched) {
+    $("#importPane").innerHTML = `${navImport()}
+      <div class="content">
+        <h1 class="large-title" style="margin-top:10px">Import</h1>
+        ${dirtyBanner()}
+        <div class="group"><div class="card hero">
+          <span class="icon">${I.down}</span>
+          <h2>Neue Bestellungen abrufen</h2>
+          <p>Holt die offenen Bestellungen aller eingeschalteten Shops. Importiert wird erst nach deiner Prüfung.</p>
+          <button class="big-btn" data-a="fetch" ${fetching ? "disabled" : ""}>${fetching ? "Wird abgerufen …" : "Abrufen"}</button>
+        </div></div>
+        ${lastImport ? `<div class="group"><div class="group-head">Letzter Import</div><div class="card">
+          <div class="row"><span class="row-body"><span class="row-main"><span class="row-title">${plural(lastImport.orders, "Bestellung", "Bestellungen")} in ${plural(lastImport.files, "Auftrag", "Aufträgen")}</span>
+          <div class="row-sub">${lastImport.time.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })} Uhr</div></span></span></div>
+        </div></div>` : ""}
+        ${letzteBlock()}
+      </div>`;
+    return;
+  }
+
+  const active = shops.filter((s) => s.active);
+  const skipped = shops.filter((s) => !s.active).map((s) => s.name);
+
+  const blocks = active.map((cfgShop) => {
+    const s = fShop(cfgShop.id);
+    const head = `<div class="group-head">${esc(cfgShop.name)}</div>`;
+    if (!s) {
+      return `<div class="group">${head}<div class="card"><div class="row"><span class="row-body"><span class="row-main">
+        <span class="row-title" style="color:var(--label-2)">Beim Abruf noch ausgeschaltet — neu abrufen</span></span></span></div></div></div>`;
+    }
+    if (s.uebersprungen) {
+      return `<div class="group">${head}<div class="card">
+        <div class="row"><span class="row-body"><span class="row-main"><span class="row-title">Heute nicht dran</span>
+        <div class="row-sub">${esc(s.stichtag)}${cfgShop.days.length ? ` Nächster Termin: ${nextDay(cfgShop)}.` : ""}</div></span></span></div>
+        <button class="row action" data-a="override" data-id="${s.id}"><span class="row-body"><span class="row-main"><span class="row-title">Trotzdem anzeigen</span></span></span></button>
+      </div></div>`;
+    }
+    const sperren = s.sperren.map((t) => `<div class="row warn"><span class="icon">${I.warn}</span>
+      <span class="row-body"><span class="row-main"><span class="row-title">Shop gesperrt</span><div class="row-sub">${esc(t)}</div></span></span></div>`).join("");
+    const hinweise = s.warnungen.map((t) => `<div class="row"><span class="row-body"><span class="row-main">
+      <div class="row-sub"><span class="warn-text">${esc(t)}</span></div></span></span></div>`).join("");
+    if (!s.einheiten.length) {
+      return `<div class="group">${head}<div class="card">${sperren}
+        <div class="row"><span class="row-body"><span class="row-main"><span class="row-title" style="color:var(--label-2)">Keine neuen Bestellungen</span></span></span></div>
+        ${hinweise}</div></div>`;
+    }
+
+    const rows = s.einheiten.map((u) => {
+      const on = selected.has(u.key) && !u.gesperrt;
+      const selc = `<span class="selc ${u.gesperrt ? "off" : ""}">${I.tick}</span>`;
+      const toggle = `<button data-a="toggle" data-u="${esc(u.key)}" ${u.gesperrt ? "disabled" : ""} style="padding:0 12px 0 16px;align-self:stretch;display:flex;align-items:center" aria-label="Auswählen">${selc}</button>`;
+      const hinw = [...u.sperren, ...u.warnungen];
+      if (u.art === "bestellung") {
+        const o = u.orders[0];
+        return `<div class="row" role="checkbox" aria-checked="${on}" style="padding-left:0">${toggle}
+          <button class="row-body" data-a="order" data-u="${esc(u.key)}" data-no="${esc(o.no)}" style="text-align:left">
+            <span class="row-main"><span class="row-title">#${esc(o.no)} ${esc(o.name)}</span>
+            <div class="row-sub">${plural(o.pos.length, "Position", "Positionen")}, ${eur(o.sum)}${hinw.length ? `, <span class="warn-text">${hinw.map(esc).join(", ")}</span>` : ""}</div></span>
+            ${I.chev}
+          </button>
+        </div>`;
+      }
+      const groupRow = `<div class="row" role="checkbox" aria-checked="${on}" style="padding-left:0">${toggle}
+          <span class="row-body"><span class="row-main"><span class="row-title" style="font-weight:600">${esc(u.titel)}</span>
+          <div class="row-sub">${u.orders.length} ${u.orders.length === 1 ? "Bestellung ergibt" : "Bestellungen ergeben"} einen Auftrag${hinw.length ? `, <span class="warn-text">${hinw.map(esc).join(", ")}</span>` : ""}</div></span></span>
+        </div>`;
+      const orderRows = u.orders.map((o) => `<button class="row indent" data-a="order" data-u="${esc(u.key)}" data-no="${esc(o.no)}">
+          <span class="row-body"><span class="row-main"><span class="row-title">#${esc(o.no)} ${esc(o.name)}</span>
+          <div class="row-sub">${plural(o.pos.length, "Position", "Positionen")}${o.pos.some((p) => p.ek == null) ? `, <span class="warn-text">EK fehlt</span>` : ""}</div></span>${I.chev}</span>
+        </button>`).join("");
+      return groupRow + orderRows;
+    }).join("");
+
+    const foot = s.einheiten[0]?.art === "lieferort"
+      ? `<div class="group-foot">Ausgewählt wird je Lieferort. Eine Gruppe geht immer als ein Auftrag an CDH.</div>` : "";
+    return `<div class="group">${head}<div class="card">${sperren}${rows}${hinweise}</div>${foot}</div>`;
+  }).join("");
+
+  const all = importableUnits();
+  const sel = all.filter((u) => selected.has(u.key));
+  const nOrders = sel.reduce((a, u) => a + u.orders.length, 0);
+  const gesperrt = !!fetched.sperre;
+
   $("#importPane").innerHTML = `${navImport()}
     <div class="content">
-      <h1 class="large-title">Import</h1>
-      <div class="group"><div class="card"><div class="placeholder">
-        Der Import über diese Oberfläche folgt in Welle 6.<br>
-        Bis dahin wie gewohnt <b>WOO_to_CDH.exe</b> starten — sie arbeitet mit den hier gesicherten Einstellungen.
-      </div></div></div>
+      <h1 class="large-title" style="margin-top:10px">Import</h1>
+      <div class="subtitle">Abgerufen um ${fetched.time.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })} Uhr</div>
+      ${sperreBanner()}
       ${dirtyBanner()}
+      ${blocks}
+      ${skipped.length ? `<div class="group-foot" style="margin-top:-12px">Ausgeschaltet und nicht abgefragt: ${skipped.map(esc).join(", ")}</div>` : ""}
+      ${letzteBlock()}
+    </div>
+    <div class="toolbar">
+      <span><button class="navlink" data-a="select-all" ${all.length ? "" : "disabled"}>${sel.length === all.length && all.length ? "Keine" : "Alle"}</button></span>
+      <span class="mid">${nOrders ? `${plural(nOrders, "Bestellung", "Bestellungen")}, ${plural(sel.length, "Auftrag", "Aufträge")}` : "Nichts ausgewählt"}</span>
+      <span class="r"><button class="navlink bold" data-a="import" ${sel.length && !gesperrt ? "" : "disabled"}>Importieren</button></span>
     </div>`;
 }
+
+// Bestelldetail mit „So geht es an CDH“ — Inhalt aus den fertigen WEX-Daten
+function openOrder(key, no) {
+  const u = unitByKey(key); if (!u) return;
+  const o = u.orders.find((x) => x.no === no); if (!o) return;
+  const c = u.cdh;
+  overlay = { kind: "order" };
+  const liefer = c.lieferung.length ? c.lieferung.map(esc).join("<br>") : `<span style="color:var(--label-2)">keine</span>`;
+  $("#overlay").innerHTML = sheetShell(`Bestellung ${o.no}`, "",
+    `<button class="navlink bold" data-a="close">Fertig</button>`,
+    `<div class="group"><div class="card">
+      <div class="row"><span class="row-body"><span class="row-main"><span class="row-title">Besteller</span></span><span class="row-value">${esc(o.name)}</span></span></div>
+      <div class="row"><span class="row-body"><span class="row-main"><span class="row-title">Lieferort</span></span><span class="row-value">${esc(o.ort)}</span></span></div>
+      <div class="row"><span class="row-body"><span class="row-main"><span class="row-title">Summe VK</span></span><span class="row-value num">${eur(o.sum)}</span></span></div>
+    </div></div>
+
+    <div class="group"><div class="group-head">Positionen</div><div class="card">
+      ${o.pos.map((p) => `<div class="row"><span class="row-body pos">
+        <span class="q">${p.q}×</span>
+        <span class="row-main"><span class="row-title">${esc(p.art)}</span><div class="row-sub">${esc([p.sku, p.v].filter(Boolean).join(" · "))}</div></span>
+        <span class="p">${p.vk == null ? `<span class="warn-text">VK fehlt</span>` : eur(p.vk)}<div class="row-sub">${p.ek == null ? `<span class="warn-text">EK fehlt</span>` : `EK ${eur(p.ek)}`}</div></span>
+      </span></div>`).join("")}
+    </div>
+    ${o.pos.some((p) => p.ek == null) ? `<div class="group-foot">Ohne EK bleibt das Feld in CDH leer. Im Shop bei der Variante unter „Länge“ nachtragen.</div>` : ""}
+    </div>
+
+    <div class="group"><div class="group-head">So geht es an CDH</div><div class="card">
+      <div class="row"><span class="row-body"><span class="row-main"><span class="row-title">${esc(c.kunde)}</span>
+        <div class="row-sub">${esc(c.kundeHinweis)}</div></span><span class="row-value num">Auftrag ${esc(c.auftrag)}</span></span></div>
+      <div class="row"><span class="row-body"><span class="row-main"><span class="row-title">Lieferung${c.lieferart ? ` · ${esc(c.lieferart)}` : ""}</span>
+        <div class="addr" style="margin-top:4px">${liefer}</div><div class="row-sub">${esc(c.lieferHinweis)}</div></span></span></div>
+    </div>
+    ${u.orders.length > 1 ? `<div class="group-foot">Gemeinsamer Auftrag für ${esc(u.titel)} mit ${plural(u.orders.length, "Bestellung", "Bestellungen")}.</div>` : ""}</div>
+
+    <div class="group"><div class="group-head">Auftrag in CDH</div><div class="card">
+      ${c.positionen.map((p) => p.trenner
+        ? `<div class="row"><span class="row-body"><span class="row-main"><span class="row-title" style="font-weight:600">${esc(p.text)}</span></span></span></div>`
+        : `<div class="row"><span class="row-body pos"><span class="q">${p.q}×</span>
+            <span class="row-main"><span class="row-title">${esc(p.text)}</span><div class="row-sub num">${esc(p.sku)}</div></span>
+            <span class="p">${p.vk == null ? "" : eur(p.vk)}</span></span></div>`).join("")}
+    </div><div class="group-foot">So steht es nach dem Import im CDH-Auftrag (${esc(u.datei)}).</div></div>`);
+}
+
+// ------------------------------------------------------------ Excel-Übersicht
+function openExcelMenu() {
+  overlay = { kind: "actions" };
+  const list = (fetched?.shops || []).filter((s) => s.einheiten.length);
+  const n = (s) => s.einheiten.reduce((a, u) => a + u.orders.length, 0);
+  $("#overlay").innerHTML = `
+    <div class="backdrop" data-a="close">
+      <div class="actions" role="dialog" aria-label="Excel-Übersicht">
+        <div class="grp">
+          <div class="ttl">Übersicht der abgerufenen Bestellungen als Excel. Die Bestellungen bleiben offen.</div>
+          ${list.length ? `<button data-a="excel-make" data-scope="__all">Alle Shops in einer Datei</button>` : `<div class="ttl">Keine Bestellungen abgerufen.</div>`}
+          ${list.map((s) => `<button data-a="excel-make" data-scope="${s.id}">${esc(s.name)} <span class="n">${plural(n(s), "Bestellung", "Bestellungen")}</span></button>`).join("")}
+        </div>
+        <div class="grp"><button class="cancel" data-a="close">Abbrechen</button></div>
+      </div>
+    </div>`;
+}
+
+async function makeExcel(scope) {
+  closeOverlay();
+  const erg = await api().excel_uebersicht(scope);
+  if (!erg.ok) { meldung("Keine Excel-Übersicht", erg.fehler); return; }
+  overlay = { kind: "excel" };
+  $("#overlay").innerHTML = sheetShell("Excel erstellt", "", `<button class="navlink bold" data-a="close">Fertig</button>`, `
+    <div class="group"><div class="card">
+      <div class="row"><span class="icon" style="background:var(--green)">${I.tick.replace('viewBox', 'style="width:14px;height:12px" viewBox')}</span>
+        <span class="row-body"><span class="row-main"><span class="row-title">${esc(erg.datei)}</span>
+        <div class="row-sub">${plural(erg.bestellungen, "Bestellung", "Bestellungen")}, ${plural(erg.zeilen, "Zeile", "Zeilen")}</div></span></span></div>
+      <div class="sheets"><span style="background:none;padding-left:0">Blätter</span>${erg.blaetter.map((b) => `<span>${esc(b)}</span>`).join("")}</div>
+      <div style="height:12px"></div>
+      <button class="row action" data-a="ordner" data-v="uebersicht">
+        <span class="row-body"><span class="row-main"><span class="row-title">Im Ordner zeigen</span></span></span></button>
+    </div>
+    <div class="group-foot">Liegt unter excel-archiv\\uebersicht. Nur eine Übersicht — die Bestellungen bleiben offen und werden nicht als importiert markiert.</div></div>`);
+}
+
+// ------------------------------------------------------------ Import-Ablauf
+async function startImport() {
+  const keys = importableUnits().filter((u) => selected.has(u.key)).map((u) => u.key);
+  if (!keys.length) return;
+  const erg = await api().importieren(keys);
+  if (!erg.ok) { meldung("Import nicht gestartet", erg.fehler); return; }
+  overlay = { kind: "import", running: true, status: null };
+  renderOrders();
+  pollImport();
+}
+
+async function erneutUebergeben(datei) {
+  const erg = await api().erneut_uebergeben(datei);
+  if (!erg.ok) { meldung("Nicht übergeben", erg.fehler); return; }
+  overlay = { kind: "import", running: true, status: null };
+  pollImport();
+}
+
+function erneutFragen(datei) {
+  overlay = { kind: "alert", datei };
+  $("#overlay").innerHTML = `
+    <div class="backdrop center" data-a="close">
+      <div class="alert-box" role="alertdialog" aria-modal="true">
+        <div class="txt"><h4>Erneut an CDH übergeben?</h4>
+          <p>${esc(datei)}<br>Nur, wenn der Auftrag in CDH fehlt. Sonst steht er danach doppelt in CDH.</p></div>
+        <div class="btns">
+          <button data-a="close">Abbrechen</button>
+          <button data-a="erneut-ok">Übergeben</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+async function pollImport() {
+  const o = overlay;
+  if (!o || o.kind !== "import") return;
+  o.status = await api().import_status();
+  if (overlay !== o) return;
+  if (!o.status.laeuft) { finishImport(); return; }
+  drawImport();
+  setTimeout(pollImport, 700);
+}
+
+const STATUS_TEXT = {
+  fertig: "An CDH übergeben", pruefen: "Bitte in CDH prüfen", nicht_uebergeben: "Nicht an CDH übergeben",
+  doppelt: "Übersprungen", fehler: "Fehler", abgebrochen: "Nicht bearbeitet", wartet: "Wartet",
+};
+
+function drawImport() {
+  const { status: st, running } = overlay;
+  if (!st) return;
+  const rows = st.einheiten.map((x) => {
+    const icon = x.status === "laeuft" ? `<span class="spin" aria-label="läuft"></span>`
+      : x.status === "fertig" ? `<span class="state done">${I.tick}</span>`
+      : ["wartet", "abgebrochen"].includes(x.status) ? `<span class="state wait"></span>`
+      : `<span class="icon" style="background:var(--${x.status === "fehler" ? "red" : "orange"});width:22px;height:22px;border-radius:50%">${I.warn}</span>`;
+    const sub = x.status === "laeuft"
+      ? `<span style="color:var(--blue)">Warte auf CDH. Im CDH-Fenster auf „Ende“ klicken.</span>`
+      : x.meldung ? `<span class="${x.status === "fertig" ? "" : "warn-text"}">${esc(x.meldung)}</span>`
+      : `${esc(STATUS_TEXT[x.status] || "")}${x.datei ? " · " + esc(x.datei) : ""}`;
+    const title = x.art === "datei" ? esc(x.titel)
+      : x.art === "bestellung" ? `${esc(x.shop)} #${esc(x.titel)}`
+      : `${esc(x.shop)} ${esc(x.titel)}, ${plural(x.anzahl, "Bestellung", "Bestellungen")}`;
+    return `<div class="row" data-status="${x.status}"><span style="display:flex">${icon}</span><span class="row-body">
+      <span class="row-main"><span class="row-title">${title}</span><div class="row-sub">${sub}</div></span></span></div>`;
+  }).join("");
+  const done = !st.laeuft;
+  const ok = st.einheiten.filter((x) => ERLEDIGT.has(x.status) && x.status !== "doppelt");
+  const probleme = st.einheiten.filter((x) => ["pruefen", "nicht_uebergeben", "fehler"].includes(x.status)).length;
+  const foot = st.fehler ? `<span class="warn-text">${esc(st.fehler)}</span>`
+    : !done ? (st.art === "erneut" ? "Das CDH-Fenster öffnet sich. Nach „Ende“ ist die Übergabe fertig."
+      : "Die CDH-Fenster öffnen sich nacheinander. Erst nach „Ende“ kommt der nächste Auftrag. Das Fenster hier bleibt bedienbar.")
+    : st.abgebrochen ? `Abgebrochen nach ${ok.length} von ${st.gesamt}. Die übrigen Bestellungen bleiben offen und lassen sich später importieren.`
+    : st.art === "erneut" ? "Übergabe beendet."
+    : `${plural(st.bestellungen || 0, "Bestellung", "Bestellungen")} in ${plural(ok.length, "Auftrag", "Aufträgen")} verarbeitet.${probleme ? ` ${plural(probleme, "Auftrag braucht", "Aufträge brauchen")} einen Blick — siehe oben.` : " Kontrolllisten liegen im Ordner excel-archiv."}`;
+  $("#overlay").innerHTML = sheetShell(st.art === "erneut" ? "An CDH übergeben" : "Import",
+    running && !done ? `<button class="navlink" data-a="cancel-import" ${overlay.cancel || st.art === "erneut" ? "disabled" : ""}>${overlay.cancel ? "Wird beendet …" : "Abbrechen"}</button>` : "",
+    done ? `<button class="navlink bold" data-a="close">Fertig</button>` : "",
+    `<div class="group"><div class="card">${rows}</div><div class="group-foot">${foot}</div></div>`);
+}
+
+function finishImport() {
+  const o = overlay; o.running = false;
+  const st = o.status;
+  if (st.art === "import") {
+    const fertig = st.einheiten.filter((x) => ERLEDIGT.has(x.status)).map((x) => x.key);
+    for (const s of fetched?.shops || []) s.einheiten = s.einheiten.filter((u) => !fertig.includes(u.key));
+    fertig.forEach((k) => selected.delete(k));
+    const n = st.einheiten.filter((x) => ERLEDIGT.has(x.status) && x.status !== "doppelt");
+    lastImport = { time: new Date(), orders: st.bestellungen || 0, files: n.length };
+  }
+  drawImport(); renderOrders(); letzteLaden();
+}
+
 
 // ------------------------------------------------- Einstellungen je Shop
 function renderSettings() {
@@ -1091,6 +1414,23 @@ document.addEventListener("click", (e) => {
     case "wizard": requireAdmin("Shop hinzufügen", "Dabei werden Zugangsschlüssel hinterlegt.", () => hud("Shop anlegen kommt mit Welle 7.")); break;
     case "access": requireAdmin("Zugang erneuern", "Ersetzt die Schlüssel, mit denen der Shop abgefragt wird.", () => hud("Zugang erneuern kommt mit Welle 7.")); break;
     case "todo": hud(el.dataset.msg || "Im Entwurf ohne Funktion."); break;
+    case "fetch": doFetch(); break;
+    case "override": overrides.add(el.dataset.id); doFetch(); break;
+    case "toggle": { const u = el.dataset.u; selected.has(u) ? selected.delete(u) : selected.add(u); renderOrders(); break; }
+    case "select-all": {
+      const all = importableUnits(); const allOn = all.every((u) => selected.has(u.key));
+      selected = allOn ? new Set() : new Set(all.map((u) => u.key)); renderOrders(); break;
+    }
+    case "order": openOrder(el.dataset.u, el.dataset.no); break;
+    case "import": startImport(); break;
+    case "excel-menu": openExcelMenu(); break;
+    case "excel-make": makeExcel(el.dataset.scope); break;
+    case "ordner": api().ordner_zeigen(el.dataset.v).then((r) => { if (!r.ok) hud(r.fehler); }); break;
+    case "erneut": erneutFragen(el.dataset.datei); break;
+    case "erneut-ok": { const d = overlay.datei; overlay = null; $("#overlay").innerHTML = ""; erneutUebergeben(d); break; }
+    case "cancel-import":
+      overlay.cancel = true; drawImport();
+      api().import_abbrechen().then(() => hud("Wird nach dem laufenden Auftrag beendet.")); break;
     case "unknown": s.unknownOrt = el.dataset.v; render(); break;
     case "sumby": s.excelSumBy = el.dataset.v; render(); break;
 

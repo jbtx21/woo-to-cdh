@@ -786,11 +786,11 @@ Fenster weiter; das Admin-Passwort liegt nur als PBKDF2-Hash vor.
 
 ---
 
-## 15a. Oberfläche (Welle 5)
+## 15a. Oberfläche (Welle 5 und 6)
 
 `oberflaeche.py` öffnet ein Fenster (pywebview, unter Windows WebView2) mit
-der Oberfläche aus `ui/index.html`. Stand Welle 5: Tab **Einstellungen**
-vollständig, der Import läuft bis Welle 6 weiter über `WOO_to_CDH.exe`.
+der Oberfläche aus `ui/index.html`. Tab **Import** (Welle 6, Startseite) und
+Tab **Einstellungen** (Welle 5). `WOO_to_CDH.exe` bleibt parallel einsatzbereit.
 
 ```powershell
 pip install -r requirements.txt      # enthält pywebview
@@ -822,7 +822,38 @@ python oberflaeche.py
 Admin-Passwort setzen: `python migrate_config.py --admin-password …` (legt
 den Hash in `zugang.yaml` ab).
 
-**Tests:** `tests/test_einstellungen_api.py` prüft die Schnittstelle,
+### Tab Import (Welle 6)
+
+Schnittstelle in `import_api.py`, Ablauf wie in der Konsolen-EXE (gleiche
+Funktionen aus `woo_to_cdh.py`, `start_cdh_wex_import` unverändert).
+
+- **Abrufen** holt alle aktiven Shops und zeigt die Prüfansicht: je Shop die
+  Einheiten (Bestellung bzw. Sammelauftrag), Prüfhinweise und Sperren. Außerhalb
+  der Importtage fragt das Programm nach („trotzdem abrufen").
+- **Bestelldetail:** Klick auf eine Zeile zeigt die Bestellung und daneben
+  „So geht es an CDH" (Kunde/DatevNo, Lieferung, Positionen) — so, wie die
+  WEX-Datei geschrieben wird.
+- **Auswahl und Import:** ausgewählte Einheiten laufen in einem
+  Hintergrund-Thread, das Fenster bleibt bedienbar. Fortschritt je Einheit;
+  immer nur ein CDH-Fenster zur Zeit. Über Rechner hinweg hält der Lauf
+  `running.lock` — läuft woanders ein Import, zeigt die Seite das statt zu starten.
+- **Abbrechen** wirkt zwischen zwei Einheiten: die laufende wird fertig,
+  der Rest bleibt „abgebrochen" und kann später erneut abgerufen werden.
+- **Status je Einheit:** *fertig* · *bitte in CDH prüfen* (CDH-Exit ≠ 0 —
+  Frage 3 ist offen, darum nur Hinweis) · *nicht übergeben* (CDH nicht
+  gestartet, WEX liegt im Archiv) · *doppelt* (stand schon in `exported.log`)
+  · *Fehler* (Meldung ohne Schlüssel).
+- **Excel-Übersicht** ohne Import, für alle Shops oder einen; danach „Ordner
+  zeigen".
+- **Letzte WEX-Dateien** (15 neueste aus dem wex-archiv) mit
+  **„Erneut an CDH"** — z. B. wenn das CDH-Fenster ohne „Ende" geschlossen
+  wurde. Übergibt nur die vorhandene Datei, ändert nichts im Shop und nicht
+  `exported.log`. Nur Dateinamen aus dem Archiv werden angenommen.
+- **Ungesicherte Einstellungen:** Hinweis, dass der Import mit dem gesicherten
+  Stand arbeitet.
+
+**Tests:** `tests/test_import_api.py` prüft die Import-Schnittstelle,
+`tests/test_einstellungen_api.py` die Einstellungen,
 `tests/test_oberflaeche.py` die Seite in Chromium gegen die echte
 Schnittstelle (braucht `pip install playwright`, sonst übersprungen).
 

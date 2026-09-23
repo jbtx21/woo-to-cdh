@@ -171,10 +171,9 @@ Pfad, nie den Fund (neuer Test sichert das ab).
 
 Vor Welle 3 klären:
 
-1. **E-Mail im Sender-Block.** Bei Sammelaufträgen steht dort die E-Mail der
-   ersten Bestellung (sichtbar in `tests/golden/sammel_zusammengefasst.wex`).
-   Gleiche Fehlerklasse wie der Personenname in `Name2`. Leer lassen, oder nur
-   aus `sender_address`?
+1. ✅ **E-Mail im Sender-Block.** Entschieden: Bei Sammelaufträgen leer,
+   außer in `sender_address` gesetzt. Umgesetzt in Welle 3, Golden-WEX
+   aktualisiert.
 2. **Kundenstamm:** Überschreibt CDH beim WEX-Import den Kundenstammsatz aus dem
    Sender-Block, oder nur die Anschrift im Auftrag?
 3. **Exit-Code** von `CDH_WEX.EXE` bei fehlgeschlagenem Import — steht seit dem
@@ -190,5 +189,6 @@ Vor Welle 3 klären:
    „Ja" → PPOM-Feld, sonst → Checkout-Feld.
 7. **Lenzing:** Soll es als eigene Versandart angelegt werden? Die feste
    Adresse steht bereit, greift aber erst mit exakt diesem Namen.
-8. **Log-Text:** „5 bereits exportierte Bestellungen" erscheint bei jedem
-   Shop, ist aber die Gesamtzahl. In Welle 3 je Shop zählen.
+8. ✅ **Log-Text:** „5 bereits exportierte Bestellungen" erscheint bei jedem
+   Shop, ist aber die Gesamtzahl. Erledigt in Welle 3: je Shop gezählt, dazu
+   am Laufende „N Bestellung(en) exportiert" je Shop.

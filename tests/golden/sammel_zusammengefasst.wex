@@ -12,7 +12,7 @@
         <PostalCodeCity>4863</PostalCodeCity>
         <City>Seewalchen</City>
         <Country>AT</Country>
-        <Email>e.pichler@beispiel.test</Email>
+        <Email />
       </NameAddress>
     </Sender>
     <Delivery>
@@ -24,7 +24,7 @@
         <PostalCodeCity>4863</PostalCodeCity>
         <City>Seewalchen</City>
         <Country>AT</Country>
-        <Email>e.pichler@beispiel.test</Email>
+        <Email />
       </NameAddress>
     </Delivery>
     <OrderNo>2772+2773</OrderNo>

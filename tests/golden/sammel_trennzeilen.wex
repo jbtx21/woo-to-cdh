@@ -12,7 +12,7 @@
         <PostalCodeCity>89604</PostalCodeCity>
         <City>Allmendingen</City>
         <Country>DE</Country>
-        <Email>einkauf@agrar.test</Email>
+        <Email />
       </NameAddress>
     </Sender>
     <Delivery>
@@ -24,7 +24,7 @@
         <PostalCodeCity>89604</PostalCodeCity>
         <City>Allmendingen</City>
         <Country>DE</Country>
-        <Email>einkauf@agrar.test</Email>
+        <Email />
       </NameAddress>
     </Delivery>
     <OrderNo>3939+3940</OrderNo>

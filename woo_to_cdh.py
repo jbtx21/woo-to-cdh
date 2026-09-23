@@ -20,6 +20,7 @@ import os
 import subprocess
 import sys
 import time
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -659,6 +660,10 @@ def build_combined_wex_data(orders_data: list[dict], shop_cfg: dict,
 
     In beiden Fällen gilt: OrderNo enthält alle Bestellnummern mit "+"
     verbunden, die Kopfadresse kommt aus der ersten Bestellung.
+
+    Die E-Mail bleibt leer, außer sie ist in sender_address gesetzt. Die
+    E-Mail der ersten Bestellung gehört einem einzelnen Besteller — gleiche
+    Fehlerklasse wie ein Personenname in Name2 (Entscheidung 23.09.2026).
     """
     if not orders_data:
         raise OrderBuildError("build_combined_wex_data: keine Bestellungen "
@@ -669,6 +674,8 @@ def build_combined_wex_data(orders_data: list[dict], shop_cfg: dict,
     combined_no = "+".join(order_nos)
 
     aggregate_all = bool(shop_cfg.get("aggregate_all_positions"))
+    sender_email = str((shop_cfg.get("sender_address") or {}).get("email")
+                       or "").strip()
 
     all_positions: list[dict] = []
 
@@ -702,7 +709,7 @@ def build_combined_wex_data(orders_data: list[dict], shop_cfg: dict,
             "postcode":         first["postcode"],
             "city":             first["city"],
             "country":          first["country"],
-            "email":            first["email"],
+            "email":            sender_email,
             "del_name1":        first["name1"],
             "del_name2":        "",
             "del_street":       first["street"],
@@ -767,7 +774,7 @@ def build_combined_wex_data(orders_data: list[dict], shop_cfg: dict,
         "postcode":         first["postcode"],
         "city":             first["city"],
         "country":          first["country"],
-        "email":            first["email"],
+        "email":            sender_email,
         # Delivery: bewusst die Firmenadresse, NICHT die private
         # Lieferadresse der ersten Bestellung. Ein Sammelauftrag bündelt
         # mehrere Empfänger; welcher Standort gemeint ist, steht in
@@ -1215,90 +1222,167 @@ def write_excel_export(target_path: Path, orders: list, shop_cfg: dict,
 # Shop-Runner
 # ---------------------------------------------------------------------------
 
-def process_shop(shop_cfg: dict, global_cfg: dict) -> dict:
-    """
-    Einen Shop abarbeiten. Gibt eine Zusammenfassung zurück.
+# ---------------------------------------------------------------------------
+# Abruf und Import (Welle 3)
+# ---------------------------------------------------------------------------
+#
+# Zwei Schritte statt eines Zugs, damit die Oberfläche dazwischen eine
+# Prüfansicht zeigen kann:
+#
+#   abrufen(einstellungen)   nur lesend: Bestellungen holen, WEX-Daten bauen,
+#                            Einheiten (Bestellung oder Lieferort-Gruppe)
+#                            mit Warnungen und Sperren liefern.
+#   importieren(auswahl)     je Einheit: WEX schreiben, Excel, exported.log,
+#                            WooCommerce-Markierung, Statuswechsel, CDH-Import.
+#
+# Die Konsolen-EXE ruft main() → abrufen() → importieren() für alles.
 
-    Zwei Modi (per Config-Flag "combine_by_delivery"):
+@dataclass
+class Einheit:
+    """Was als EIN CDH-Auftrag rausgeht: eine Bestellung (Standard-Modus)
+    oder alle Bestellungen eines Lieferorts (Sammel-Modus)."""
+    shop: str
+    art: str                       # "bestellung" | "lieferort"
+    titel: str                     # Bestellnummer bzw. Lieferort
+    orders: list                   # Roh-Bestellungen aus der API
+    wex_data: dict                 # fertige WEX-Daten (Vorschau)
+    warnungen: list = field(default_factory=list)
+    sperren: list = field(default_factory=list)
+    # Rückverweis für importieren() — Client, Preise, Ordner.
+    shop_ergebnis: "ShopErgebnis | None" = field(default=None, repr=False)
 
-      Standard-Modus (eine WEX pro Bestellung):
-        1. Für jede offene Bestellung eine WEX-Datei schreiben.
-        2. In WooCommerce als exportiert markieren.
-        3. CDH_WEX.EXE mit der Datei starten.
+    @property
+    def key(self) -> str:
+        return f"{self.shop}|{self.art}|{self.titel}"
 
-      Sammel-Modus ("combine_by_delivery: true", z.B. Allgaier, Ensinger):
-        1. Alle offenen Bestellungen abrufen und nach Lieferort gruppieren
-           (shipping_lines[0].method_title). Bestellungen ohne Lieferort
-           landen in einer eigenen Gruppe "ohne-lieferort".
-        2. Pro Lieferort EINE Sammel-WEX bauen — mit Trennern pro
-           Kundenbestellung und zusammengefassten Veredelungen am Ende.
-        3. Erst nach erfolgreichem Schreiben der WEX werden ALLE
-           Bestellungen dieser Gruppe in WooCommerce als exportiert markiert.
-        4. CDH_WEX.EXE mit der Sammel-Datei starten.
-    """
+    @property
+    def order_nos(self) -> list:
+        return [o.get("number") or o.get("id") for o in self.orders]
+
+    def dateiname(self, datum: datetime | None = None) -> str:
+        """WEX-Dateiname ohne Endung, wie bisher."""
+        date_part = (datum or datetime.now()).strftime("%Y-%m-%d")
+        if self.art == "bestellung":
+            return f"orders-{date_part}-{self.titel}"
+        shop_slug = _sanitize_for_filename(self.shop).lower()
+        return f"orders-{date_part}-{shop_slug}-{_sanitize_for_filename(self.titel)}"
+
+
+@dataclass
+class ShopErgebnis:
+    shop: str
+    shop_cfg: dict
+    global_cfg: dict
+    einheiten: list = field(default_factory=list)
+    warnungen: list = field(default_factory=list)
+    sperren: list = field(default_factory=list)
+    uebersprungen: str = ""        # z.B. "Tages-Gate"
+    fehler: int = 0                # Bestellungen, die nicht gebaut werden konnten
+    client: Any = field(default=None, repr=False)
+    price_cache: dict = field(default_factory=dict, repr=False)
+    target_folder: Path = Path("./output")
+    excel_folder: Path = Path("./excel-archiv")
+    status_after_export: str = ""
+
+
+@dataclass
+class Pruefergebnis:
+    zeit: datetime
+    shops: list = field(default_factory=list)
+
+    def einheiten(self) -> list:
+        """Alle importierbaren Einheiten (ohne Sperren), in Shop-Reihenfolge."""
+        return [e for s in self.shops if not s.sperren
+                for e in s.einheiten if not e.sperren]
+
+    @property
+    def fehler(self) -> int:
+        return sum(s.fehler for s in self.shops)
+
+
+@dataclass
+class Importergebnis:
+    ok: int = 0                    # importierte Bestellungen
+    fehler: int = 0
+    dateien: list = field(default_factory=list)
+    je_shop: dict = field(default_factory=dict)   # shop → Anzahl Bestellungen
+    abgebrochen: bool = False
+    nicht_bearbeitet: list = field(default_factory=list)   # Einheiten
+
+
+def _tages_gate(shop_cfg: dict, shop_name: str) -> str:
+    """Leer, wenn heute importiert werden darf, sonst der Grund."""
+    import_days = shop_cfg.get("import_on_days")
+    if not import_days:
+        return ""
+    try:
+        allowed = {int(d) for d in import_days}
+    except (TypeError, ValueError):
+        logging.error("[%s] 'import_on_days' enthält ungültige Werte "
+                      "(%r) — Shop wird regulär verarbeitet.",
+                      shop_name, import_days)
+        return ""
+    heute = datetime.now().day
+    if heute in allowed:
+        return ""
+    return (f"Import nur am {', '.join(f'{d}.' for d in sorted(allowed))} "
+            f"des Monats, heute ist der {heute}.")
+
+
+def _status_after_export(shop_cfg: dict, global_cfg: dict) -> str:
+    # Die REST-API erwartet den Status ohne "wc-"-Präfix ("completed",
+    # nicht "wc-completed") — beides in der Config zulassen.
+    status = str(shop_cfg.get("status_after_export")
+                 or global_cfg.get("status_after_export") or "").strip()
+    return status[3:] if status.startswith("wc-") else status
+
+
+def _shop_abrufen(shop_cfg: dict, global_cfg: dict, exported_locally: set,
+                  exported_je_shop: dict, delivery_table: dict,
+                  trotzdem: bool = False, client_factory=None) -> ShopErgebnis:
+    """Einen Shop abrufen und die Einheiten bauen. Schreibt nichts."""
     shop_name = shop_cfg.get("name", shop_cfg["url"])
     logging.info("--- Shop: %s ---", shop_name)
+    erg = ShopErgebnis(shop=shop_name, shop_cfg=shop_cfg, global_cfg=global_cfg)
 
     # Tages-Gate: Manche Shops werden nur an bestimmten Tagen im Monat
-    # importiert (Ensinger: zum Monatsersten). Ohne Eintrag läuft der Shop
-    # bei jedem Aufruf. Die Prüfung steht bewusst ganz vorn, damit an
-    # anderen Tagen keine API-Abfrage passiert.
-    import_days = shop_cfg.get("import_on_days")
-    if import_days:
-        try:
-            allowed = {int(d) for d in import_days}
-        except (TypeError, ValueError):
-            logging.error("[%s] 'import_on_days' enthält ungültige Werte "
-                          "(%r) — Shop wird regulär verarbeitet.",
-                          shop_name, import_days)
-            allowed = set()
-        heute = datetime.now().day
-        if allowed and heute not in allowed:
-            logging.info("[%s] Übersprungen: Import nur am %s des Monats, "
-                         "heute ist der %d.",
-                         shop_name,
-                         ", ".join(f"{d}." for d in sorted(allowed)),
-                         heute)
-            return {"shop": shop_name, "ok": 0, "errors": 0, "files": [],
-                    "skipped": "Tages-Gate"}
+    # importiert (Ensinger: zum Monatsersten). Die Prüfung steht bewusst
+    # ganz vorn, damit an anderen Tagen keine API-Abfrage passiert.
+    # "trotzdem" (Oberfläche) setzt sich darüber hinweg.
+    gate = _tages_gate(shop_cfg, shop_name)
+    if gate and not trotzdem:
+        logging.info("[%s] Übersprungen: %s", shop_name, gate)
+        erg.uebersprungen = "Tages-Gate"
+        erg.warnungen.append(gate)
+        return erg
+    if gate:
+        logging.info("[%s] Importtag ignoriert (trotzdem): %s", shop_name, gate)
+        erg.warnungen.append(f"Trotz Stichtag abgerufen: {gate}")
 
     # Statusfilter: pro Shop überschreibbar (z.B. Allgaier nur "processing").
     shop_statuses = shop_cfg.get("included_statuses")
-    client = WooClient(shop_cfg["url"], shop_cfg["consumer_key"],
-                       shop_cfg["consumer_secret"],
-                       statuses=shop_statuses)
+    client = (client_factory or WooClient)(
+        shop_cfg["url"], shop_cfg["consumer_key"], shop_cfg["consumer_secret"],
+        statuses=shop_statuses)
+    erg.client = client
     if shop_statuses:
         logging.info("[%s] Statusfilter: %s", shop_name,
                      ", ".join(shop_statuses))
 
-    target_folder = Path(shop_cfg.get("cdh_import_folder")
-                         or global_cfg.get("cdh_import_folder")
-                         or "./output")
-
-    # Zielordner für Excel-Kontrollausdrucke — parallel zu den WEX.
-    # Wird bei Bedarf angelegt. Ohne Konfig-Eintrag fällt es auf
-    # <cdh_import_folder>/../excel-archiv zurück.
+    erg.target_folder = Path(shop_cfg.get("cdh_import_folder")
+                             or global_cfg.get("cdh_import_folder")
+                             or "./output")
+    # Zielordner für Excel-Kontrollausdrucke — parallel zu den WEX. Ohne
+    # Konfig-Eintrag: excel-archiv NEBEN wex-archiv, also eine Ebene höher.
     excel_folder_cfg = (shop_cfg.get("excel_export_folder")
                         or global_cfg.get("excel_export_folder"))
-    if excel_folder_cfg:
-        excel_folder = Path(excel_folder_cfg)
-    else:
-        # Default: excel-archiv NEBEN wex-archiv, also eine Ebene höher.
-        excel_folder = target_folder.parent / "excel-archiv"
+    erg.excel_folder = (Path(excel_folder_cfg) if excel_folder_cfg
+                        else erg.target_folder.parent / "excel-archiv")
 
-    price_cache: dict = {}
-    summary = {"shop": shop_name, "ok": 0, "errors": 0, "files": []}
-
-    # Lokales Export-Log einlesen — dient als zweite Wahrheit zusätzlich
-    # zum WooCommerce-Meta-Feld. Verhindert Doppel-Exporte, wenn eine
-    # frühere mark_exported()-Anfrage scheitert.
-    exported_locally = load_exported_log()
-    if exported_locally:
-        logging.info("[%s] %d bereits exportierte Bestellungen aus "
-                     "exported.log geladen.", shop_name, len(exported_locally))
-
-    # Feste Lieferadressen je Lieferort, gepflegt über das Adressen-Tool.
-    delivery_table = load_delivery_addresses()
+    n_exportiert = exported_je_shop.get(shop_name, 0)
+    if n_exportiert:
+        logging.info("[%s] %d bereits exportierte Bestellung(en) dieses Shops "
+                     "in exported.log.", shop_name, n_exportiert)
     if delivery_table.get(shop_name):
         logging.info("[%s] %d feste Lieferadresse(n) hinterlegt.",
                      shop_name, len(delivery_table[shop_name]))
@@ -1307,173 +1391,88 @@ def process_shop(shop_cfg: dict, global_cfg: dict) -> dict:
     if combine_mode:
         logging.info("[%s] Sammel-Modus aktiv: Bestellungen werden nach "
                      "Lieferort gruppiert.", shop_name)
-    # Optionaler Statuswechsel nach erfolgreichem Export. Ohne Eintrag in
-    # der Config bleibt der Status unverändert.
-    status_after_export = (shop_cfg.get("status_after_export")
-                           or global_cfg.get("status_after_export") or "")
-    # Die REST-API erwartet den Status ohne "wc-"-Präfix ("completed",
-    # nicht "wc-completed") — beides in der Config zulassen.
-    status_after_export = str(status_after_export).strip()
-    if status_after_export.startswith("wc-"):
-        status_after_export = status_after_export[3:]
-    if status_after_export:
+    erg.status_after_export = _status_after_export(shop_cfg, global_cfg)
+    if erg.status_after_export:
         logging.info("[%s] Nach Export wird der Status auf '%s' gesetzt.",
-                     shop_name, status_after_export)
+                     shop_name, erg.status_after_export)
 
-    # Optional: Empfängername in die Bestellnummer schreiben, damit im
-    # CDH-Auftragskopf "3939 Anna Weber" statt nur "3939" steht.
-    # Gilt nur im Standard-Modus — im Sammel-Modus enthält die Bestellnummer
-    # bereits alle Nummern ("3935+3936+..."), und die Namen stehen dort in
-    # den Trennzeilen.
+    # Optional: Empfängername in die Bestellnummer ("3939 Anna Weber").
+    # Nur im Standard-Modus — im Sammel-Modus stehen alle Nummern drin,
+    # die Namen in den Trennzeilen.
     order_no_with_name = bool(shop_cfg.get("order_no_with_name",
                                            global_cfg.get("order_no_with_name")))
 
-    # ---- Modus 1: Standard, eine WEX pro Bestellung ------------------------
+    # Erst ALLE offenen Bestellungen holen, dann bauen. So ändert sich
+    # nichts an der Bestellliste, während noch paginiert wird.
+    orders = list(client.iter_new_orders(exported_locally=exported_locally))
 
-    if not combine_mode:
-        for order in client.iter_new_orders(
-                exported_locally=exported_locally):
-            order_id = order.get("id")
-            order_no = order.get("number") or order_id
-            try:
-                wex_data = build_wex_data(order, shop_cfg, client, price_cache)
-            except OrderBuildError as e:
-                logging.error("[%s] Bestellung %s übersprungen: %s",
+    gebaut: list[tuple] = []
+    for order in orders:
+        order_no = order.get("number") or order.get("id")
+        try:
+            wex_data = build_wex_data(order, shop_cfg, client, erg.price_cache)
+        except OrderBuildError as e:
+            logging.error("[%s] Bestellung %s übersprungen: %s",
+                          shop_name, order_no, e)
+            erg.fehler += 1
+            continue
+        except Exception as e:  # noqa: BLE001
+            logging.exception("[%s] Bestellung %s: unerwarteter Fehler: %s",
                               shop_name, order_no, e)
-                summary["errors"] += 1
-                continue
-            except Exception as e:  # noqa: BLE001
-                logging.exception("[%s] Bestellung %s: unerwarteter Fehler: %s",
-                                  shop_name, order_no, e)
-                summary["errors"] += 1
-                continue
+            erg.fehler += 1
+            continue
+        gebaut.append((order, wex_data))
 
+    # ---- Standard-Modus: eine Einheit je Bestellung ------------------------
+    if not combine_mode:
+        for order, wex_data in gebaut:
+            order_no = str(order.get("number") or order.get("id"))
             if order_no_with_name:
                 person = (wex_data.get("person_name") or "").strip()
                 if person:
                     wex_data["order_no_wex"] = f"{order_no} {person}"
-
-            # Feste Lieferadresse für diesen Lieferort, falls hinterlegt
             lieferort = wex_data.get("mode_of_shipment") or ""
             if apply_delivery_address(wex_data, shop_name, lieferort,
                                       delivery_table):
                 logging.info("[%s] Bestellung %s: feste Lieferadresse "
                              "'%s' angewendet.", shop_name, order_no, lieferort)
+            erg.einheiten.append(Einheit(
+                shop=shop_name, art="bestellung", titel=order_no,
+                orders=[order], wex_data=wex_data, shop_ergebnis=erg))
+        if not erg.einheiten and not erg.fehler:
+            logging.info("[%s] Keine neuen Bestellungen.", shop_name)
+        return erg
 
-            date_part = datetime.now().strftime("%Y-%m-%d")
-            filename = f"orders-{date_part}-{order_no}.wex"
-            target_path = target_folder / filename
-
-            try:
-                write_cdh_wex(target_path, wex_data)
-            except Exception as e:  # noqa: BLE001
-                logging.exception("[%s] WEX für Bestellung %s konnte nicht "
-                                  "geschrieben werden: %s",
-                                  shop_name, order_no, e)
-                summary["errors"] += 1
-                continue
-
-            # Excel-Kontrollausdruck parallel schreiben (best effort — ein
-            # Fehler soll den CDH-Import nicht blockieren).
-            excel_path = excel_folder / f"orders-{date_part}-{order_no}.xlsx"
-            try:
-                write_excel_export(excel_path, [order], shop_cfg,
-                                   client, price_cache)
-            except Exception as e:  # noqa: BLE001
-                logging.exception("[%s] Excel-Export für Bestellung %s "
-                                  "fehlgeschlagen: %s",
-                                  shop_name, order_no, e)
-
-            # WICHTIG: Erst lokal loggen, DANN in WooCommerce markieren.
-            # Wenn mark_exported fehlschlägt, ist die Bestellung trotzdem
-            # in unserem lokalen Log und wird beim nächsten Lauf übersprungen.
-            append_to_exported_log(shop_name, order_id, order_no,
-                                   target_path.name)
-
-            try:
-                client.mark_exported(order_id)
-            except Exception as e:  # noqa: BLE001
-                logging.warning("[%s] Bestellung %s: WooCommerce-Markierung "
-                                "fehlgeschlagen (%s). Ist aber lokal in "
-                                "exported.log vermerkt — kein Doppel-Export.",
-                                shop_name, order_no, e)
-
-            if status_after_export:
-                try:
-                    client.set_status(order_id, status_after_export)
-                    logging.info("[%s] Bestellung %s → Status '%s'",
-                                 shop_name, order_no, status_after_export)
-                except Exception as e:  # noqa: BLE001
-                    logging.warning("[%s] Bestellung %s: Status konnte nicht "
-                                    "auf '%s' gesetzt werden (%s). Export "
-                                    "selbst ist davon nicht betroffen.",
-                                    shop_name, order_no, status_after_export, e)
-
-            logging.info("[%s] Bestellung %s → %s", shop_name, order_no,
-                         target_path.name)
-            summary["ok"] += 1
-            summary["files"].append(str(target_path))
-
-            start_cdh_wex_import(target_path, global_cfg)
-
-        return summary
-
-    # ---- Modus 2: Sammel-WEX pro Lieferort ---------------------------------
-
-    # Erst: Alle Bestellungen abrufen, nach Lieferort gruppieren.
-    # Wir merken uns pro Gruppe: (order_id, order_no, wex_data, order_dict)
-    # order_dict wird später für den Excel-Kontrollausdruck gebraucht.
+    # ---- Sammel-Modus: eine Einheit je Lieferort ---------------------------
     groups: dict[str, list[tuple]] = {}
-    for order in client.iter_new_orders(exported_locally=exported_locally):
-        order_id = order.get("id")
-        order_no = order.get("number") or order_id
-        try:
-            wex_data = build_wex_data(order, shop_cfg, client, price_cache)
-        except OrderBuildError as e:
-            logging.error("[%s] Bestellung %s übersprungen: %s",
-                          shop_name, order_no, e)
-            summary["errors"] += 1
-            continue
-        except Exception as e:  # noqa: BLE001
-            logging.exception("[%s] Bestellung %s: unerwarteter Fehler: %s",
-                              shop_name, order_no, e)
-            summary["errors"] += 1
-            continue
-
-        # Lieferort aus der Versandart auslesen
+    for order, wex_data in gebaut:
         shipping_lines = order.get("shipping_lines") or []
         delivery = ""
         if shipping_lines:
             delivery = (shipping_lines[0].get("method_title") or "").strip()
-        if not delivery:
-            delivery = "ohne-lieferort"
-
-        groups.setdefault(delivery, []).append((order_id, order_no, wex_data, order))
+        groups.setdefault(delivery or "ohne-lieferort", []).append((order, wex_data))
 
     if not groups:
         logging.info("[%s] Keine neuen Bestellungen.", shop_name)
-        return summary
-
-    # Pro Lieferort-Gruppe: Sammel-WEX bauen, schreiben, markieren, importieren.
-    date_part = datetime.now().strftime("%Y-%m-%d")
-    shop_slug = _sanitize_for_filename(shop_name).lower()
+        return erg
 
     for delivery, entries in groups.items():
-        order_nos = [e[1] for e in entries]
-        wex_datas = [e[2] for e in entries]
-        raw_orders = [e[3] for e in entries]
+        order_nos = [str(o.get("number") or o.get("id")) for o, _ in entries]
         logging.info("[%s] Lieferort '%s': %d Bestellung(en) (%s)",
                      shop_name, delivery, len(entries), ", ".join(order_nos))
-
         try:
-            combined = build_combined_wex_data(wex_datas, shop_cfg, delivery)
+            combined = build_combined_wex_data([d for _, d in entries],
+                                               shop_cfg, delivery)
         except Exception as e:  # noqa: BLE001
             logging.exception("[%s] Sammel-WEX für Lieferort '%s' konnte "
                               "nicht gebaut werden: %s",
                               shop_name, delivery, e)
-            summary["errors"] += len(entries)
+            erg.fehler += len(entries)
             continue
 
+        einheit = Einheit(shop=shop_name, art="lieferort", titel=delivery,
+                          orders=[o for o, _ in entries], wex_data=combined,
+                          shop_ergebnis=erg)
         # Feste Lieferadresse für diesen Lieferort, falls hinterlegt.
         # Ohne Eintrag bleibt die Firmenadresse stehen.
         if apply_delivery_address(combined, shop_name, delivery,
@@ -1487,72 +1486,199 @@ def process_shop(shop_cfg: dict, global_cfg: dict) -> dict:
             logging.warning("[%s] Lieferort '%s': keine feste Lieferadresse "
                             "hinterlegt — es gilt die Firmenadresse. Im "
                             "Adressen-Tool ergänzen.", shop_name, delivery)
+            einheit.warnungen.append(
+                "Keine feste Lieferadresse hinterlegt — es gilt die Firmenadresse.")
+        erg.einheiten.append(einheit)
+    return erg
 
-        delivery_slug = _sanitize_for_filename(delivery)
-        filename = f"orders-{date_part}-{shop_slug}-{delivery_slug}.wex"
-        target_path = target_folder / filename
 
+def abrufen(einstellungen: dict, trotzdem=(), client_factory=None) -> Pruefergebnis:
+    """
+    Nur lesend: alle aktiven Shops abrufen und die Einheiten bauen.
+
+    einstellungen   Konfiguration wie aus load_config() (inkl. Zugangsdaten)
+    trotzdem        Shop-Namen, die trotz Importtag abgerufen werden
+    client_factory  Ersatz für WooClient (Tests)
+
+    Schreibt weder Dateien noch nach WooCommerce. Duplikatschutz
+    (WooCommerce-Meta und exported.log) ist schon berücksichtigt.
+    """
+    ergebnis = Pruefergebnis(zeit=datetime.now())
+    exported_locally = load_exported_log()
+    exported_je_shop = count_exported_by_shop()
+    delivery_table = load_delivery_addresses()
+    trotzdem = set(trotzdem or ())
+
+    for shop_cfg in einstellungen.get("shops", []):
+        shop_name = shop_cfg.get("name", shop_cfg.get("url"))
+        if not shop_cfg.get("enabled", True):
+            logging.info("Shop %s ist deaktiviert — übersprungen.", shop_name)
+            continue
+        fehlt = fehlende_zugangsdaten(shop_cfg)
+        if fehlt:
+            logging.error("Shop %s: Zugangsdaten fehlen (%s) — in "
+                          "zugang.yaml unter dem Shop-Namen eintragen. "
+                          "Shop übersprungen.", shop_name, ", ".join(fehlt))
+            ergebnis.shops.append(ShopErgebnis(
+                shop=shop_name, shop_cfg=shop_cfg, global_cfg=einstellungen,
+                sperren=[f"Zugangsdaten fehlen ({', '.join(fehlt)})"], fehler=1))
+            continue
         try:
-            write_cdh_wex(target_path, combined)
+            ergebnis.shops.append(_shop_abrufen(
+                shop_cfg, einstellungen, exported_locally, exported_je_shop,
+                delivery_table, trotzdem=shop_name in trotzdem,
+                client_factory=client_factory))
+        except requests.HTTPError as e:
+            logging.error("Shop %s: API-Fehler: %s", shop_name, e)
+            ergebnis.shops.append(ShopErgebnis(
+                shop=shop_name, shop_cfg=shop_cfg, global_cfg=einstellungen,
+                sperren=[f"API-Fehler: {e}"], fehler=1))
         except Exception as e:  # noqa: BLE001
+            logging.exception("Shop %s: unerwarteter Fehler: %s", shop_name, e)
+            ergebnis.shops.append(ShopErgebnis(
+                shop=shop_name, shop_cfg=shop_cfg, global_cfg=einstellungen,
+                sperren=[f"Unerwarteter Fehler: {e}"], fehler=1))
+    return ergebnis
+
+
+def _ist_gesetzt(abbruch_flag) -> bool:
+    if abbruch_flag is None:
+        return False
+    if hasattr(abbruch_flag, "is_set"):
+        return bool(abbruch_flag.is_set())
+    return bool(abbruch_flag())
+
+
+def _einheit_importieren(e: Einheit, imp: Importergebnis) -> bool:
+    """Eine Einheit schreiben, vermerken, markieren, an CDH übergeben."""
+    s = e.shop_ergebnis
+    shop_name, client = e.shop, s.client
+    name = e.dateiname()
+    target_path = s.target_folder / f"{name}.wex"
+    n = len(e.orders)
+
+    # Zwischen Abruf und Import kann ein anderer Arbeitsplatz importiert
+    # haben — exported.log noch einmal prüfen.
+    schon = load_exported_log()
+    doppelt = [str(o.get("number") or o.get("id")) for o in e.orders
+               if WooClient._local_key(o) in schon]
+    if doppelt:
+        logging.warning("[%s] %s übersprungen: Bestellung(en) %s stehen "
+                        "inzwischen in exported.log.",
+                        shop_name, e.titel, ", ".join(doppelt))
+        imp.fehler += n
+        return False
+
+    try:
+        write_cdh_wex(target_path, e.wex_data)
+    except Exception as ex:  # noqa: BLE001
+        if e.art == "bestellung":
+            logging.exception("[%s] WEX für Bestellung %s konnte nicht "
+                              "geschrieben werden: %s", shop_name, e.titel, ex)
+        else:
             logging.exception("[%s] Sammel-WEX-Datei für Lieferort '%s' "
                               "konnte nicht geschrieben werden: %s",
-                              shop_name, delivery, e)
-            summary["errors"] += len(entries)
-            continue
+                              shop_name, e.titel, ex)
+        imp.fehler += n
+        return False
 
-        # Excel-Kontrollausdruck parallel zur Sammel-WEX (alle Bestellungen
-        # dieses Lieferorts in einer Datei — jede Position mit ihrer echten
-        # Bestellnummer, KEIN aggregierter Sticker, KEINE Trenner-Zeilen).
-        excel_path = excel_folder / f"orders-{date_part}-{shop_slug}-{delivery_slug}.xlsx"
-        try:
-            write_excel_export(excel_path, raw_orders, shop_cfg,
-                               client, price_cache)
-        except Exception as e:  # noqa: BLE001
+    # Excel-Kontrollausdruck parallel (best effort — ein Fehler soll den
+    # CDH-Import nicht blockieren). Im Sammel-Modus jede Position mit ihrer
+    # echten Bestellnummer, ohne Aggregation.
+    excel_path = s.excel_folder / f"{name}.xlsx"
+    try:
+        write_excel_export(excel_path, e.orders, s.shop_cfg, client,
+                           s.price_cache)
+    except Exception as ex:  # noqa: BLE001
+        if e.art == "bestellung":
+            logging.exception("[%s] Excel-Export für Bestellung %s "
+                              "fehlgeschlagen: %s", shop_name, e.titel, ex)
+        else:
             logging.exception("[%s] Excel-Export für Lieferort '%s' "
-                              "fehlgeschlagen: %s",
-                              shop_name, delivery, e)
+                              "fehlgeschlagen: %s", shop_name, e.titel, ex)
 
-        # Erst lokal loggen (zweite Wahrheit), dann WooCommerce markieren.
-        # Wenn WooCommerce-Markierung fehlschlägt, sind Bestellungen dank
-        # lokalem Log trotzdem gegen Doppel-Export geschützt.
-        for order_id, order_no, _, _ in entries:
-            append_to_exported_log(shop_name, order_id, order_no,
-                                   target_path.name)
+    # WICHTIG: Erst lokal loggen, DANN in WooCommerce markieren. Scheitert
+    # mark_exported, ist die Bestellung trotzdem gegen Doppel-Export geschützt.
+    for o in e.orders:
+        append_to_exported_log(shop_name, o.get("id"),
+                               o.get("number") or o.get("id"), target_path.name)
 
-        for order_id, order_no, _, _ in entries:
+    for o in e.orders:
+        order_no = o.get("number") or o.get("id")
+        try:
+            client.mark_exported(o.get("id"))
+        except Exception as ex:  # noqa: BLE001
+            logging.warning("[%s] Bestellung %s: WooCommerce-Markierung "
+                            "fehlgeschlagen (%s). Ist aber lokal in "
+                            "exported.log vermerkt — kein Doppel-Export.",
+                            shop_name, order_no, ex)
+
+    status = s.status_after_export
+    if status:
+        for o in e.orders:
+            order_no = o.get("number") or o.get("id")
             try:
-                client.mark_exported(order_id)
-            except Exception as e:  # noqa: BLE001
-                logging.warning("[%s] Bestellung %s (Lieferort '%s'): "
-                                "WooCommerce-Markierung fehlgeschlagen "
-                                "(%s). Ist aber lokal in exported.log "
-                                "vermerkt — kein Doppel-Export.",
-                                shop_name, order_no, delivery, e)
-
-        if status_after_export:
-            for order_id, order_no, _, _ in entries:
-                try:
-                    client.set_status(order_id, status_after_export)
-                except Exception as e:  # noqa: BLE001
-                    logging.warning("[%s] Bestellung %s: Status konnte nicht "
-                                    "auf '%s' gesetzt werden (%s). Export "
-                                    "selbst ist davon nicht betroffen.",
-                                    shop_name, order_no, status_after_export, e)
+                client.set_status(o.get("id"), status)
+                if e.art == "bestellung":
+                    logging.info("[%s] Bestellung %s → Status '%s'",
+                                 shop_name, order_no, status)
+            except Exception as ex:  # noqa: BLE001
+                logging.warning("[%s] Bestellung %s: Status konnte nicht "
+                                "auf '%s' gesetzt werden (%s). Export "
+                                "selbst ist davon nicht betroffen.",
+                                shop_name, order_no, status, ex)
+        if e.art == "lieferort":
             logging.info("[%s] %d Bestellung(en) auf Status '%s' gesetzt.",
-                         shop_name, len(entries), status_after_export)
+                         shop_name, n, status)
 
+    if e.art == "bestellung":
+        logging.info("[%s] Bestellung %s → %s", shop_name, e.titel,
+                     target_path.name)
+    else:
         logging.info("[%s] Sammel-WEX '%s' → %s (%d Bestellung(en), "
-                     "%d Positionen)",
-                     shop_name, delivery, target_path.name, len(entries),
-                     len(combined["positions"]))
-        summary["ok"] += len(entries)
-        summary["files"].append(str(target_path))
+                     "%d Positionen)", shop_name, e.titel, target_path.name,
+                     n, len(e.wex_data["positions"]))
+    imp.ok += n
+    imp.je_shop[shop_name] = imp.je_shop.get(shop_name, 0) + n
+    imp.dateien.append(str(target_path))
 
-        # CDH_WEX.EXE mit der Sammel-Datei starten (blockiert bis "Ende")
-        start_cdh_wex_import(target_path, global_cfg)
+    # CDH_WEX.EXE starten — blockiert, bis der Benutzer "Ende" klickt.
+    start_cdh_wex_import(target_path, s.global_cfg)
+    return True
 
-    return summary
+
+def importieren(auswahl, fortschritt_callback=None,
+                abbruch_flag=None) -> Importergebnis:
+    """
+    Die ausgewählten Einheiten nacheinander importieren.
+
+    fortschritt_callback(nr, gesamt, einheit, phase) mit phase "start",
+                         "fertig" oder "fehler"; nr zählt ab 1.
+    abbruch_flag         threading.Event (oder Funktion → bool). Wird nur
+                         ZWISCHEN zwei Einheiten geprüft — eine begonnene
+                         Einheit läuft immer zu Ende.
+    """
+    auswahl = list(auswahl)
+    imp = Importergebnis()
+    for i, e in enumerate(auswahl, start=1):
+        if _ist_gesetzt(abbruch_flag):
+            imp.abgebrochen = True
+            imp.nicht_bearbeitet = auswahl[i - 1:]
+            logging.warning("Import abgebrochen — %d Einheit(en) nicht "
+                            "bearbeitet.", len(imp.nicht_bearbeitet))
+            break
+        if fortschritt_callback:
+            fortschritt_callback(i, len(auswahl), e, "start")
+        try:
+            ok = _einheit_importieren(e, imp)
+        except Exception as ex:  # noqa: BLE001
+            logging.exception("[%s] %s: unerwarteter Fehler beim Import: %s",
+                              e.shop, e.titel, ex)
+            imp.fehler += len(e.orders)
+            ok = False
+        if fortschritt_callback:
+            fortschritt_callback(i, len(auswahl), e, "fertig" if ok else "fehler")
+    return imp
 
 
 def _cdh_wex_running(exe: str) -> bool:
@@ -1693,6 +1819,30 @@ def load_exported_log() -> set:
         logging.warning("exported.log konnte nicht gelesen werden (%s) — "
                         "Fallback nur auf WooCommerce-Markierung.", e)
     return keys
+
+
+def count_exported_by_shop() -> dict:
+    """
+    Anzahl der Einträge in exported.log je Shop-Name. Für die Logzeile
+    "bereits exportierte Bestellungen" — die galt bis Welle 3 fälschlich
+    für alle Shops zusammen.
+    """
+    counts: dict = {}
+    if not EXPORTED_LOG_PATH.exists():
+        return counts
+    try:
+        with EXPORTED_LOG_PATH.open("r", encoding="utf-8") as f:
+            for i, line in enumerate(f):
+                if i == 0 and line.startswith("timestamp"):
+                    continue
+                parts = line.rstrip("\n\r").split("\t")
+                if len(parts) < 4:
+                    continue
+                shop = parts[1].strip()
+                counts[shop] = counts.get(shop, 0) + 1
+    except OSError as e:
+        logging.warning("exported.log konnte nicht gelesen werden (%s).", e)
+    return counts
 
 
 def append_to_exported_log(shop_name: str, order_id, order_no,
@@ -1873,34 +2023,18 @@ def main() -> int:
         logging.info("Veredelungs-Präfixe: %s",
                      ", ".join(VEREDELUNG_PREFIXES))
 
-        total_ok = 0
-        total_err = 0
-        for shop_cfg in cfg.get("shops", []):
-            if not shop_cfg.get("enabled", True):
-                logging.info("Shop %s ist deaktiviert — übersprungen.",
-                             shop_cfg.get("name", shop_cfg.get("url")))
+        # Konsole: alles abrufen, dann alles importieren — über dieselben
+        # zwei Funktionen, die auch die Oberfläche nutzt.
+        pruef = abrufen(cfg)
+        imp = importieren(pruef.einheiten())
+
+        for sh in pruef.shops:
+            if sh.uebersprungen or sh.sperren:
                 continue
-            fehlt = fehlende_zugangsdaten(shop_cfg)
-            if fehlt:
-                logging.error("Shop %s: Zugangsdaten fehlen (%s) — in "
-                              "zugang.yaml unter dem Shop-Namen eintragen. "
-                              "Shop übersprungen.",
-                              shop_cfg.get("name", shop_cfg.get("url")),
-                              ", ".join(fehlt))
-                total_err += 1
-                continue
-            try:
-                s = process_shop(shop_cfg, cfg)
-                total_ok += s["ok"]
-                total_err += s["errors"]
-            except requests.HTTPError as e:
-                logging.error("Shop %s: API-Fehler: %s",
-                              shop_cfg.get("name"), e)
-                total_err += 1
-            except Exception as e:  # noqa: BLE001
-                logging.exception("Shop %s: unerwarteter Fehler: %s",
-                                  shop_cfg.get("name"), e)
-                total_err += 1
+            logging.info("[%s] %d Bestellung(en) exportiert.",
+                         sh.shop, imp.je_shop.get(sh.shop, 0))
+        total_ok = imp.ok
+        total_err = pruef.fehler + imp.fehler
 
         logging.info("=== Lauf beendet: %d exportiert, %d Fehler ===",
                      total_ok, total_err)

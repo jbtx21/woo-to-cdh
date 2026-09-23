@@ -64,6 +64,22 @@ Pro Lauf:
 5. Startet `CDH_WEX.EXE` mit der WEX-Datei und wartet, bis der Benutzer im
    CDH-Fenster auf „Ende" klickt.
 
+Seit Welle 3 in zwei Schritten, die auch die künftige Oberfläche nutzt:
+
+- **`abrufen(einstellungen)`** — nur lesend (Schritte 1–2). Holt alle
+  aktiven Shops, baut die WEX-Daten und liefert ein `Pruefergebnis`: je Shop
+  die Einheiten (eine Bestellung bzw. eine Lieferort-Gruppe), Warnungen und
+  Sperren. Statusfilter, Importtage (mit `trotzdem`) und Duplikatschutz sind
+  berücksichtigt. Schreibt nichts.
+- **`importieren(auswahl, fortschritt_callback, abbruch_flag)`** — Schritte
+  3–5 je Einheit, strikt nacheinander. Abbruch nur zwischen zwei Einheiten.
+  Vor jeder Einheit wird `exported.log` noch einmal geprüft, falls ein
+  anderer Arbeitsplatz inzwischen importiert hat.
+
+Die Konsolen-EXE ruft beides nacheinander für alles auf. Dadurch werden
+erst **alle** Shops abgerufen, dann importiert; am Ende steht im Log je Shop
+„N Bestellung(en) exportiert".
+
 Schritt 5 blockiert bewusst: `CDH_WEX.EXE` darf nur einmal gleichzeitig
 laufen, sonst meldet CDH „WEX Importer bereits ausgeführt" und der zweite
 Auftrag geht verloren. Drei Sicherungen:
@@ -287,6 +303,10 @@ Bestellungen ohne Versandart landen in der Gruppe `ohne-lieferort`.
 Adressen im Sammel-Modus: In **beiden** Blöcken steht die Firmenadresse. Ein
 Sammelauftrag bündelt mehrere Empfänger — die Privatadresse der ersten
 Bestellung wäre dort falsch. Der Standort steht in `ModeOfShippment`.
+
+Aus demselben Grund bleibt `<Email>` im Sammel-Modus leer, außer
+`sender_address` enthält `email` (Entscheidung 23.09.2026). Im
+Standard-Modus steht weiter die E-Mail aus der Rechnungsadresse.
 
 Aktive Shops: Allgaier (mit Trennzeilen), Ensinger (voll zusammengefasst)
 

@@ -51,8 +51,11 @@ def test_fehlende_zugangsdaten():
 
 def test_main_ueberspringt_shop_ohne_zugang(split_ohne_xond, monkeypatch, caplog):
     bearbeitet = []
-    monkeypatch.setattr(w, "process_shop", lambda shop, cfg: bearbeitet.append(
-        shop["name"]) or {"ok": 1, "errors": 0})
+    def fake_abrufen(shop, cfg, *a, **k):
+        bearbeitet.append(shop["name"])
+        return w.ShopErgebnis(shop=shop["name"], shop_cfg=shop, global_cfg=cfg)
+
+    monkeypatch.setattr(w, "_shop_abrufen", fake_abrufen)
 
     with caplog.at_level(logging.INFO):
         assert w.main() == 1                 # Fehler zählt, Lauf läuft durch

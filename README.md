@@ -507,7 +507,7 @@ gleichzeitig vor, gelten die neuen — und es steht eine Warnung im Log.
 |------------------------|-----------|
 | `cdh_import_folder`    | Zielordner für WEX-Dateien |
 | `excel_export_folder`  | Zielordner für Kontroll-XLSX |
-| `cdh_exe`              | Pfad zu `CDH_WEX.EXE` auf dem Arbeitsplatz |
+| `cdh_exe`              | Pfad zu `CDH_WEX.EXE` — künftig auf V:, am besten als UNC-Pfad (`\\SERVER2019TEX\…`), weil V: nicht überall gleich verbunden ist |
 | `veredelung_prefixes`  | Liste der Veredelungs-Präfixe |
 | `status_after_export`  | Status nach Export, leer lassen für keine Änderung |
 | `order_no_with_name`   | Empfängername in die Bestellnummer |
@@ -776,6 +776,10 @@ Fenster weiter; das Admin-Passwort liegt nur als PBKDF2-Hash vor.
 
 - Schlüssel niemals in Chats, Tickets oder Konsolenausgaben teilen. Sind sie
   einmal sichtbar geworden, im Shop widerrufen und neu erzeugen.
+- Das Programm entfernt Schlüssel aus Fehlermeldungen und aus dem Log
+  (`consumer_key=***`). Bis 23.09.2026 standen sie bei API-Fehlern (401, 404,
+  Zeitüberschreitung) mit der ganzen URL in `logs\woo_to_cdh.log`. Alte
+  Log-Dateien deshalb nicht weitergeben bzw. vorher bereinigen.
 - Beim Weitergeben der Config Platzhalter einsetzen.
 - Rechte auf dem Ordner auf den Personenkreis beschränken, der den Import
   tatsächlich auslöst.

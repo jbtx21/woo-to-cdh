@@ -214,6 +214,17 @@ widerrufen und neu erzeugen (README §15). Behoben in Welle 2: Test scannt
 nur noch getrackte Dateien und meldet im Trefferfall ausschließlich den
 Pfad, nie den Fund (neuer Test sichert das ab).
 
+### Sicherheitsvorfall 23.09.2026 (2) — Schlüssel im Log
+
+`woo_to_cdh.log` enthielt bei jedem API-Fehler die komplette URL samt
+`consumer_key`/`consumer_secret` (requests schreibt die URL in die
+Fehlermeldung, wir authentifizieren per Query-Parameter). Aufgefallen an einem
+Log von COMPUTER-1 (21.–23.09., CAF, Stoll, Xond, SFS, Allgaier). **Zu tun:**
+diese Schlüssel im Shop widerrufen, falls noch nicht geschehen; alte Logs auf
+V: bereinigen oder löschen. Behoben auf `hotfix-schluessel-im-log` (aus
+`main`): Fehler werden ohne Schlüssel weitergereicht, zusätzlich filtert der
+Log-Formatter. Nach dem 01.10. zusammen mit dem nächsten Deploy ausrollen.
+
 Vor Welle 3 klären:
 
 1. ✅ **E-Mail im Sender-Block.** Entschieden: Bei Sammelaufträgen leer,
@@ -222,11 +233,35 @@ Vor Welle 3 klären:
 2. ✅ **Kundenstamm:** Beantwortet durch den CDH-Test vom 23.09.2026 (Welle 4):
    Der Sender landet nur im Auftragskopf, der Kundenstamm bleibt unverändert.
    Der Sender trägt seitdem nur noch die DatevNo.
-3. **Exit-Code** von `CDH_WEX.EXE` bei fehlgeschlagenem Import — steht seit dem
-   Warte-Fix im Log. Ungleich 0 bei Fehlern, dann kann die Oberfläche
-   Fehlschläge rot markieren.
-4. **Arbeitsplätze:** Überall `C:\CDH\CDH_WEX.EXE`? Überall Windows 11
-   (WebView2 für `pywebview`)?
+3. **Exit-Code** von `CDH_WEX.EXE` bei fehlgeschlagenem Import — noch offen.
+   Die Logs bis 23.09.2026 stammen alle von Fassungen **vor** dem Warte-Fix
+   („CDH-WEX-Import gestartet: …" ohne „warte auf 'Ende'", kein
+   „abgeschlossen (Exit n)"). Der erste Import mit der aktuellen Fassung
+   schreibt den Code ins Log. Bis dahin zeigt die Oberfläche (Welle 6) einen
+   Code ungleich 0 als „bitte in CDH prüfen", nicht als Fehler.
+4. ✅ **Arbeitsplätze** (Antwort 23.09.2026): `CDH_WEX.EXE` soll auf V:
+   (Serverlaufwerk) liegen, nicht mehr lokal unter `C:\CDH\`. Manche Rechner
+   laufen mit Windows 10. Folgen:
+   - `cdh_exe` in `einstellungen.yaml` auf den Pfad auf V: setzen — besser als
+     UNC-Pfad (`\\SERVER2019TEX\Verwaltung\…`), weil V: nicht auf jedem
+     Rechner gleich verbunden sein muss (COMPUTER-1 startet über UNC).
+     **Genauer Pfad fehlt noch.** Die Sperre „nur ein CDH-Fenster" prüft per
+     `tasklist` den Programmnamen und funktioniert unabhängig vom Ort.
+   - Windows 10: Die Oberfläche braucht die WebView2-Laufzeit. `oberflaeche.py`
+     prüft sie beim Start und meldet sonst klar, wo es sie gibt; die
+     Konsolen-EXE läuft ohne. Vor Welle 6 an den Win-10-Rechnern prüfen bzw.
+     installieren (Welle 8: Teil der Ausroll-Anleitung).
+
+**Befund aus dem Log von COMPUTER-1 (23.09.2026):** Dort startet der
+Benutzer „Assistent" eine **alte Fassung** aus
+`…\WooCommerce Import\wex-archiv\woo_to_cdh.py` — mit eigener, veralteter
+Konfiguration (alte Schlüssel → 401 bei CAF/Stoll/Xond/SFS, falscher Slug
+`/allgaier-shop/` → 404) und noch mit `Popen` (Importe parallel). Seit
+mindestens 21.09. endet dort jeder Lauf mit „0 exportiert, 5 Fehler";
+Bestellungen, die nur von dort aus hätten kommen sollen, fehlen. **Zu tun
+(Regel 7/8, nach Freigabe):** Verknüpfung auf COMPUTER-1 auf
+`WOO_to_CDH.exe` im Hauptordner umstellen, die Kopie in `wex-archiv\`
+(inkl. Konfiguration mit Schlüsseln) entfernen.
 5. **Admins:** Wer bekommt das Passwort?
 6. **Personalnummer an der Ensinger-Kasse:** Es gibt ein Checkout-Feld
    Personalnummer an der Bestellung, zusätzlich zum PPOM-Feld am Produkt. Der

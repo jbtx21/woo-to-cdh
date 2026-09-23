@@ -60,7 +60,7 @@ def get(base: str, auth: dict, path: str,
     try:
         r = requests.get(url, params=merged, timeout=30)
     except requests.RequestException as e:
-        return 0, str(e)
+        return 0, w.ohne_schluessel(e)     # URL mit Schlüsseln nie ausgeben
     try:
         return r.status_code, r.json()
     except ValueError:
@@ -399,7 +399,7 @@ def diagnose(shop_cfg: dict,
         va = w.versandarten_aus_zonen(json_or_raise)
     except Exception as e:  # noqa: BLE001
         punkte.append(Pruefpunkt("Versandarten", "warn",
-                                 f"Nicht abrufbar ({e})"))
+                                 f"Nicht abrufbar ({w.ohne_schluessel(e)})"))
         return punkte
     if not va:
         punkte.append(Pruefpunkt("Versandarten", "warn",

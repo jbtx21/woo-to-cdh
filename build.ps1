@@ -10,7 +10,9 @@ python -m pytest -q
 if ($LASTEXITCODE -ne 0) { throw "Tests rot — kein Build." }
 
 Write-Host "2/3 Konfigurationen auf V: pruefen" -ForegroundColor Cyan
-foreach ($f in "config.yaml", "lieferadressen.yaml") {
+# config.yaml ist die alte Sammel-Datei; einstellungen.yaml + zugang.yaml sind
+# die geteilten Nachfolger (Welle 2). Geprueft wird, was vorhanden ist.
+foreach ($f in "config.yaml", "einstellungen.yaml", "zugang.yaml", "lieferadressen.yaml") {
     $p = Join-Path $Target $f
     if (Test-Path $p) {
         python -c "import yaml,sys; yaml.safe_load(open(sys.argv[1], encoding='utf-8'))" $p

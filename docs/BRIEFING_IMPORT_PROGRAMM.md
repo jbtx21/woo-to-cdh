@@ -1,6 +1,6 @@
 # BRIEFING · Importprogramm mit Oberfläche
 
-Repo: `github.com/jbtx21/woo-to-cdh` · Stand Welle 0: 23.09.2026
+Repo: `github.com/jbtx21/woo-to-cdh` · Stand: 23.09.2026 · Welle 0 und 1 erledigt
 
 Ziel: Die Konsolen-EXE `WOO_to_CDH.exe` wird zu einem Programm mit
 Oberfläche — Bestellungen abrufen, prüfen, gezielt importieren, Einstellungen
@@ -27,18 +27,30 @@ Fachlicher Hintergrund, WEX-Format und alle bisherigen Fallstricke: `README.md`.
    `lieferadressen.yaml`, `exported.log`, WEX- und Excel-Dateien außer
    `tests/golden/`. Echte Namen oder Anschriften in Testdaten sind tabu.
 7. **Nichts auf V: ändern** ohne ausdrückliche Freigabe. V: ist Produktion.
+8. **Produktionsstopp bis nach dem 01.10.2026.** Am 1. Oktober läuft der erste
+   echte Ensinger-Stichtag. Bis zur Freigabe danach wird auf V: nichts
+   verändert, keine Migration, kein Deploy. Entwicklung nur auf Branches.
 
 ---
 
-## Welle 1 — Recon Produktion (nur lesen)
+## Welle 1 — Recon Produktion ✅ erledigt am 23.09.2026
 
-- `woo_to_cdh.py` auf V: gegen `main` vergleichen. Abweichungen auflisten.
-- `exported.log` auf V: auswerten: Läufe seit 07.09.2026 mit mehr als einer
-  WEX-Datei in derselben Minute. Diese Läufe hat die fehlerhafte `Popen`-Fassung
-  gleichzeitig an CDH übergeben — Liste der Bestellungen zum Abgleich in CDH.
-- `config.yaml` und `lieferadressen.yaml` auf V: auf gültiges YAML prüfen.
+Ergebnis:
 
-**STOPP — Bericht an Jannik, keine Änderungen.**
+- **Code auf V:** mit `build.ps1 -Deploy` aus `main` ausgerollt, identisch mit
+  Welle 0. Log zeigt den Warte-Fix.
+- **`exported.log`:** 5 Einträge insgesamt. Nur ein Lauf mit zwei
+  CDH-Übergaben (17.09., Ensinger 2766/2767) — Testbestellungen, kein echter
+  Auftrag betroffen.
+- **`config.yaml` auf V:** Beim Ensinger-Block fehlten `import_on_days` und
+  `sender_address` — ergänzt. Gültiges YAML.
+- **`lieferadressen.yaml`:** fehlte auf V: — abgelegt.
+- **Abgleich Versandarten an der Ensinger-Kasse:** „Seewalchen (Österreich)"
+  statt „Seewalchen" — Schlüssel korrigiert. „Lenzing" gibt es im Shop nicht
+  als Versandart. Genau solche Abweichungen soll der automatische Abgleich in
+  Welle 4 finden.
+- **Allgaier** lief vom 14. bis 16.09. noch im Einzelmodus (Dateinamen
+  `orders-…-3939.wex`), seit 23.09. im Sammel-Modus.
 
 ## Welle 2 — Konfiguration teilen
 
@@ -100,6 +112,13 @@ Jeweils mit Tests:
   automatisch gesperrt. Geschützt: Shop hinzufügen, Zugang erneuern,
   Debitornummer, Veredelungs-Präfixe.
 - Inter lokal einbetten, kein Nachladen aus dem Netz.
+- **Feste Shop-IDs statt Namen** als Schlüssel zwischen `einstellungen.yaml`
+  und `zugang.yaml`. Heute ordnet `zugang.yaml` die Zugangsdaten über den
+  Shop-Namen zu — wird ein Shop in der Oberfläche umbenannt, verliert er
+  seinen Zugang. Jeder Shop bekommt eine unveränderliche `id` (wie im
+  Entwurf: `caf`, `ensinger` …), `zugang.yaml` wird darauf umgestellt
+  (Migration mit Probelauf). Der Name bleibt Anzeige und Schlüssel für
+  `lieferadressen.yaml`.
 
 **STOPP — Sichtung am echten Rechner.**
 
@@ -138,6 +157,18 @@ Jannik. Konsolen-EXE bleibt parallel einsatzbereit.**
 
 ## Offene Fragen an Jannik
 
+### Sicherheitsvorfall 23.09.2026 — API-Schlüssel sichtbar geworden
+
+Beim Recon zu Welle 2 hat `python -m pytest -q` die echten Consumer
+Key/Secret aller Shops in die Konsole geschrieben: Der Test
+`tests/test_konfiguration.py::test_keine_echten_schluessel_im_repo`
+durchsuchte per `rglob` den ganzen Ordner (inkl. der gitignorierten,
+lokalen `config.yaml`) und pytests Assertion-Rewriting gab Treffer **und**
+Dateiinhalt aus. **Zu tun:** betroffene Schlüssel im jeweiligen Shop
+widerrufen und neu erzeugen (README §15). Behoben in Welle 2: Test scannt
+nur noch getrackte Dateien und meldet im Trefferfall ausschließlich den
+Pfad, nie den Fund (neuer Test sichert das ab).
+
 Vor Welle 3 klären:
 
 1. **E-Mail im Sender-Block.** Bei Sammelaufträgen steht dort die E-Mail der
@@ -152,3 +183,12 @@ Vor Welle 3 klären:
 4. **Arbeitsplätze:** Überall `C:\CDH\CDH_WEX.EXE`? Überall Windows 11
    (WebView2 für `pywebview`)?
 5. **Admins:** Wer bekommt das Passwort?
+6. **Personalnummer an der Ensinger-Kasse:** Es gibt ein Checkout-Feld
+   Personalnummer an der Bestellung, zusätzlich zum PPOM-Feld am Produkt. Der
+   interne Schlüssel ist unbekannt; bei Selbstbestellungen bleibt die
+   Excel-Spalte deshalb leer. Schlüssel per API ermitteln, dann: Teambestellung
+   „Ja" → PPOM-Feld, sonst → Checkout-Feld.
+7. **Lenzing:** Soll es als eigene Versandart angelegt werden? Die feste
+   Adresse steht bereit, greift aber erst mit exakt diesem Namen.
+8. **Log-Text:** „5 bereits exportierte Bestellungen" erscheint bei jedem
+   Shop, ist aber die Gesamtzahl. In Welle 3 je Shop zählen.

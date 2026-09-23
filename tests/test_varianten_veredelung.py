@@ -15,7 +15,7 @@ def test_nur_groesse():
 
 
 def test_veredelungspraefixe():
-    for sku in ("004/STICK", "316/DRUCK", "234/SRFX"):
+    for sku in ("004/STICK", "316/STICK", "006/TRANSFER", "234/SRFX"):
         assert w._is_veredelung(sku), sku
     assert not w._is_veredelung("396/SHIRT-4XL")
 

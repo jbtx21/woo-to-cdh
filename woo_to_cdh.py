@@ -89,13 +89,10 @@ ZUGANG_PATH = BASE_DIR / "zugang.yaml"
 # via included_statuses in config.yaml)
 INCLUDED_STATUSES = ["processing", "on-hold"]
 
-# Artikelnummern-Präfixe, die Veredelungspositionen markieren
-# (Sticker, Druck etc.). Positionen mit diesen Präfixen werden innerhalb
-# einer Bestellung zusammengefasst, wenn Artikelnummer und Preise identisch
-# sind.
 # Artikelnummern-Präfixe, die Veredelungspositionen markieren:
 #   004/  Stick
-#   316/  Druck
+#   316/  Stick
+#   006/  Transferdruck
 #   234/  Silberreflex
 # Positionen mit diesen Präfixen werden zusammengefasst, wenn Artikelnummer
 # und Preise identisch sind.
@@ -103,7 +100,7 @@ INCLUDED_STATUSES = ["processing", "on-hold"]
 # Diese Liste ist der Standard und lässt sich in der config.yaml über
 # "veredelung_prefixes" überschreiben — dann braucht ein neuer Präfix
 # keinen EXE-Neubau.
-VEREDELUNG_PREFIXES = ("004/", "316/", "234/")
+VEREDELUNG_PREFIXES = ("004/", "316/", "006/", "234/")
 
 # Welches Custom-Field einer Variation den EK enthält — in WooCommerce ist das
 # die "Länge" (cm). Das VK-Feld ist die "Breite" (cm).

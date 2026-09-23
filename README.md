@@ -396,7 +396,8 @@ sind. Bei abweichenden Preisen bleiben sie getrennt.
 | Präfix | Bedeutung     |
 |--------|---------------|
 | `004/` | Stick         |
-| `316/` | Druck         |
+| `316/` | Stick         |
+| `006/` | Transferdruck |
 | `234/` | Silberreflex  |
 
 Gepflegt in der `config.yaml` unter `veredelung_prefixes`. Ein neuer Präfix

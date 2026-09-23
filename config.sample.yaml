@@ -35,7 +35,8 @@ cdh_exe: 'C:\CDH\CDH_WEX.EXE'
 # neu gebaut werden, die Liste wird bei jedem Start frisch gelesen.
 veredelung_prefixes:
   - '004/'   # Stick
-  - '316/'   # Druck
+  - '316/'   # Stick
+  - '006/'   # Transferdruck
   - '234/'   # Silberreflex
 
 # Empfängername in die CDH-Bestellnummer schreiben, also z.B.

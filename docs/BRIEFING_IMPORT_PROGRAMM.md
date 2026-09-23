@@ -100,6 +100,15 @@ Jeweils mit Tests:
   ganzen Importlauf gehalten. Andere Rechner sehen „Import läuft an …".
 - **Diagnose als Funktion** (aus `diagnose.py`) für den Shop-Assistenten.
 
+Umsetzung auf `welle-04-logik` (Stand 23.09.2026, wartet auf Sichtung):
+neue Shop-Optionen `unknown_delivery` (`firma`/`versand`/`sperren`,
+Standard `firma` = bisheriges Verhalten), `excel_summary`,
+`excel_summary_by`, `excel_summary_veredelungen`. Die Sperre hält sich per
+Heartbeat, damit lange Läufe mit mehreren CDH-Fenstern nicht nach 10 Minuten
+als verwaist gelten. **Nach dem 01.10. auf V: nachziehen:** `006/` in
+`veredelung_prefixes` der echten Konfiguration (sie überschreibt die
+Standardliste), für Ensinger `unknown_delivery` und `excel_summary` festlegen.
+
 **STOPP — Sichtung.**
 
 ## Welle 5 — Oberfläche, Einstellungen

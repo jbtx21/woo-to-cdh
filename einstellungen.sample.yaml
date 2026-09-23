@@ -70,6 +70,14 @@ shops:
     import_on_days: [1]
     combine_by_delivery: true
     aggregate_all_positions: true
+    # Lieferort ohne feste Adresse in lieferadressen.yaml:
+    #   firma (Kundenadresse, Standard) · versand (Versandadresse der ersten
+    #   Bestellung) · sperren (Lieferort wird nicht importiert)
+    unknown_delivery: firma
+    # Summenblatt in der Excel: je Lieferort, mit Veredelungen
+    excel_summary: true
+    excel_summary_by: ort
+    excel_summary_veredelungen: true
     sender_address:
       name1:    'BITTE EINTRAGEN — Firmenname lt. CDH'
       street:   'BITTE EINTRAGEN — Straße'

@@ -15,10 +15,13 @@ Autor:  für TEXMA Textilmarketing GmbH
 
 from __future__ import annotations
 
+import json
 import logging
 import os
+import socket
 import subprocess
 import sys
+import threading
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -61,6 +64,8 @@ LOCK_PATH = BASE_DIR / "running.lock"
 # Wenn eine Lock-Datei älter als diese Zeit ist, gilt sie als verwaist
 # (Prozess vermutlich abgestürzt) und wird ignoriert.
 LOCK_STALE_MINUTES = 10
+# Solange ein Lauf aktiv ist, wird die Lock-Datei so oft aufgefrischt.
+LOCK_HEARTBEAT_SECONDS = 60
 
 # Meta-Key, mit dem wir in WooCommerce markieren, dass eine Bestellung
 # bereits nach CDH exportiert wurde. Solange das Feld fehlt oder leer ist,
@@ -230,6 +235,10 @@ class WooClient:
 
     def get_product(self, product_id: int) -> dict:
         return self._get(f"/products/{product_id}")
+
+    def get_shipping_methods(self) -> list[str]:
+        """Titel aller aktiven Versandarten über alle Versandzonen."""
+        return versandarten_aus_zonen(self._get)
 
     def mark_exported(self, order_id: int) -> None:
         now = datetime.now().isoformat(timespec="seconds")
@@ -611,6 +620,54 @@ def load_delivery_addresses() -> dict:
             if isinstance(adr, dict)
         }
     return table
+
+
+def load_delivery_address_names() -> dict:
+    """{Shop: [Lieferort in Originalschreibweise]} — für Anzeige und Abgleich."""
+    if not DELIVERY_ADDRESSES_PATH.exists():
+        return {}
+    try:
+        with DELIVERY_ADDRESSES_PATH.open("r", encoding="utf-8") as f:
+            raw = yaml.safe_load(f) or {}
+    except Exception:  # noqa: BLE001
+        return {}
+    return {str(shop): [str(o).strip() for o in orte]
+            for shop, orte in raw.items() if isinstance(orte, dict)}
+
+
+def versandarten_aus_zonen(get_json) -> list[str]:
+    """
+    Versandarten aus den WooCommerce-Versandzonen:
+    /shipping/zones, dann je Zone /shipping/zones/{id}/methods.
+    Nur aktive Methoden, Titel ohne Dubletten in Shop-Reihenfolge.
+    get_json(path) liefert die JSON-Antwort oder wirft.
+    """
+    titel: list[str] = []
+    for zone in get_json("/shipping/zones") or []:
+        for m in get_json(f"/shipping/zones/{zone.get('id')}/methods") or []:
+            if m.get("enabled") is False:
+                continue
+            t = str(m.get("title") or m.get("method_title") or "").strip()
+            if t and t not in titel:
+                titel.append(t)
+    return titel
+
+
+def versandarten_abgleich(versandarten: list, lieferorte: list) -> dict:
+    """
+    Versandarten im Shop gegen hinterlegte Lieferadressen. Vergleich wie
+    apply_delivery_address: ohne Rücksicht auf Groß-/Kleinschreibung und
+    Leerzeichen am Rand.
+      ohne_adresse     Versandart ohne feste Adresse
+      ohne_versandart  Adresse, zu der es keine Versandart gibt (Tippfehler?)
+    """
+    norm = lambda x: str(x).strip().lower()  # noqa: E731
+    va = {norm(v) for v in versandarten}
+    lo = {norm(o) for o in lieferorte}
+    return {
+        "ohne_adresse": [v for v in versandarten if norm(v) not in lo],
+        "ohne_versandart": [o for o in lieferorte if norm(o) not in va],
+    }
 
 
 def apply_delivery_address(data: dict, shop_name: str, delivery: str,
@@ -1205,14 +1262,108 @@ def write_excel_export(target_path: Path, orders: list, shop_cfg: dict,
                             ", ".join(k for k, _l in extra_meta),
                             target_path.name)
 
+    _spaltenbreiten(ws, headers)
+    if shop_cfg.get("excel_summary"):
+        _summenblatt(wb, "Summe", orders, shop_cfg)
+
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    wb.save(target_path)
+
+
+def _spaltenbreiten(ws, headers: list) -> None:
     # Spaltenbreiten grob nach Header-Länge, damit die Datei ohne
     # Nach-Anpassen lesbar ist.
     for col_idx, header in enumerate(headers, start=1):
         col_letter = openpyxl.utils.get_column_letter(col_idx)
         ws.column_dimensions[col_letter].width = max(12, len(header) + 2)
 
+
+def summen_zeilen(orders: list, by: str = "ort",
+                  mit_veredelungen: bool = True) -> tuple[list, list]:
+    """
+    Artikelsumme für das Summenblatt: gleiche Artikelvarianten addiert,
+    je Lieferort (by="ort") oder über alles (by="gesamt"). Veredelungen
+    wahlweise mit. Preise spielen keine Rolle — es geht um Stückzahlen
+    für Produktion und Versand.
+    """
+    je_ort = by != "gesamt"
+    summen: dict = {}
+    for order in orders:
+        lines = order.get("shipping_lines") or []
+        ort = (lines[0].get("method_title") or "").strip() if lines else ""
+        for item in order.get("line_items") or []:
+            sku = (item.get("sku") or "").strip()
+            if not mit_veredelungen and _is_veredelung(sku):
+                continue
+            name = (item.get("name") or "").strip()
+            variante = _extract_variant_text(item)
+            if variante and name.endswith(f" - {variante}"):
+                name = name[: -(len(variante) + 3)]
+            key = ((ort or "ohne Lieferort") if je_ort else "", sku, name,
+                   _variant_text_labeled(item))
+            summen[key] = summen.get(key, 0) + int(item.get("quantity") or 0)
+
+    headers = ["Artikelnummer", "Artikelname", "Artikeltext 2", "Anzahl"]
+    if je_ort:
+        headers = ["Lieferort"] + headers
+    rows = []
+    for (ort, sku, name, text), menge in sorted(summen.items()):
+        row = [sku, name, text, menge]
+        rows.append([ort] + row if je_ort else row)
+    return headers, rows
+
+
+def _summenblatt(wb, titel: str, orders: list, shop_cfg: dict) -> None:
+    headers, rows = summen_zeilen(
+        orders, by=str(shop_cfg.get("excel_summary_by") or "ort"),
+        mit_veredelungen=bool(shop_cfg.get("excel_summary_veredelungen", True)))
+    ws = wb.create_sheet(_blattname(titel))
+    ws.append(headers)
+    for r in rows:
+        ws.append(r)
+    _spaltenbreiten(ws, headers)
+
+
+def _blattname(name: str) -> str:
+    """Excel erlaubt 31 Zeichen und keine []:*?/\\ im Blattnamen."""
+    for ch in "[]:*?/\\":
+        name = name.replace(ch, "-")
+    return name[:31] or "Blatt"
+
+
+def write_excel_uebersicht(target_path: Path, shops: list) -> Path | None:
+    """
+    Excel-Übersicht ohne Import: ein Blatt je Shop mit allen abgerufenen
+    Bestellungen (Spalten wie der Kontrollausdruck), dazu je Shop ein
+    Summenblatt, wenn excel_summary eingeschaltet ist. Ändert nichts im
+    Shop, schreibt nicht in exported.log.
+
+    shops: ShopErgebnis-Liste aus abrufen() (auch gesperrte — die Übersicht
+    soll gerade zeigen, was sich angesammelt hat).
+    """
+    if not _HAS_OPENPYXL:
+        logging.warning("openpyxl nicht verfügbar — keine Excel-Übersicht.")
+        return None
+    wb = openpyxl.Workbook()
+    wb.remove(wb.active)
+    for sh in shops:
+        orders = [o for e in sh.einheiten for o in e.orders]
+        extra_meta = _parse_extra_meta_config(sh.shop_cfg)
+        headers = list(_EXCEL_HEADERS) + [label for _k, label in extra_meta]
+        ws = wb.create_sheet(_blattname(sh.shop))
+        ws.append(headers)
+        for order in orders:
+            for item in order.get("line_items") or []:
+                ws.append(_row_from_order_position(order, item, sh.shop_cfg,
+                                                   sh.client, sh.price_cache))
+        _spaltenbreiten(ws, headers)
+        if sh.shop_cfg.get("excel_summary"):
+            _summenblatt(wb, f"Summe {sh.shop}", orders, sh.shop_cfg)
+    if not wb.sheetnames:
+        wb.create_sheet("Keine Bestellungen")
     target_path.parent.mkdir(parents=True, exist_ok=True)
     wb.save(target_path)
+    return target_path
 
 
 # ---------------------------------------------------------------------------
@@ -1280,6 +1431,7 @@ class ShopErgebnis:
     target_folder: Path = Path("./output")
     excel_folder: Path = Path("./excel-archiv")
     status_after_export: str = ""
+    versandarten: list = field(default_factory=list)
 
 
 @dataclass
@@ -1334,6 +1486,124 @@ def _status_after_export(shop_cfg: dict, global_cfg: dict) -> str:
     return status[3:] if status.startswith("wc-") else status
 
 
+# --- Prüfregeln (Welle 4) ---------------------------------------------------
+
+# Werte für "unknown_delivery": Was gilt im Sammel-Modus für einen Lieferort
+# ohne Eintrag in lieferadressen.yaml?
+UNKNOWN_DELIVERY = {
+    "firma":    "Kundenadresse verwenden",
+    "versand":  "Versandadresse der ersten Bestellung",
+    "sperren":  "Import sperren",
+}
+_SENDER_PFLICHT = (("name1", "Firma"), ("street", "Straße"),
+                   ("postcode", "PLZ"), ("city", "Ort"))
+
+
+def _regel_lieferort_ohne_adresse(einheit: "Einheit", orders_data: list,
+                                  shop_cfg: dict, tabelle_da: bool) -> None:
+    """Sammel-Modus, Lieferort ohne feste Adresse: je nach unknown_delivery
+    Kundenadresse (Standard, wie bisher), Versandadresse der ersten
+    Bestellung oder Sperre."""
+    regel = str(shop_cfg.get("unknown_delivery") or "firma").strip().lower()
+    if regel not in UNKNOWN_DELIVERY:
+        logging.error("[%s] unknown_delivery=%r ist ungültig — erlaubt: %s. "
+                      "Es gilt 'firma'.", einheit.shop, regel,
+                      ", ".join(UNKNOWN_DELIVERY))
+        regel = "firma"
+    ort = einheit.titel
+    if regel == "sperren":
+        einheit.sperren.append(
+            f"Keine feste Lieferadresse für '{ort}' — Import gesperrt. "
+            "Adresse im Adressen-Tool ergänzen.")
+        logging.error("[%s] Lieferort '%s': keine feste Lieferadresse — "
+                      "gesperrt (unknown_delivery: sperren).", einheit.shop, ort)
+    elif regel == "versand":
+        first = orders_data[0]
+        data = einheit.wex_data
+        for k in ("name1", "name2", "street", "postcode", "city", "country"):
+            data[f"del_{k}"] = first.get(f"del_{k}") or ""
+        text = (f"Keine feste Lieferadresse für '{ort}' — Versandadresse der "
+                f"ersten Bestellung ({first.get('order_no')}) verwendet.")
+        einheit.warnungen.append(text)
+        logging.warning("[%s] %s", einheit.shop, text)
+    elif tabelle_da:
+        logging.warning("[%s] Lieferort '%s': keine feste Lieferadresse "
+                        "hinterlegt — es gilt die Firmenadresse. Im "
+                        "Adressen-Tool ergänzen.", einheit.shop, ort)
+        einheit.warnungen.append(
+            "Keine feste Lieferadresse hinterlegt — es gilt die Firmenadresse.")
+
+
+def _fehlende_kundenadresse(data: dict) -> list[str]:
+    fehlt = []
+    for key, label in _SENDER_PFLICHT:
+        wert = str(data.get(key) or "").strip()
+        if not wert or "BITTE EINTRAGEN" in wert.upper():
+            fehlt.append(label)
+    return fehlt
+
+
+def _pruefregeln(erg: "ShopErgebnis") -> None:
+    """
+    Prüfregeln nach dem Bau der Einheiten:
+      - Kundenadresse (Sender) unvollständig → ganzer Shop gesperrt.
+      - EK fehlt → nur Hinweis, der Preis bleibt in CDH leer.
+    Gesperrte Einheiten/Shops zählen als Fehler, damit der Konsolenlauf
+    nicht still „0 Fehler“ meldet.
+    """
+    for e in erg.einheiten:
+        fehlt = _fehlende_kundenadresse(e.wex_data)
+        if fehlt:
+            text = (f"Kundenadresse fehlt ({', '.join(fehlt)}) in {e.titel} — "
+                    "sender_address hinterlegen. Shop gesperrt.")
+            if text not in erg.sperren:
+                erg.sperren.append(text)
+                logging.error("[%s] %s", erg.shop, text)
+
+        ohne_ek = sorted({p.get("article_no") for p in e.wex_data["positions"]
+                          if p.get("article_no") and p.get("buying_price") in (None, "")})
+        if ohne_ek:
+            text = (f"EK fehlt bei {', '.join(ohne_ek)} — bleibt in CDH leer.")
+            e.warnungen.append(text)
+            logging.warning("[%s] %s: %s", erg.shop, e.titel, text)
+
+    if erg.sperren:
+        erg.fehler += 1
+    else:
+        erg.fehler += sum(1 for e in erg.einheiten if e.sperren)
+
+
+def _versandarten_pruefen(erg: "ShopErgebnis", combine_mode: bool) -> None:
+    """
+    Versandarten des Shops holen und mit lieferadressen.yaml abgleichen.
+    Nur für Shops im Sammel-Modus oder mit hinterlegten Adressen — bei
+    Einzelshops ohne Adressen ist eine Versandart ohne Adresse normal.
+    Ergebnis sind Hinweise, keine Sperren.
+    """
+    orte = load_delivery_address_names().get(erg.shop, [])
+    if not (combine_mode or orte):
+        return
+    try:
+        erg.versandarten = erg.client.get_shipping_methods()
+    except Exception as e:  # noqa: BLE001
+        text = f"Versandarten konnten nicht abgerufen werden ({e})."
+        erg.warnungen.append(text)
+        logging.warning("[%s] %s", erg.shop, text)
+        return
+    ab = versandarten_abgleich(erg.versandarten, orte)
+    if combine_mode and ab["ohne_adresse"]:
+        text = ("Versandart ohne feste Lieferadresse: "
+                + ", ".join(ab["ohne_adresse"]))
+        erg.warnungen.append(text)
+        logging.warning("[%s] %s", erg.shop, text)
+    if ab["ohne_versandart"]:
+        text = ("Lieferadresse ohne passende Versandart im Shop: "
+                + ", ".join(ab["ohne_versandart"])
+                + " — Schreibweise prüfen, sonst greift die Adresse nie.")
+        erg.warnungen.append(text)
+        logging.warning("[%s] %s", erg.shop, text)
+
+
 def _shop_abrufen(shop_cfg: dict, global_cfg: dict, exported_locally: set,
                   exported_je_shop: dict, delivery_table: dict,
                   trotzdem: bool = False, client_factory=None) -> ShopErgebnis:
@@ -1376,6 +1646,9 @@ def _shop_abrufen(shop_cfg: dict, global_cfg: dict, exported_locally: set,
     erg.excel_folder = (Path(excel_folder_cfg) if excel_folder_cfg
                         else erg.target_folder.parent / "excel-archiv")
 
+    combine_mode = bool(shop_cfg.get("combine_by_delivery"))
+    _versandarten_pruefen(erg, combine_mode)
+
     n_exportiert = exported_je_shop.get(shop_name, 0)
     if n_exportiert:
         logging.info("[%s] %d bereits exportierte Bestellung(en) dieses Shops "
@@ -1384,7 +1657,6 @@ def _shop_abrufen(shop_cfg: dict, global_cfg: dict, exported_locally: set,
         logging.info("[%s] %d feste Lieferadresse(n) hinterlegt.",
                      shop_name, len(delivery_table[shop_name]))
 
-    combine_mode = bool(shop_cfg.get("combine_by_delivery"))
     if combine_mode:
         logging.info("[%s] Sammel-Modus aktiv: Bestellungen werden nach "
                      "Lieferort gruppiert.", shop_name)
@@ -1438,6 +1710,7 @@ def _shop_abrufen(shop_cfg: dict, global_cfg: dict, exported_locally: set,
                 orders=[order], wex_data=wex_data, shop_ergebnis=erg))
         if not erg.einheiten and not erg.fehler:
             logging.info("[%s] Keine neuen Bestellungen.", shop_name)
+        _pruefregeln(erg)
         return erg
 
     # ---- Sammel-Modus: eine Einheit je Lieferort ---------------------------
@@ -1471,7 +1744,7 @@ def _shop_abrufen(shop_cfg: dict, global_cfg: dict, exported_locally: set,
                           orders=[o for o, _ in entries], wex_data=combined,
                           shop_ergebnis=erg)
         # Feste Lieferadresse für diesen Lieferort, falls hinterlegt.
-        # Ohne Eintrag bleibt die Firmenadresse stehen.
+        # Sonst entscheidet "unknown_delivery" (Prüfregel, Welle 4).
         if apply_delivery_address(combined, shop_name, delivery,
                                   delivery_table):
             logging.info("[%s] Lieferort '%s': feste Lieferadresse "
@@ -1479,13 +1752,11 @@ def _shop_abrufen(shop_cfg: dict, global_cfg: dict, exported_locally: set,
                          shop_name, delivery,
                          combined["del_street"], combined["del_postcode"],
                          combined["del_city"])
-        elif delivery_table.get(shop_name):
-            logging.warning("[%s] Lieferort '%s': keine feste Lieferadresse "
-                            "hinterlegt — es gilt die Firmenadresse. Im "
-                            "Adressen-Tool ergänzen.", shop_name, delivery)
-            einheit.warnungen.append(
-                "Keine feste Lieferadresse hinterlegt — es gilt die Firmenadresse.")
+        else:
+            _regel_lieferort_ohne_adresse(einheit, [d for _, d in entries],
+                                          shop_cfg, bool(delivery_table.get(shop_name)))
         erg.einheiten.append(einheit)
+    _pruefregeln(erg)
     return erg
 
 
@@ -1866,52 +2137,125 @@ def append_to_exported_log(shop_name: str, order_id, order_no,
 # Lock-Datei (verhindert parallele Läufe vom Netzlaufwerk)
 # ---------------------------------------------------------------------------
 
+def _lock_eigentuemer() -> dict:
+    return {
+        "rechner": os.environ.get("COMPUTERNAME") or socket.gethostname() or "?",
+        "benutzer": os.environ.get("USERNAME") or os.environ.get("USER") or "?",
+        "pid": os.getpid(),
+        "seit": datetime.now().isoformat(timespec="seconds"),
+    }
+
+
+def lock_info() -> dict | None:
+    """
+    Wer hält gerade die Importsperre? None, wenn keine gültige Sperre da ist.
+    Liefert rechner, benutzer, pid, seit und alter_sek. Alte Lock-Dateien
+    (Freitext vor Welle 4) kommen als {"rechner": <Text>} zurück.
+    """
+    try:
+        alter = time.time() - LOCK_PATH.stat().st_mtime
+        text = LOCK_PATH.read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+    if alter >= LOCK_STALE_MINUTES * 60:
+        return None
+    try:
+        info = json.loads(text)
+        if not isinstance(info, dict):
+            raise ValueError
+    except ValueError:
+        info = {"rechner": text or "unbekannt"}
+    info["alter_sek"] = int(alter)
+    return info
+
+
+def lock_text(info: dict) -> str:
+    """„Import läuft an PC-LAGER (m.mueller) seit 09:14“ — für Konsole und Oberfläche."""
+    wer = info.get("rechner", "?")
+    if info.get("benutzer"):
+        wer += f" ({info['benutzer']})"
+    seit = info.get("seit") or ""
+    try:
+        seit = datetime.fromisoformat(seit).strftime("%H:%M")
+    except ValueError:
+        pass
+    return f"Import läuft an {wer}" + (f" seit {seit}" if seit else "")
+
+
+_lock_stop: threading.Event | None = None
+_lock_owner: dict | None = None
+
+
+def _lock_heartbeat(stop: threading.Event) -> None:
+    """Hält die Sperre frisch, solange der Lauf dauert. Ohne das gälte ein
+    Import mit mehreren CDH-Fenstern nach 10 Minuten als verwaist."""
+    while not stop.wait(LOCK_HEARTBEAT_SECONDS):
+        try:
+            os.utime(LOCK_PATH, None)
+        except OSError:
+            pass
+
+
 def acquire_lock() -> bool:
     """
-    Versucht, eine Lock-Datei im Skript-Ordner anzulegen. Gibt True zurück,
-    wenn das geklappt hat (= wir dürfen laufen). False, wenn schon ein
-    anderer Lauf aktiv ist.
+    Legt running.lock an (Rechner, Benutzer, PID, Zeit) und hält sie per
+    Heartbeat frisch, bis release_lock() kommt. False, wenn ein anderer
+    Lauf aktiv ist — auch von einem anderen Rechner, die Datei liegt auf V:.
 
-    Alte Lock-Dateien (Prozess abgestürzt) werden nach LOCK_STALE_MINUTES
-    automatisch ignoriert und überschrieben.
+    Sperren ohne Heartbeat seit LOCK_STALE_MINUTES gelten als verwaist
+    (Prozess abgestürzt) und werden übernommen.
     """
-    if LOCK_PATH.exists():
-        age_sec = time.time() - LOCK_PATH.stat().st_mtime
-        if age_sec < LOCK_STALE_MINUTES * 60:
-            try:
-                owner = LOCK_PATH.read_text(encoding="utf-8").strip()
-            except OSError:
-                owner = "unbekannt"
-            print(f"Ein anderer Lauf ist bereits aktiv (seit {int(age_sec)}s, "
-                  f"gestartet von: {owner}).")
-            print("Bitte warte, bis er fertig ist, oder lösche "
-                  f"{LOCK_PATH} falls er hängt.")
-            return False
-        else:
-            # Lock ist zu alt — vermutlich ein abgestürzter Lauf.
-            # Wir übernehmen.
-            try:
-                LOCK_PATH.unlink()
-            except OSError:
-                pass
-
+    global _lock_stop, _lock_owner
+    info = lock_info()
+    if info:
+        print(f"{lock_text(info)} — bitte warten, bis er fertig ist.")
+        print(f"Hängt er, nach {LOCK_STALE_MINUTES} Minuten ohne Lebenszeichen "
+              f"gilt die Sperre als verwaist ({LOCK_PATH}).")
+        return False
     try:
-        owner_info = f"{os.environ.get('COMPUTERNAME', '?')}\\" \
-                     f"{os.environ.get('USERNAME', '?')} " \
-                     f"PID {os.getpid()} @ {datetime.now().isoformat(timespec='seconds')}"
-        LOCK_PATH.write_text(owner_info, encoding="utf-8")
-        return True
+        LOCK_PATH.unlink()          # verwaist oder gar nicht da
+    except OSError:
+        pass
+
+    owner = _lock_eigentuemer()
+    try:
+        # O_EXCL: Legen zwei Rechner gleichzeitig an, gewinnt genau einer.
+        fd = os.open(LOCK_PATH, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(json.dumps(owner, ensure_ascii=False))
+    except FileExistsError:
+        info = lock_info() or {"rechner": "unbekannt"}
+        print(f"{lock_text(info)} — bitte warten, bis er fertig ist.")
+        return False
     except OSError as e:
         print(f"Lock-Datei konnte nicht angelegt werden: {e}")
         return False
 
+    _lock_owner = owner
+    _lock_stop = threading.Event()
+    threading.Thread(target=_lock_heartbeat, args=(_lock_stop,),
+                     daemon=True, name="lock-heartbeat").start()
+    return True
+
 
 def release_lock() -> None:
-    """Entfernt die Lock-Datei. Fehler werden ignoriert (best effort)."""
+    """Beendet den Heartbeat und entfernt die EIGENE Lock-Datei. Hat ein
+    anderer Rechner eine verwaiste Sperre übernommen, bleibt dessen Datei."""
+    global _lock_stop, _lock_owner
+    if _lock_stop:
+        _lock_stop.set()
     try:
-        LOCK_PATH.unlink()
-    except OSError:
-        pass
+        info = json.loads(LOCK_PATH.read_text(encoding="utf-8"))
+        fremd = _lock_owner and (info.get("rechner"), info.get("pid")) != \
+            (_lock_owner["rechner"], _lock_owner["pid"])
+    except (OSError, ValueError, AttributeError):
+        fremd = False
+    if not fremd:
+        try:
+            LOCK_PATH.unlink()
+        except OSError:
+            pass
+    _lock_stop = _lock_owner = None
 
 
 # ---------------------------------------------------------------------------

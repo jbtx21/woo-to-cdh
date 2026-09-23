@@ -83,3 +83,68 @@ def value(xml, tag):
     if f"<{tag}>" not in xml:
         return ""
     return xml.split(f"<{tag}>")[1].split(f"</{tag}>")[0]
+
+
+# --- WooCommerce ohne Netz (Welle 3/4) --------------------------------------
+
+class FakeWoo(w.WooClient):
+    """WooClient ohne Netz. Bestellungen je Shop-URL, Schreibzugriffe protokolliert."""
+
+    orders_by_url: dict = {}
+    zones_by_url: dict = {}        # url → {zone_id: [methoden]}
+    puts: list = []
+    gets: list = []
+
+    def _get(self, path, params=None):
+        FakeWoo.gets.append(path)
+        url = self.base.replace("/wp-json/wc/v3", "/")
+        if path == "/shipping/zones":
+            return [{"id": z} for z in FakeWoo.zones_by_url.get(url, {})]
+        if path.startswith("/shipping/zones/"):
+            return FakeWoo.zones_by_url[url][int(path.split("/")[3])]
+        if path == "/orders":
+            if params.get("page") != 1:
+                return []
+            return FakeWoo.orders_by_url.get(url, [])
+        parts = path.strip("/").split("/")          # products/10/variations/11
+        pid = int(parts[1])
+        vid = int(parts[3]) if len(parts) > 3 else 0
+        ek, vk = PRICES[(pid, vid)]
+        return {"dimensions": {"length": ek, "width": vk}}
+
+    def _put(self, path, data):
+        FakeWoo.puts.append((path, data))
+        return {}
+
+
+@pytest.fixture
+def umgebung(tmp_path, monkeypatch, orders):
+    FakeWoo.orders_by_url = {
+        "https://shop.example/einzeln/": [orders["einzeln"]],
+        "https://shop.example/agrar/": orders["trenn"],
+        "https://shop.example/mitarbeiter/": orders["mitarbeitershop"],
+    }
+    FakeWoo.puts, FakeWoo.gets, FakeWoo.zones_by_url = [], [], {}
+    monkeypatch.setattr(w, "EXPORTED_LOG_PATH", tmp_path / "exported.log")
+    monkeypatch.setattr(w, "DELIVERY_ADDRESSES_PATH", FIXTURES / "lieferadressen_test.yaml")
+    cdh = []
+    monkeypatch.setattr(w, "start_cdh_wex_import",
+                        lambda path, cfg: cdh.append(path.name) or True)
+    shop = {"consumer_key": "ck_TEST", "consumer_secret": "cs_TEST",
+            "datev_no": 10000, "order_type": "AB"}
+    cfg = {
+        "cdh_import_folder": str(tmp_path / "wex"),
+        "excel_export_folder": str(tmp_path / "excel"),
+        "status_after_export": "wc-completed",
+        "order_no_with_name": True,
+        "shops": [
+            {**shop, "name": "Beispiel-Shop", "url": "https://shop.example/einzeln/"},
+            {**shop, "name": "Agrar-Shop", "url": "https://shop.example/agrar/",
+             "combine_by_delivery": True},
+            {**shop, "name": "Mitarbeiter-Shop", "url": "https://shop.example/mitarbeiter/",
+             "combine_by_delivery": True, "aggregate_all_positions": True,
+             "sender_address": {"name1": "Beispiel Austria GmbH", "street": "Werkplatz 1",
+                                "postcode": "4863", "city": "Seewalchen", "country": "AT"}},
+        ],
+    }
+    return {"cfg": cfg, "tmp": tmp_path, "cdh": cdh}

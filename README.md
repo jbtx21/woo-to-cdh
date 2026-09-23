@@ -363,9 +363,17 @@ Ensinger-Shop:
 ```
 
 Der Schlüssel muss der Versandart im Shop entsprechen; Groß-/Kleinschreibung
-und Leerzeichen am Rand spielen keine Rolle. Lieferorte ohne Eintrag
-behalten die Adresse aus der Bestellung — im Sammel-Modus steht dann eine
-Warnung im Log.
+und Leerzeichen am Rand spielen keine Rolle. Im Standard-Modus behalten
+Lieferorte ohne Eintrag die Adresse aus der Bestellung. Im Sammel-Modus
+entscheidet `unknown_delivery` (Abschnitt 6c).
+
+**Abgleich mit den Versandarten:** Bei Sammel-Shops und Shops mit
+hinterlegten Adressen holt der Abruf die Versandarten aus den
+WooCommerce-Versandzonen und meldet als Hinweis:
+
+- Versandarten ohne feste Lieferadresse (nur Sammel-Modus),
+- Adressen, zu denen es keine Versandart gibt — meist ein Tippfehler wie
+  „Seewalchen" statt „Seewalchen (Österreich)". Solche Adressen greifen nie.
 
 Hinterlegt für Ensinger: Nufringen, Cham, Rottenburg-Ergenzingen, Garbsen,
 Seewalchen (AT).
@@ -384,6 +392,19 @@ python -m PyInstaller --onefile --windowed --name Lieferadressen adressen_gui.py
 ```
 
 `--windowed` unterdrückt das schwarze Konsolenfenster.
+
+---
+
+## 6c. Prüfregeln beim Abruf
+
+Der Abruf (`abrufen`) prüft vor dem Import. Gesperrtes wird nicht
+importiert und zählt im Konsolenlauf als Fehler.
+
+| Regel | Folge |
+|---|---|
+| Kundenadresse (Sender: Firma, Straße, PLZ, Ort) unvollständig oder „BITTE EINTRAGEN" | **ganzer Shop gesperrt** — `sender_address` ergänzen |
+| Sammel-Modus, Lieferort ohne feste Adresse | je `unknown_delivery`: `firma` (Standard, Kundenadresse wie bisher), `versand` (Versandadresse der ersten Bestellung, mit Hinweis), `sperren` (dieser Lieferort gesperrt) |
+| EK fehlt bei einem Artikel | nur Hinweis, der EK bleibt in CDH leer |
 
 ---
 
@@ -440,8 +461,12 @@ Bestellung kommt beim nächsten Lauf nicht erneut. Ein fehlgeschlagener
 `exported.log` wächst um rund 120 Byte pro Bestellung. Bei 100 Bestellungen
 täglich sind das etwa 4 MB pro Jahr — unkritisch.
 
-**Parallele Läufe** verhindert `running.lock`. Sperren, die älter als 10
-Minuten sind, gelten als verwaist und werden übergangen.
+**Parallele Läufe** verhindert `running.lock` — auch über Rechner hinweg,
+die Datei liegt auf V:. Sie enthält Rechner, Benutzer, PID und Startzeit
+und wird über den ganzen Lauf gehalten, auch während CDH-Fenster offen
+sind: Ein Heartbeat frischt sie jede Minute auf. Ein zweiter Rechner sieht
+„Import läuft an PC-LAGER (m.mueller) seit 09:14". Erst nach 10 Minuten
+ohne Heartbeat (Absturz) gilt die Sperre als verwaist und wird übernommen.
 
 ---
 
@@ -504,6 +529,10 @@ Alle Felder stehen in `einstellungen.yaml` — **außer** `consumer_key` und
 | `sender_address`       | Feste Hauptkundenadresse für den `<Sender>`-Block |
 | `aggregate_all_positions` | Im Sammel-Modus alle gleichen Artikelvarianten addieren, ohne Trennzeilen |
 | `extra_excel_meta`     | Zusätzliche Bestell-Meta-Felder als Excel-Spalten |
+| `unknown_delivery`     | Sammel-Modus, Lieferort ohne feste Adresse: `firma` (Standard), `versand`, `sperren` |
+| `excel_summary`        | Summenblatt in der Excel (Standard aus) |
+| `excel_summary_by`     | `ort` (Standard) oder `gesamt` |
+| `excel_summary_veredelungen` | Veredelungen im Summenblatt (Standard an) |
 
 Die globalen Optionen `status_after_export` und `order_no_with_name` lassen
 sich pro Shop überschreiben.
@@ -557,6 +586,20 @@ Eine Zeile je Position, Kopfdaten wiederholt.
 
 `Artikeltext 1` (Material) bleibt leer — die Bestell-API liefert das Feld
 nicht mit. Dafür wäre ein zusätzlicher Produktabruf je Artikel nötig.
+
+### Summenblatt
+
+Mit `excel_summary: true` bekommt die Import-Excel ein zweites Blatt
+„Summe": gleiche Artikelvarianten addiert, je Lieferort
+(`excel_summary_by: ort`, Standard) oder über alles (`gesamt`).
+Veredelungen sind dabei, außer `excel_summary_veredelungen: false`.
+
+### Excel-Übersicht ohne Import
+
+`write_excel_uebersicht(pfad, pruefergebnis.shops)` schreibt nach einem
+Abruf eine Übersicht: ein Blatt je Shop mit allen abgerufenen Bestellungen,
+dazu je Shop mit `excel_summary` ein Summenblatt. Die Bestellungen bleiben
+offen — nichts in WooCommerce, nichts in `exported.log`.
 
 ### Zusätzliche Meta-Spalten
 
@@ -672,9 +715,16 @@ python diagnose.py Allgaier-Shop  # nur einer
 Ein ⚠ bei `shipping.company` ist bei Privatpersonen normal. Ein ⚠ bei EK/VK
 bedeutet, dass im Shop Maße fehlen — dort wird der Preis in CDH leer bleiben.
 
-Hinweis: Die Diagnose fragt immer `processing,on-hold` ab, unabhängig vom
-`included_statuses` des Shops. Bei Allgaier können hier also Bestellungen
+Hinweis: Die Konsolen-Diagnose fragt immer `processing,on-hold` ab, unabhängig
+vom `included_statuses` des Shops. Bei Allgaier können hier also Bestellungen
 auftauchen, die der echte Lauf überspringt.
+
+**Als Funktion** (für den Shop-Assistenten): `diagnose.diagnose(shop_cfg)`
+liefert die fünf Punkte des Entwurfs als `Pruefpunkt(titel, stufe, text,
+details)` mit `stufe` = `ok`/`warn`/`fehler`: Verbindung und Zugang ·
+Bestellungen lesbar · Preise gepflegt · Varianten erkannt · Versandarten
+(mit Abgleich gegen `lieferadressen.yaml`). Nutzt den Statusfilter des Shops,
+schreibt nichts.
 
 ---
 
@@ -687,7 +737,9 @@ auftauchen, die der echte Lauf überspringt.
 | `401` bei Diagnose | Schlüssel im falschen Sub-Shop erzeugt, Benutzer dort nicht angelegt, oder Caps-Snippet inaktiv | Abschnitt 3 durchgehen |
 | „WEX Importer bereits ausgeführt" | Zwei CDH-Importe gleichzeitig | Darf nicht auftreten. Im Log prüfen, ob „warte auf 'Ende'" steht — sonst läuft eine alte Fassung mit `Popen` |
 | Log: „CDH-Import war nach 15 Minuten noch geöffnet" | Ein CDH-Fenster wurde nicht geschlossen | Fenster schließen, genannte WEX aus dem `wex-archiv` nachholen |
-| „Ein anderer Lauf ist bereits aktiv" | `running.lock` gesetzt | Kurz warten. Bleibt es bestehen, Lock-Datei nach 10 Minuten löschen |
+| „Import läuft an … seit …" | Anderer Rechner importiert gerade (`running.lock`) | Warten. Ist der Rechner abgestürzt, wird die Sperre nach 10 Minuten ohne Heartbeat übernommen |
+| Log: „Kundenadresse fehlt … Shop gesperrt" | Sender unvollständig | `sender_address` im Shop-Block ergänzen |
+| Log: „Lieferadresse ohne passende Versandart" | Schlüssel in `lieferadressen.yaml` passt zu keiner Versandart | Schreibweise wie im Shop übernehmen |
 | EK-Felder in CDH leer | Maße im Shop nicht gepflegt | Diagnose zeigt betroffene Artikel |
 | Bestellung fehlt in CDH | CDH-Fenster ohne „Ende" geschlossen | WEX aus `wex-archiv\` per Doppelklick nachholen |
 | Keine Excel-Datei | `openpyxl` fehlt | `pip install openpyxl`, EXE neu bauen |

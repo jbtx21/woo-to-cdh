@@ -122,6 +122,14 @@ shops:
     aggregate_all_positions: true      # Gleiche Artikelvarianten über alle
                                        # Bestellungen addieren, keine Trenner
                                        # pro Person. Zuordnung steht in der Excel.
+    # Lieferort ohne feste Adresse in lieferadressen.yaml:
+    #   firma (Kundenadresse, Standard) · versand (Versandadresse der ersten
+    #   Bestellung) · sperren (Lieferort wird nicht importiert)
+    unknown_delivery: firma
+    # Summenblatt in der Excel: je Lieferort, mit Veredelungen
+    excel_summary: true
+    excel_summary_by: ort
+    excel_summary_veredelungen: true
     # Feste Hauptkundenadresse für den <Sender>-Block.
     # NÖTIG, weil die Besteller im Mitarbeitershop keine Rechnungsadresse
     # erfassen — ohne diesen Block ginge ein leerer Sender an CDH.

@@ -19,7 +19,8 @@ from __future__ import annotations
 
 import json
 import sys
-from typing import Any
+from dataclasses import dataclass, field
+from typing import Any, Callable
 
 import requests
 
@@ -248,6 +249,173 @@ def check_dimensions(base: str, auth: dict,
             bullet(WARN, f"SKU={sku!r}: EK={length!r}  VK={width!r}  "
                           f"— Preiszellen in CDH werden leer bleiben. "
                           f"Im Shop Maße nachpflegen.")
+
+
+# ---------------------------------------------------------------------------
+# Diagnose als Funktion (Welle 4) — für den Shop-Assistenten der Oberfläche
+# ---------------------------------------------------------------------------
+
+@dataclass
+class Pruefpunkt:
+    titel: str
+    stufe: str                     # "ok" | "warn" | "fehler"
+    text: str
+    details: list = field(default_factory=list)
+
+
+def _basis_und_auth(shop_cfg: dict) -> tuple[str, dict]:
+    base = str(shop_cfg["url"]).rstrip("/")
+    if not base.endswith("/wp-json/wc/v3"):
+        base += "/wp-json/wc/v3"
+    return base, {"consumer_key": shop_cfg.get("consumer_key") or "",
+                  "consumer_secret": shop_cfg.get("consumer_secret") or ""}
+
+
+def _zahl(x) -> float | None:
+    try:
+        return None if x in (None, "") else float(str(x).replace(",", "."))
+    except ValueError:
+        return None
+
+
+def diagnose(shop_cfg: dict,
+             abruf: Callable[..., tuple[int, Any]] | None = None,
+             max_bestellungen: int = 20) -> list[Pruefpunkt]:
+    """
+    Die fünf Prüfungen des Shop-Assistenten, nur lesend:
+      Verbindung und Zugang · Bestellungen lesbar · Preise gepflegt ·
+      Varianten erkannt · Versandarten
+
+    shop_cfg braucht url, consumer_key, consumer_secret; optional name und
+    included_statuses. abruf(path, params=None) -> (status, json) ersetzt
+    den HTTP-Zugriff (Tests). Scheitert die Verbindung, kommt nur der
+    erste Punkt zurück.
+    """
+    if abruf is None:
+        base, auth = _basis_und_auth(shop_cfg)
+        abruf = lambda path, params=None: get(base, auth, path, params)  # noqa: E731
+
+    punkte: list[Pruefpunkt] = []
+
+    # 1. Verbindung und Zugang
+    status, data = abruf("/orders", {"per_page": 1})
+    if status != 200:
+        grund = {401: "Schlüssel falsch, im falschen Sub-Shop erzeugt oder "
+                      "ohne Rechte (README Abschnitt 3)",
+                 404: "Shop-Adresse stimmt nicht (URL-Slug prüfen)",
+                 0: f"keine Verbindung ({data})"}.get(
+            status, f"unerwarteter Status {status}")
+        punkte.append(Pruefpunkt("Verbindung und Zugang", "fehler", grund))
+        return punkte
+    punkte.append(Pruefpunkt("Verbindung und Zugang", "ok",
+                             "Shop erreichbar, Schlüssel gültig"))
+
+    # 2. Bestellungen lesbar
+    statuses = shop_cfg.get("included_statuses") or w.INCLUDED_STATUSES
+    status, orders = abruf("/orders", {"status": ",".join(statuses),
+                                       "per_page": max_bestellungen,
+                                       "orderby": "date", "order": "desc"})
+    if status != 200 or not isinstance(orders, list):
+        punkte.append(Pruefpunkt("Bestellungen lesbar", "fehler",
+                                 f"Abruf fehlgeschlagen (Status {status})"))
+        orders = []
+    elif not orders:
+        punkte.append(Pruefpunkt("Bestellungen lesbar", "warn",
+                                 "Keine offenen Bestellungen — Preise und "
+                                 "Varianten lassen sich noch nicht prüfen"))
+    else:
+        n = len(orders)
+        punkte.append(Pruefpunkt(
+            "Bestellungen lesbar", "ok",
+            f"{n}{'+' if n >= max_bestellungen else ''} offene "
+            f"Bestellung{'en' if n != 1 else ''} gefunden"))
+
+    items = [it for o in orders for it in (o.get("line_items") or [])]
+
+    # 3. Preise gepflegt (EK = Länge, VK = Breite)
+    if items:
+        artikel: dict = {}
+        for it in items:
+            artikel.setdefault((it.get("product_id"), it.get("variation_id") or 0),
+                               it.get("sku") or "?")
+        ohne_ek, ohne_vk, fehler = [], [], []
+        for (pid, vid), sku in artikel.items():
+            path = f"/products/{pid}/variations/{vid}" if vid else f"/products/{pid}"
+            st, prod = abruf(path)
+            if st != 200 or not isinstance(prod, dict):
+                fehler.append(sku)
+                continue
+            dims = prod.get("dimensions") or {}
+            if _zahl(dims.get(w.EK_FIELD)) is None:
+                ohne_ek.append(sku)
+            if _zahl(dims.get(w.VK_FIELD)) is None:
+                ohne_vk.append(sku)
+        n = len(artikel)
+        if ohne_ek or ohne_vk or fehler:
+            teile = []
+            if ohne_ek:
+                teile.append(f"EK fehlt bei {len(ohne_ek)} von {n} Artikeln")
+            if ohne_vk:
+                teile.append(f"VK fehlt bei {len(ohne_vk)} von {n} Artikeln")
+            if fehler:
+                teile.append(f"{len(fehler)} Artikel nicht abrufbar")
+            punkte.append(Pruefpunkt(
+                "Preise gepflegt", "warn",
+                "; ".join(teile) + " — bleibt in CDH leer",
+                sorted(set(ohne_ek + ohne_vk + fehler))))
+        else:
+            punkte.append(Pruefpunkt("Preise gepflegt", "ok",
+                                     f"EK und VK bei allen {n} Artikeln"))
+    else:
+        punkte.append(Pruefpunkt("Preise gepflegt", "warn",
+                                 "Keine Bestellung zum Prüfen"))
+
+    # 4. Varianten erkannt (gleiche Logik wie beim Import)
+    varianten = [it for it in items if it.get("variation_id")]
+    if varianten:
+        ohne = sorted({it.get("sku") or "?" for it in varianten
+                       if not w._extract_variant_text(it)})
+        if ohne:
+            punkte.append(Pruefpunkt(
+                "Varianten erkannt", "warn",
+                f"Kein Variantentext bei {len(ohne)} Artikel(n) — Meta-Keys prüfen",
+                ohne))
+        else:
+            punkte.append(Pruefpunkt("Varianten erkannt", "ok",
+                                     "Farbe und Größe bei allen Artikeln"))
+    else:
+        punkte.append(Pruefpunkt("Varianten erkannt", "warn" if not items else "ok",
+                                 "Keine Bestellung zum Prüfen" if not items
+                                 else "Keine Variantenartikel in den Bestellungen"))
+
+    # 5. Versandarten (+ Abgleich mit lieferadressen.yaml, falls vorhanden)
+    def json_or_raise(path):
+        st, d = abruf(path)
+        if st != 200:
+            raise RuntimeError(f"Status {st}")
+        return d
+
+    try:
+        va = w.versandarten_aus_zonen(json_or_raise)
+    except Exception as e:  # noqa: BLE001
+        punkte.append(Pruefpunkt("Versandarten", "warn",
+                                 f"Nicht abrufbar ({e})"))
+        return punkte
+    if not va:
+        punkte.append(Pruefpunkt("Versandarten", "warn",
+                                 "Keine aktive Versandart gefunden"))
+        return punkte
+    orte = w.load_delivery_address_names().get(shop_cfg.get("name") or "", [])
+    ab = w.versandarten_abgleich(va, orte)
+    details = []
+    if orte and ab["ohne_versandart"]:
+        details.append("Adresse ohne Versandart: " + ", ".join(ab["ohne_versandart"]))
+    if orte and ab["ohne_adresse"]:
+        details.append("Versandart ohne Adresse: " + ", ".join(ab["ohne_adresse"]))
+    punkte.append(Pruefpunkt(
+        "Versandarten", "warn" if details else "ok",
+        f"{len(va)} gefunden: {', '.join(va)}", details))
+    return punkte
 
 
 # ---------------------------------------------------------------------------

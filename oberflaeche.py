@@ -7,7 +7,8 @@ Windows über WebView2). Die Oberfläche spricht über window.pywebview.api mit
 einstellungen_api.EinstellungenApi — dort liegt die ganze Logik.
 
 Stand Welle 6: Tabs „Import“ (import_api.ImportApi) und „Einstellungen“
-(einstellungen_api.EinstellungenApi). Die Konsolen-EXE bleibt parallel
+(einstellungen_api.EinstellungenApi), seit Welle 7 mit Shop-Assistent und
+Zugang erneuern (shop_api.ShopApi). Die Konsolen-EXE bleibt parallel
 einsatzbereit und nutzt dieselben Funktionen.
 
 Start (Entwicklung):  python oberflaeche.py
@@ -22,8 +23,8 @@ import sys
 from pathlib import Path
 
 import woo_to_cdh as w
-from einstellungen_api import EinstellungenApi
 from import_api import ImportApi
+from shop_api import ShopApi
 
 # Mit PyInstaller liegen mitgelieferte Dateien (ui/) im Entpack-Ordner,
 # die Konfiguration dagegen neben der EXE (w.BASE_DIR).
@@ -91,12 +92,13 @@ def beim_schliessen(fenster) -> bool:
         "gesichert und gehen verloren. Trotzdem schließen?"))
 
 
-class OberflaecheApi(EinstellungenApi, ImportApi):
-    """Eine Schnittstelle für beide Tabs (pywebview kennt nur ein js_api)."""
+class OberflaecheApi(ShopApi, ImportApi):
+    """Eine Schnittstelle für beide Tabs (pywebview kennt nur ein js_api).
+    ShopApi bringt die Einstellungen (EinstellungenApi) mit."""
 
     def __init__(self, base_dir=None, benutzer=None, client_factory=None, oeffnen=None):
-        EinstellungenApi.__init__(self, base_dir, benutzer=benutzer,
-                                  client_factory=client_factory)
+        ShopApi.__init__(self, base_dir, benutzer=benutzer,
+                         client_factory=client_factory)
         self._init_import(oeffnen)
 
 

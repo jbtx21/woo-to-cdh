@@ -337,6 +337,7 @@ button.row:active, .row.tap:active { background: var(--fill); }
 .pw-err { color: var(--red); font-size: 13px; margin-top: 8px; min-height: 17px; }
 @keyframes shake { 20%, 60% { transform: translateX(-8px); } 40%, 80% { transform: translateX(8px); } }
 .alert-box.shake { animation: shake .35s; }
+.backdrop.still, .backdrop.still .sheet { animation: none; }
 .admin-row .icon { background: var(--orange); }
 
 /* --------------------------------------------------------- Assistent ---- */
@@ -970,10 +971,10 @@ function drawImport() {
     : st.abgebrochen ? `Abgebrochen nach ${ok.length} von ${st.gesamt}. Die übrigen Bestellungen bleiben offen und lassen sich später importieren.`
     : st.art === "erneut" ? "Übergabe beendet."
     : `${plural(st.bestellungen || 0, "Bestellung", "Bestellungen")} in ${plural(ok.length, "Auftrag", "Aufträgen")} verarbeitet.${probleme ? ` ${plural(probleme, "Auftrag braucht", "Aufträge brauchen")} einen Blick — siehe oben.` : " Kontrolllisten liegen im Ordner excel-archiv."}`;
-  $("#overlay").innerHTML = sheetShell(st.art === "erneut" ? "An CDH übergeben" : "Import",
+  zeigeBlatt(sheetShell(st.art === "erneut" ? "An CDH übergeben" : "Import",
     running && !done ? `<button class="navlink" data-a="cancel-import" ${overlay.cancel || st.art === "erneut" ? "disabled" : ""}>${overlay.cancel ? "Wird beendet …" : "Abbrechen"}</button>` : "",
     done ? `<button class="navlink bold" data-a="close">Fertig</button>` : "",
-    `<div class="group"><div class="card">${rows}</div><div class="group-foot">${foot}</div></div>`);
+    `<div class="group"><div class="card">${rows}</div><div class="group-foot">${foot}</div></div>`));
 }
 
 function finishImport() {
@@ -1293,8 +1294,18 @@ function openSheet(type, index, shopId = current, prefill = null) {
   }, 60);
 }
 
+// Blatt neu zeichnen, ohne die Einblend-Animation zu wiederholen, wenn es
+// dasselbe Blatt bleibt (Assistent-Schritte, Import-Fortschritt).
+function zeigeBlatt(html) {
+  const still = overlay?._gezeigt;
+  $("#overlay").innerHTML = html;
+  if (still) $("#overlay").firstElementChild?.classList.add("still");
+  if (overlay) overlay._gezeigt = true;
+}
+
 function closeOverlay() {
   if (overlay?.kind === "import" && overlay.running) return;
+  if (overlay?.busy) return;                 // Assistent/Zugang wartet auf Python
   overlay = null; $("#overlay").innerHTML = "";
 }
 
@@ -1391,6 +1402,208 @@ setInterval(() => {
 }, 15000);
 
 
+// ------------------------------------------------------------ Shop anlegen (Welle 7)
+// Die Prüfung und das Schreiben passieren in shop_api.py; hier nur Anzeige.
+// Schlüssel liegen nur solange im Fenster, bis der Shop angelegt ist.
+const WIZ_TITEL = ["Verbindung und Zugang", "Bestellungen lesbar", "Preise gepflegt", "Varianten erkannt", "Versandarten"];
+
+function openWizard() {
+  if (changeCount()) { meldung("Erst sichern", "Es gibt ungesicherte Änderungen. Bitte erst sichern oder verwerfen, dann den Shop anlegen."); return; }
+  overlay = { kind: "wizard", step: 0, d: { name: "", url: "https://shop.texma-gmbh.de/", debitor: "", key: "", secret: "", old: "close" },
+    pruef: null, ok: false, ergebnis: null };
+  drawWizard();
+}
+
+function wizFields(fields) {
+  return `<div class="group"><div class="card">${fields.map(([k, l, ph, type]) => `
+    <div class="form-row"><span class="row-body">
+      <label for="wz-${k}">${l}</label>
+      <input id="wz-${k}" data-w="${k}" type="${type || "text"}" value="${esc(overlay.d[k])}" placeholder="${esc(ph)}" autocomplete="off" ${type === "password" ? 'spellcheck="false"' : ""}>
+    </span></div>`).join("")}</div>`;
+}
+
+function stateIcon(stufe) {
+  return stufe === "fehler" ? `<span class="state fail">${I.warn}</span>`
+    : stufe === "warn" ? `<span class="state warn">${I.warn}</span>` : `<span class="state done">${I.tick}</span>`;
+}
+
+function drawWizard() {
+  const o = overlay, d = o.d, st = o.step;
+  const dots = `<div class="steps">${[0, 1, 2, 3, 4].map((i) => `<span class="${i === st ? "on" : i < st ? "done" : ""}"></span>`).join("")}</div>`;
+  let body = "", right = "";
+  const left = st < 4 && !o.busy ? `<button class="navlink" data-a="close">Abbrechen</button>` : "";
+  const offen = o.pruef?.offen || { anzahl: 0, nummern: [] };
+
+  if (st === 0) {
+    body = `<div class="wiz-lead"><h3>Neuer Shop</h3><p>Grunddaten aus WooCommerce und CDH.</p></div>
+      ${wizFields([["name", "Name", "z. B. Musterbau"], ["url", "Shop-Adresse", "https://…", "url"], ["debitor", "Debitornummer", "aus CDH"]])}
+      <div class="group-foot">Die Shop-Adresse ist die Startseite des Shops, z. B. https://shop.texma-gmbh.de/allgaier/. Achtung: nicht jeder Shop endet auf „-shop“. Die Debitornummer muss in CDH existieren.</div></div>`;
+    right = `<button class="navlink bold" data-a="wiz-next">Weiter</button>`;
+  }
+  if (st === 1) {
+    body = `<div class="wiz-lead"><h3>Zugang</h3><p>Schlüssel aus dem Shop einfügen.</p></div>
+      ${wizFields([["key", "Consumer Key", "ck_…", "password"], ["secret", "Consumer Secret", "cs_…", "password"]])}
+      <div class="group-foot">Im Shop unter WooCommerce, Einstellungen, Erweitert, REST-API einen Schlüssel mit „Lesen/Schreiben“ anlegen. Die Schlüssel landen in zugang.yaml und werden hier danach nicht mehr angezeigt.</div></div>`;
+    right = `<button class="navlink bold" data-a="wiz-next">Prüfen</button>`;
+  }
+  if (st === 2) {
+    const punkte = o.pruef?.punkte || [];
+    const titel = o.busy ? WIZ_TITEL : punkte.map((p) => p.titel);
+    body = `<div class="wiz-lead"><h3>Prüfen</h3><p>${o.busy ? "Der Shop wird abgefragt, ohne etwas zu verändern." : o.ok ? "Der Shop kann angebunden werden." : "Da passt etwas noch nicht."}</p></div>
+      <div class="group"><div class="card" id="wiz-checks">${titel.map((t, i) => {
+        const p = o.busy ? null : punkte[i];
+        const icon = p ? stateIcon(p.stufe) : `<span class="spin"></span>`;
+        const det = p?.details?.length ? `<div class="row-sub" style="white-space:normal">${p.details.map(esc).join(", ")}</div>` : "";
+        return `<div class="row" data-stufe="${p ? p.stufe : "laeuft"}"><span style="display:flex">${icon}</span><span class="row-body"><span class="row-main">
+          <span class="row-title">${esc(t)}</span>${p ? `<div class="row-sub ${p.stufe !== "ok" ? "warn-text" : ""}" style="white-space:normal">${esc(p.text)}</div>${det}` : ""}</span></span></div>`;
+      }).join("")}</div>
+      ${!o.busy && o.ok ? `<div class="group-foot">Warnungen halten die Anbindung nicht auf, sie erscheinen später auch im Import.</div>` : ""}</div>`;
+    right = o.busy ? "" : o.ok ? `<button class="navlink bold" data-a="wiz-next">Weiter</button>` : `<button class="navlink bold" data-a="wiz-back">Zurück</button>`;
+  }
+  if (st === 3) {
+    const n = offen.anzahl;
+    if (!n) {
+      body = `<div class="wiz-lead"><h3>Altbestellungen</h3><p>Im Shop liegen keine offenen Bestellungen.</p></div>
+        <div class="group-foot">Der erste Import nimmt nur neue Bestellungen mit.</div>`;
+      right = o.busy ? "" : `<button class="navlink bold" data-a="wiz-finish">Anlegen</button>`;
+    } else {
+      const zu = d.old === "close";
+      body = `<div class="wiz-lead"><h3>Altbestellungen</h3><p>Im Shop liegen schon ${n} offene Bestellung${n === 1 ? "" : "en"}.</p></div>
+        <div class="group"><div class="card">
+          ${[["close", "Alle auf „Abgeschlossen“ setzen", "Wenn sie bisher von Hand übertragen wurden"], ["keep", "Beim ersten Import mitnehmen", "Wenn sie noch nicht in CDH stehen"]].map(([v, l, sub]) => `
+            <button class="row" data-a="wiz-old" data-v="${v}" role="radio" aria-checked="${d.old === v}">
+              <span class="row-body"><span class="row-main"><span class="row-title">${l}</span><div class="row-sub">${sub}</div></span>
+              ${d.old === v ? I.check : ""}</span></button>`).join("")}
+        </div></div>
+        ${zu ? `<div class="group"><div class="group-head">Diese ${n} Bestellungen werden abgeschlossen</div><div class="card">
+          <div class="row"><span class="row-body"><span class="row-main"><div class="row-sub num" id="wiz-nummern" style="white-space:normal">${offen.nummern.map(esc).join(", ")}</div></span></span></div>
+          <button class="row" data-a="wiz-confirm" role="checkbox" aria-checked="${!!o.confirm}">
+            <span class="row-body"><span class="row-main"><span class="row-title">Liste geprüft, ${n} abschließen</span>
+            <div class="row-sub warn-text" style="white-space:normal">Nicht umkehrbar. WooCommerce kann dabei wie beim Import Kundenmails verschicken.</div></span>
+            ${o.confirm ? I.check : ""}</span></button>
+        </div></div>` : ""}
+        <div class="group-foot">Das passiert einmalig beim Anbinden. Danach sorgt der Statuswechsel nach jedem Import dafür, dass nichts doppelt kommt.</div>`;
+      right = o.busy ? "" : `<button class="navlink bold" data-a="wiz-finish">Anlegen</button>`;
+    }
+  }
+  if (st === 4) {
+    const e = o.ergebnis || {};
+    const alt = !offen.anzahl ? "keine"
+      : e.abgeschlossen ? `${e.abgeschlossen.length} abgeschlossen`
+      : `${offen.anzahl} beim ersten Import`;
+    const hinweise = [];
+    if (e.fehler) hinweise.push(e.fehler);
+    if (e.fehler_nummern?.length) hinweise.push(`Nicht abgeschlossen: ${e.fehler_nummern.join(", ")} — siehe Log.`);
+    if (e.neu_seitdem?.length) hinweise.push(`Seit der Prüfung neu und nicht angefasst: ${e.neu_seitdem.join(", ")}.`);
+    body = `<div class="wiz-lead"><h3>${esc(d.name)} ist angelegt</h3><p>Ausgeschaltet, bis du die Einstellungen geprüft hast.</p></div>
+      <div class="group"><div class="card">
+        <div class="row"><span class="row-body"><span class="row-main"><span class="row-title">Debitornummer</span></span><span class="row-value num">${esc(d.debitor)}</span></span></div>
+        <div class="row"><span class="row-body"><span class="row-main"><span class="row-title">Altbestellungen</span></span><span class="row-value" id="wiz-alt">${esc(alt)}</span></span></div>
+        <div class="row"><span class="row-body"><span class="row-main"><span class="row-title">Bündelung</span></span><span class="row-value">Einzeln</span></span></div>
+      </div>
+      ${hinweise.length ? `<div class="group-foot warn-text">${hinweise.map(esc).join("<br>")}</div>` : ""}
+      <div class="group-foot">Als Nächstes Bündelung und Lieferadressen einstellen und den Shop dann unter „Shop abfragen“ einschalten.</div></div>`;
+    right = `<button class="navlink bold" data-a="wiz-open">Einstellungen</button>`;
+  }
+
+  zeigeBlatt(sheetShell("Shop hinzufügen", left, right, dots + body));
+  setTimeout(() => { const i = document.querySelector("#overlay input[data-w]"); if (i) { const x = [...document.querySelectorAll("#overlay input[data-w]")].find((y) => !y.value) || i; x.focus(); } }, 60);
+}
+
+function wizCollect() {
+  document.querySelectorAll("#overlay input[data-w]").forEach((i) => (overlay.d[i.dataset.w] = i.value.trim()));
+}
+
+async function wizNext() {
+  const o = overlay; if (o.busy) return;
+  wizCollect(); const d = o.d;
+  if (o.step === 0) {
+    const miss = [];
+    if (!d.name) miss.push("Name");
+    if (!/^https:\/\/[^\s/]+\/.*\/$/.test(d.url)) miss.push("Shop-Adresse mit / am Ende");
+    if (!/^\d{4,6}$/.test(d.debitor)) miss.push("Debitornummer");
+    else if (shops.some((s) => s.debitor === d.debitor)) { hud(`Debitor ${d.debitor} gehört schon zu ${shops.find((s) => s.debitor === d.debitor).name}.`); return; }
+    if (miss.length) { hud(`Bitte prüfen: ${miss.join(", ")}`); return; }
+  }
+  if (o.step === 1) {
+    if (!/^ck_/.test(d.key) || !/^cs_/.test(d.secret)) { hud("Schlüssel beginnen mit ck_ und cs_."); return; }
+    o.step = 2; o.busy = true; o.pruef = null; o.confirm = false; drawWizard();
+    const erg = await api().shop_pruefen({ name: d.name, url: d.url, debitor: d.debitor, key: d.key, secret: d.secret });
+    o.busy = false;
+    if (overlay !== o) return;
+    if (!erg.ok) { o.step = /ck_|cs_/.test(erg.fehler) ? 1 : 0; drawWizard(); hud(erg.fehler); return; }
+    o.pruef = erg; o.ok = erg.bestanden;
+    if (!erg.offen.anzahl) d.old = "keep";
+    drawWizard(); return;
+  }
+  o.step++; drawWizard();
+}
+
+async function wizFinish() {
+  const o = overlay, d = o.d; if (o.busy) return;
+  const n = o.pruef?.offen?.anzahl || 0;
+  const zu = n > 0 && d.old === "close";
+  if (zu && !o.confirm) { hud("Bitte bestätigen, dass die Liste geprüft ist."); return; }
+  o.busy = true; drawWizard();
+  try {
+    const st = await api().shop_anlegen({ name: d.name, url: d.url, debitor: d.debitor, key: d.key, secret: d.secret, token: TOKEN });
+    if (!st.ok) { o.busy = false; drawWizard(); meldung("Nicht angelegt", st.fehler); return; }
+    d.key = ""; d.secret = "";
+    o.neuId = st.neu_id; anwenden(st); render();
+    o.ergebnis = {};
+    if (zu) {
+      const liste = await api().altbestellungen(st.neu_id);
+      if (!liste.ok) o.ergebnis = { fehler: `Altbestellungen nicht abgeschlossen: ${liste.fehler}` };
+      else {
+        const gezeigt = new Set(o.pruef.offen.nummern);
+        const ids = liste.bestellungen.filter((b) => gezeigt.has(b.nummer)).map((b) => b.id);
+        const erg = ids.length ? await api().altbestellungen_abschliessen(st.neu_id, ids, true) : { ok: true, abgeschlossen: [] };
+        o.ergebnis = erg.ok ? erg : { fehler: `Altbestellungen nicht abgeschlossen: ${erg.fehler}` };
+        if (erg.ok) LOG = (await api().laden()).log || LOG;
+      }
+    }
+    o.busy = false; o.step = 4;
+    if (overlay === o) drawWizard();
+    renderList();
+  } catch (err) { o.busy = false; drawWizard(); meldung("Nicht angelegt", String(err)); }
+}
+
+// ------------------------------------------------------------ Zugang erneuern
+function openAccess() {
+  const s = shop();
+  overlay = { kind: "access", shopId: s.id };
+  drawAccess();
+}
+
+function drawAccess() {
+  const o = overlay, s = shopById(o.shopId);
+  zeigeBlatt(sheetShell(`Zugang ${s.name}`, o.busy ? "" : `<button class="navlink" data-a="close">Abbrechen</button>`,
+    o.busy ? `<span class="spin"></span>` : `<button class="navlink bold" data-a="access-save">Prüfen und sichern</button>`, `
+    <div class="group"><div class="card">
+      <div class="form-row"><span class="row-body"><label for="ac-key">Consumer Key</label><input id="ac-key" type="password" placeholder="ck_…" autocomplete="off" spellcheck="false"></span></div>
+      <div class="form-row"><span class="row-body"><label for="ac-secret">Consumer Secret</label><input id="ac-secret" type="password" placeholder="cs_…" autocomplete="off" spellcheck="false"></span></div>
+    </div>
+    <div class="group-foot">Der bisherige Zugang bleibt aktiv, bis der neue geprüft ist. Danach im Shop den alten Schlüssel widerrufen.</div></div>`));
+  setTimeout(() => $("#ac-key")?.focus(), 60);
+}
+
+async function accessSave() {
+  const o = overlay; if (o.busy) return;
+  const k = $("#ac-key").value.trim(), c = $("#ac-secret").value.trim();
+  if (!/^ck_/.test(k) || !/^cs_/.test(c)) { hud("Schlüssel beginnen mit ck_ und cs_."); return; }
+  o.busy = true;
+  $("#overlay .nav-l").innerHTML = ""; $("#overlay .nav-r").innerHTML = `<span class="spin"></span>`;
+  const erg = await api().zugang_erneuern(o.shopId, k, c);
+  o.busy = false;
+  if (!erg.ok) { drawAccess(); meldung("Zugang nicht geändert", erg.fehler); return; }
+  // Nur Zugang und Verlauf übernehmen — ungesicherte Einstellungen bleiben
+  for (const list of [shops, initial]) { const x = list.find((y) => y.id === o.shopId); if (x) x.zugang = true; }
+  LOG = erg.log;
+  methodsLoaded.delete(o.shopId);
+  closeOverlay(); render(); hud("Verbindung geprüft, Zugang gesichert");
+  meldung("Zugang erneuert", erg.hinweis);
+}
+
 // ---------------------------------------------------------- Interaktion
 function renderDetail() {
   if (current === "__global") return renderGlobal();
@@ -1411,8 +1624,15 @@ document.addEventListener("click", (e) => {
     case "back": $("#split").dataset.view = "list"; break;
     case "close": if (e.target === el || el.tagName === "BUTTON") closeOverlay(); break;
 
-    case "wizard": requireAdmin("Shop hinzufügen", "Dabei werden Zugangsschlüssel hinterlegt.", () => hud("Shop anlegen kommt mit Welle 7.")); break;
-    case "access": requireAdmin("Zugang erneuern", "Ersetzt die Schlüssel, mit denen der Shop abgefragt wird.", () => hud("Zugang erneuern kommt mit Welle 7.")); break;
+    case "wizard": requireAdmin("Shop hinzufügen", "Dabei werden Zugangsschlüssel hinterlegt.", openWizard); break;
+    case "wiz-next": wizNext(); break;
+    case "wiz-back": overlay.step = 1; drawWizard(); break;
+    case "wiz-old": overlay.d.old = el.dataset.v; overlay.confirm = false; drawWizard(); break;
+    case "wiz-confirm": overlay.confirm = !overlay.confirm; drawWizard(); break;
+    case "wiz-finish": wizFinish(); break;
+    case "wiz-open": { const id = overlay.neuId; closeOverlay(); tab = "settings"; current = id; $("#split").dataset.view = "detail"; render(); break; }
+    case "access": requireAdmin("Zugang erneuern", "Ersetzt die Schlüssel, mit denen der Shop abgefragt wird.", openAccess); break;
+    case "access-save": accessSave(); break;
     case "todo": hud(el.dataset.msg || "Im Entwurf ohne Funktion."); break;
     case "fetch": doFetch(); break;
     case "override": overrides.add(el.dataset.id); doFetch(); break;

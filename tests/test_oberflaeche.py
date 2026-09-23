@@ -147,6 +147,7 @@ def _browser(api, ordner, cdh):
         page.goto(f"http://127.0.0.1:{port}/index.html")
         page.wait_for_function("typeof geladen !== 'undefined' && geladen")
         page.fehler, page.extern, page.ordner, page.cdh = fehler, extern, ordner, cdh
+        page.api = api
         yield page
         browser.close()
     server.shutdown()
@@ -420,3 +421,160 @@ def test_hinweis_ungesicherte_einstellungen(importseite):
     p.click("[data-a=after][data-v='']")
     p.click("[data-a=tab][data-tab=import]")
     assert "Der Import arbeitet mit dem gesicherten Stand" in p.locator("#importPane").inner_text()
+
+
+# --- Welle 7: Shop anlegen, Zugang erneuern -----------------------------------
+
+KEY = "ck_" + "Q" * 24            # zur Laufzeit gebaut (Schlüssel-Scanner)
+SECRET = "cs_" + "W" * 24
+FALSCH = "ck_" + "Z" * 24
+NEU_URL = "https://shop.example/musterbau/"
+
+
+class Woo401(FakeWoo):
+    def _get(self, path, params=None):
+        if self.consumer_key == FALSCH:
+            import requests
+            r = requests.Response()
+            r.status_code = 401
+            raise requests.HTTPError("401 Client Error", response=r)
+        return super()._get(path, params)
+
+
+def _admin(page):
+    page.fill("#pw", PASSWORT)
+    page.click("[data-a=pw-ok]")
+
+
+def _alt(oid, nr):
+    return {"id": oid, "number": str(nr), "status": "processing",
+            "date_created": "2026-09-01T10:00:00", "line_items": [], "meta_data": []}
+
+
+def _assistent_bis_pruefen(seite, key=KEY):
+    seite.click("[data-a=wizard]")
+    _admin(seite)
+    seite.wait_for_selector("#wz-name")
+    seite.wait_for_timeout(150)
+    seite.fill("#wz-name", "Musterbau")
+    seite.fill("#wz-url", NEU_URL)
+    seite.fill("#wz-debitor", "12345")
+    seite.click("[data-a=wiz-next]")
+    seite.wait_for_selector("#wz-key")
+    seite.wait_for_timeout(150)
+    seite.fill("#wz-key", key)
+    seite.fill("#wz-secret", SECRET)
+    seite.click("[data-a=wiz-next]")
+
+
+def test_shop_assistent_komplett(seite):
+    FakeWoo.orders_by_url[NEU_URL] = [_alt(501, 1001), _alt(502, 1002)]
+    seite.api._client_factory = Woo401
+    _assistent_bis_pruefen(seite)
+    seite.wait_for_selector("text=Der Shop kann angebunden werden.")
+    assert seite.locator("#wiz-checks .row").count() == 5
+    assert FakeWoo.puts == []
+    seite.click("[data-a=wiz-next]")
+    seite.wait_for_selector("text=Im Shop liegen schon 2 offene Bestellungen.")
+    assert seite.locator("#wiz-nummern").inner_text() == "1001, 1002"
+    seite.click("[data-a=wiz-finish]")                       # ohne Bestätigung
+    seite.wait_for_selector("#hud.show:has-text('bestätigen')")
+    assert "musterbau" not in yaml.safe_dump(_cfg(seite.ordner))
+    seite.click("[data-a=wiz-confirm]")
+    assert "2 abschließen" in seite.locator("[data-a=wiz-confirm]").inner_text()
+    seite.click("[data-a=wiz-finish]")
+    seite.wait_for_selector("text=Musterbau ist angelegt")
+    assert seite.locator("#wiz-alt").inner_text() == "2 abgeschlossen"
+    assert FakeWoo.puts == [("/orders/501", {"status": "completed"}),
+                            ("/orders/502", {"status": "completed"})]
+    neu = _cfg(seite.ordner)["shops"][-1]
+    assert neu["id"] == "musterbau" and neu["enabled"] is False and neu["datev_no"] == 12345
+    zugang = yaml.safe_load((seite.ordner / "zugang.yaml").read_text(encoding="utf-8"))
+    assert zugang["shops"]["musterbau"]["consumer_key"] == KEY
+    # Schlüssel sind aus der Seite verschwunden
+    assert seite.evaluate("JSON.stringify(overlay)").count(KEY) == 0
+    assert KEY not in seite.content()
+    seite.click("[data-a=wiz-open]")
+    seite.wait_for_selector("#detail h1:has-text('Musterbau')")
+    assert seite.locator("#detail .row-value", has_text="Hinterlegt").count() == 1
+    _nav(seite, "__log")
+    titel = seite.locator("#detail .row-title").all_inner_texts()
+    assert titel[:2] == ["Musterbau: 2 Altbestellungen abgeschlossen (Nr. 1001, 1002)",
+                         "Musterbau: Shop angelegt (Debitor 12345), ausgeschaltet"]
+    assert seite.fehler == []
+
+
+def test_shop_assistent_mitnehmen(seite):
+    FakeWoo.orders_by_url[NEU_URL] = [_alt(501, 1001)]
+    _assistent_bis_pruefen(seite)
+    seite.wait_for_selector("text=Der Shop kann angebunden werden.")
+    seite.click("[data-a=wiz-next]")
+    seite.click("[data-a=wiz-old][data-v=keep]")
+    assert seite.locator("#wiz-nummern").count() == 0
+    seite.click("[data-a=wiz-finish]")
+    seite.wait_for_selector("text=Musterbau ist angelegt")
+    assert seite.locator("#wiz-alt").inner_text() == "1 beim ersten Import"
+    assert FakeWoo.puts == []
+
+
+def test_shop_assistent_falscher_schluessel(seite):
+    seite.api._client_factory = Woo401
+    _assistent_bis_pruefen(seite, key=FALSCH)
+    seite.wait_for_selector("text=Da passt etwas noch nicht.")
+    assert seite.locator("#wiz-checks .row[data-stufe=fehler]").count() == 1
+    assert seite.locator("[data-a=wiz-next]").count() == 0
+    seite.click("[data-a=wiz-back]")
+    seite.wait_for_selector("#wz-key")
+    assert len(_cfg(seite.ordner)["shops"]) == 3
+
+
+def test_shop_assistent_debitor_doppelt(seite):
+    seite.click("[data-a=wizard]")
+    _admin(seite)
+    seite.wait_for_selector("#wz-name")
+    seite.wait_for_timeout(150)
+    seite.fill("#wz-name", "Musterbau")
+    seite.fill("#wz-url", NEU_URL)
+    seite.fill("#wz-debitor", "19541")
+    seite.click("[data-a=wiz-next]")
+    seite.wait_for_selector("#hud.show:has-text('gehört schon zu CAF-Shop')")
+
+
+def test_shop_assistent_nicht_mit_ungesicherten_aenderungen(seite):
+    _nav(seite, "caf")
+    seite.click("[data-a=after][data-v='']")
+    seite.click("[data-a=wizard]")
+    _admin(seite)
+    seite.wait_for_selector(".alert-box:has-text('ungesicherte Änderungen')")
+    assert seite.locator("#wz-name").count() == 0
+
+
+def test_zugang_erneuern(seite):
+    seite.api._client_factory = Woo401
+    _nav(seite, "ensinger")
+    seite.click("[data-a=after][data-v='']")                 # ungesicherte Änderung bleibt
+    seite.click("#detail [data-a=access]")
+    _admin(seite)
+    seite.wait_for_selector("#ac-key")
+    seite.wait_for_timeout(150)
+    seite.fill("#ac-key", FALSCH)
+    seite.fill("#ac-secret", SECRET)
+    seite.click("[data-a=access-save]")
+    seite.wait_for_selector(".alert-box:has-text('Zugang nicht geändert')")
+    assert "ensinger" not in yaml.safe_load(
+        (seite.ordner / "zugang.yaml").read_text(encoding="utf-8"))["shops"]
+    seite.click(".alert-box [data-a=close]")
+    seite.click("#detail [data-a=access]")
+    seite.wait_for_selector("#ac-key")
+    seite.wait_for_timeout(150)
+    seite.fill("#ac-key", KEY)
+    seite.fill("#ac-secret", SECRET)
+    seite.click("[data-a=access-save]")
+    seite.wait_for_selector(".alert-box:has-text('alten Schlüssel jetzt im Shop widerrufen')")
+    z = yaml.safe_load((seite.ordner / "zugang.yaml").read_text(encoding="utf-8"))["shops"]
+    assert z["ensinger"] == {"consumer_key": KEY, "consumer_secret": SECRET}
+    seite.click(".alert-box [data-a=close]")
+    assert seite.locator("#detail .row-value", has_text="Hinterlegt").count() == 1
+    assert seite.locator(".tab-badge").inner_text() == "1"
+    assert KEY not in seite.content()
+    assert seite.fehler == []

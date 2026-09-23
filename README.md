@@ -691,6 +691,9 @@ PowerShell kennt `copy /Y` nicht — dort `Copy-Item -Force` verwenden.
 
 ## 12. Neuen Shop anbinden
 
+Seit Welle 7 geht das in der Oberfläche über „Shop hinzufügen"
+(Abschnitt 15a). Die Schritte hier sind der Weg ohne Oberfläche.
+
 1. Im Sub-Shop unter WooCommerce → Einstellungen → Erweitert → REST-API
    einen Schlüssel mit Rechten **Lesen/Schreiben** anlegen.
 2. Debitorennummer in CDH nachsehen.
@@ -786,7 +789,7 @@ Fenster weiter; das Admin-Passwort liegt nur als PBKDF2-Hash vor.
 
 ---
 
-## 15a. Oberfläche (Welle 5 und 6)
+## 15a. Oberfläche (Wellen 5–7)
 
 `oberflaeche.py` öffnet ein Fenster (pywebview, unter Windows WebView2) mit
 der Oberfläche aus `ui/index.html`. Tab **Import** (Welle 6, Startseite) und
@@ -809,7 +812,7 @@ python oberflaeche.py
 - **Admin-Modus:** Passwort gegen den Hash in `zugang.yaml`, 10 Minuten gültig,
   nach 5 Fehlversuchen 1 Minute Pause. Ist `admin.users` gefüllt, dürfen nur
   diese Windows-Benutzer. Geschützt: Debitornummer, Veredelungs-Präfixe,
-  Shop hinzufügen und Zugang erneuern (beide Funktionen folgen in Welle 7).
+  Shop hinzufügen und Zugang erneuern (Welle 7, siehe unten).
   Die Prüfung sitzt in Python (`einstellungen_api.py`), nicht im Fenster.
 - **Kundenadresse:** nur Hinweis „aus dem CDH-Kundenstamm" — der Sender
   trägt seit dem CDH-Test nur die DatevNo (Abschnitt 5).
@@ -852,7 +855,35 @@ Funktionen aus `woo_to_cdh.py`, `start_cdh_wex_import` unverändert).
 - **Ungesicherte Einstellungen:** Hinweis, dass der Import mit dem gesicherten
   Stand arbeitet.
 
-**Tests:** `tests/test_import_api.py` prüft die Import-Schnittstelle,
+### Shop hinzufügen und Zugang erneuern (Welle 7)
+
+Schnittstelle in `shop_api.py`, alles nur im Admin-Modus (Prüfung in Python).
+
+- **Shop hinzufügen** (Einstellungen → „Shop hinzufügen"), fünf Schritte:
+  Grunddaten (Name, Shop-Adresse mit `/` am Ende, Debitornummer) · Schlüssel
+  · Prüfen (die fünf Punkte aus `diagnose.diagnose`, nur lesend) ·
+  Altbestellungen · fertig. Name, Debitornummer und Shop-Adresse dürfen noch
+  nicht vergeben sein. Angelegt wird nur mit genau den geprüften Schlüsseln,
+  und nur wenn keine ungesicherten Änderungen offen sind.
+- Der neue Shop steht **ausgeschaltet** in `einstellungen.yaml` (feste id aus
+  dem Namen, bei Gleichstand `-2`), die Schlüssel stehen unter dieser id in
+  `zugang.yaml`. Backup von `einstellungen.yaml` wie beim Sichern, Eintrag im
+  Änderungsverlauf. Die Schlüssel stehen danach nirgends mehr in der
+  Oberfläche, nicht im Log und nicht im Verlauf.
+- **Altbestellungen:** Liegen schon offene Bestellungen im Shop, zeigt der
+  Assistent Anzahl und Bestellnummern. Wahl: „Alle auf Abgeschlossen setzen"
+  (nur nach Haken „Liste geprüft") oder „Beim ersten Import mitnehmen".
+  Abgeschlossen werden nur die angezeigten Bestellungen, die dann noch offen
+  sind; was seitdem neu kam, bleibt liegen und wird gemeldet. **Nicht
+  umkehrbar**, WooCommerce kann dabei Kundenmails schicken. Geht nur bei
+  ausgeschalteten Shops. Im Verlauf stehen die abgeschlossenen Nummern.
+- **Zugang erneuern** (Shop → „Zugang"): Die neuen Schlüssel werden erst
+  gegen den Shop geprüft. Nur wenn das klappt, ersetzen sie die alten in
+  `zugang.yaml`. Danach im Shop den alten Schlüssel widerrufen.
+  Ungesicherte Einstellungen bleiben dabei erhalten.
+
+**Tests:** `tests/test_shop_api.py` prüft Assistent, Zugang und
+Altbestellungen, `tests/test_import_api.py` die Import-Schnittstelle,
 `tests/test_einstellungen_api.py` die Einstellungen,
 `tests/test_oberflaeche.py` die Seite in Chromium gegen die echte
 Schnittstelle (braucht `pip install playwright`, sonst übersprungen).

@@ -200,6 +200,24 @@ Jannik. Konsolen-EXE bleibt parallel einsatzbereit.**
   umkehrbar: Anzahl und Bestellnummern vorher anzeigen, ausdrückliche
   Bestätigung.
 
+Umsetzung auf `welle-07-shop-zugang` (Stand 23.09.2026, wartet auf Sichtung):
+`shop_api.py` (`ShopApi` erweitert `EinstellungenApi`), Assistent und
+„Zugang erneuern" in `ui/index.html` nach dem Entwurf. Sicherungen:
+- Anlegen nur mit genau den zuletzt erfolgreich geprüften Schlüsseln
+  (Fingerabdruck), nur ohne ungesicherte Änderungen und mit dem Token gegen
+  gleichzeitiges Sichern an einem anderen Rechner.
+- Zugang wird vor dem Shop geschrieben: Bricht es dazwischen ab, bleibt kein
+  Shop ohne Zugang zurück.
+- Altbestellungen: nur bei ausgeschalteten Shops, nur `bestaetigt=True`, nur die
+  angezeigten und noch offenen Bestellungen; Nummern im Verlauf.
+- Zugang erneuern: Hat ein Shop noch keine feste id (vor der Migration), bleibt
+  der Zugang unter dem Namen, sonst fände der Import ihn nicht mehr. Das hat
+  ein Test aufgedeckt.
+Nebenbei behoben: Blätter spielten bei jedem Neuzeichnen die Einblend-Animation
+erneut ab (Import-Fortschritt flackerte alle 0,7 s).
+Getestet mit Chromium gegen die echte Schnittstelle (Fake-Shop), **nicht** in
+pywebview/WebView2 und **nicht** gegen einen echten Shop.
+
 **STOPP — vor dem ersten echten Abschließen von Altbestellungen.**
 
 ## Welle 8 — Ausrollen

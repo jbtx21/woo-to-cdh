@@ -682,7 +682,7 @@ Alles über `build.ps1` im Repo-Ordner:
 
 ```powershell
 .\build.ps1            # prüfen und bauen, nichts auf V:
-.\build.ps1 -Deploy    # zusätzlich nach V: kopieren (nur von main, nach Freigabe)
+.\build.ps1 -Deploy    # zusätzlich nach V: kopieren (nur von main)
 ```
 
 Ablauf und Abbruchgründe:
@@ -700,8 +700,8 @@ Ablauf und Abbruchgründe:
    - `Lieferadressen.exe` – Adressen-Tool
 5. **Selbsttest:** Beide Import-EXE starten einmal mit `--selbsttest`.
    Geprüft wird, ob alles eingepackt ist; ein Import läuft dabei nicht.
-6. **Deploy** (nur mit `-Deploy`): nur von `main`, nicht vor dem Ende des
-   Produktionsstopps, nur nach Eingabe von `JA`. Vorher wandern die bisherigen
+6. **Deploy** (nur mit `-Deploy`): nur von `main`, nur nach Eingabe von
+   `JA`. Vorher wandern die bisherigen
    EXE-Dateien nach `Backup\exe_<Zeit>\`. Kopiert werden die drei EXE-Dateien,
    `README.md` und die Mitarbeiter-Anleitung. **Nicht** kopiert werden
    Konfiguration, Zugangsdaten, Logs und Python-Dateien (eine `.py` auf V: lädt

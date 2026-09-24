@@ -103,7 +103,7 @@ def test_build_kopiert_nichts_geheimes():
 
 def test_build_deploy_nur_mit_freigabe():
     deploy = BUILD[BUILD.index("if ($Deploy) {"):]
-    assert '$Branch -ne "main"' in BUILD and "$Produktionsstopp" in BUILD
+    assert '$Branch -ne "main"' in BUILD      # Produktionsstopp am 24.09. aufgehoben
     assert 'Read-Host' in deploy and '-cne "JA"' in deploy
     assert deploy.index("Backup") < deploy.index("Copy-Item -Force (Join-Path dist")
 

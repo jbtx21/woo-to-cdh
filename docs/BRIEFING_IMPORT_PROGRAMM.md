@@ -27,9 +27,12 @@ Fachlicher Hintergrund, WEX-Format und alle bisherigen Fallstricke: `README.md`.
    `lieferadressen.yaml`, `exported.log`, WEX- und Excel-Dateien außer
    `tests/golden/`. Echte Namen oder Anschriften in Testdaten sind tabu.
 7. **Nichts auf V: ändern** ohne ausdrückliche Freigabe. V: ist Produktion.
-8. **Produktionsstopp bis nach dem 01.10.2026.** Am 1. Oktober läuft der erste
-   echte Ensinger-Stichtag. Bis zur Freigabe danach wird auf V: nichts
-   verändert, keine Migration, kein Deploy. Entwicklung nur auf Branches.
+8. ~~**Produktionsstopp bis nach dem 01.10.2026.**~~ **Aufgehoben am
+   24.09.2026:** Ausrollen und Umstellen beginnen sofort (`docs/AUSROLLEN.md`).
+   Regel 7 gilt weiter: Änderungen auf V: macht der Mensch am Rechner, Schritt
+   für Schritt nach der Checkliste. Hinweise „nach dem 01.10." weiter unten
+   heißen seitdem „beim Umstellen". Der erste echte Ensinger-Stichtag am 01.10.
+   läuft damit schon mit der neuen Fassung.
 
 ---
 
@@ -232,7 +235,7 @@ Umsetzung auf `welle-08-ausrollen` (Stand 23.09.2026, wartet auf Sichtung):
   Windows), YAML-Prüfung auf V: nur lesend, drei EXE-Dateien (neu:
   `WOO_to_CDH_Oberflaeche.exe` mit eingebautem `ui/`), Selbsttest beider
   Import-EXE (`--selbsttest`).
-- Deploy nur von `main`, erst nach dem Produktionsstopp, nach Eingabe von
+- Deploy nur von `main`, nach Eingabe von
   `JA`, mit Sicherung der bisherigen EXE in `Backup\exe_<Zeit>\`.
   `woo_to_cdh.py` wird nicht mehr nach V: kopiert (COMPUTER-1).
 - Programmstand (Datum, Branch, Commit) in der EXE, im Log bei jedem Start
@@ -246,6 +249,8 @@ Umsetzung auf `welle-08-ausrollen` (Stand 23.09.2026, wartet auf Sichtung):
   Parallelbetrieb, dazu der Rückweg. Beim ersten Ausrollen braucht die alte
   EXE `config.yaml`, deshalb die Konfiguration erst nach dem Ausrollen
   umstellen.
+- **Erster Windows-Build 24.09.2026** (Windows 11, Python 3.14): 276 Tests
+  grün, drei EXE gebaut, beide Selbsttests ok.
 - Build mit denselben PyInstaller-Optionen unter Linux nachgestellt: beide
   EXE gebaut, Selbsttest ok; eine Oberflächen-EXE ohne `ui/` fällt im
   Selbsttest durch. **Nicht** unter Windows gebaut, PowerShell lief hier
@@ -312,7 +317,7 @@ Vor Welle 3 klären:
      Arbeitsplatz. Empfehlung: so lassen. `CDH_WEX.EXE` gehört zum
      CDH-Client und braucht dessen lokale Installation; auf V: kopiert läuft
      sie womöglich nicht. Der Pfad ist an allen Arbeitsplätzen gleich, es
-     muss nichts umgestellt werden. **Bestätigung ausstehend.**
+     muss nichts umgestellt werden.
    - Windows 10: Die Oberfläche braucht die WebView2-Laufzeit. `oberflaeche.py`
      prüft sie beim Start und meldet sonst klar, wo es sie gibt; die
      Konsolen-EXE läuft ohne. Vor Welle 6 an den Win-10-Rechnern prüfen bzw.

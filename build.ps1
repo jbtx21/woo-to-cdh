@@ -10,13 +10,12 @@
 #
 # Bricht ab bei: roten Tests (UI-Tests sind Pflicht), ungesicherten Änderungen
 # im Repo, kaputter YAML auf V:, fehlgeschlagenem Selbsttest der EXE.
-# -Deploy nur von main, nur nach dem Produktionsstopp und nur nach Bestätigung;
+# -Deploy nur von main und nur nach Bestätigung;
 # die bisherigen EXE-Dateien wandern vorher nach V:\…\Backup\exe_<Zeit>\.
 # Konfiguration, Zugangsdaten und Logs auf V: werden nie angefasst.
 param([switch]$Deploy)
 $ErrorActionPreference = "Stop"
 $Target = "V:\Warenwirtschaftssystem\WooCommerce Import"
-$Produktionsstopp = [datetime]"2026-10-02"   # Regel 8: vorher kein Deploy
 $Exes = "WOO_to_CDH.exe", "WOO_to_CDH_Oberflaeche.exe", "Lieferadressen.exe"
 
 Write-Host "1/5 Stand pruefen" -ForegroundColor Cyan
@@ -27,7 +26,6 @@ $Stand  = "$(Get-Date -Format 'yyyy-MM-dd HH:mm') $Branch@$Commit"
 Write-Host "   $Stand"
 if ($Deploy) {
     if ($Branch -ne "main") { throw "Ausrollen nur von main (aktuell: $Branch)." }
-    if ((Get-Date) -lt $Produktionsstopp) { throw "Produktionsstopp bis 01.10.2026 - kein Deploy." }
 }
 
 Write-Host "2/5 Tests (UI-Tests sind Pflicht)" -ForegroundColor Cyan
@@ -66,7 +64,7 @@ if ($LASTEXITCODE -ne 0) { throw "Selbsttest WOO_to_CDH.exe fehlgeschlagen." }
 # Fenster-EXE: kein Konsolen-Ausgang, darum Exit-Code und selbsttest.txt
 Remove-Item -ErrorAction SilentlyContinue dist\selbsttest.txt
 $p = Start-Process dist\WOO_to_CDH_Oberflaeche.exe -ArgumentList "--selbsttest" -Wait -PassThru
-$Text = Get-Content -ErrorAction SilentlyContinue dist\selbsttest.txt
+$Text = Get-Content -Encoding UTF8 -ErrorAction SilentlyContinue dist\selbsttest.txt
 Remove-Item -ErrorAction SilentlyContinue dist\selbsttest.txt
 if ($p.ExitCode -ne 0) { throw "Selbsttest Oberflaeche fehlgeschlagen: $Text" }
 Write-Host "   Oberflaeche: $Text"

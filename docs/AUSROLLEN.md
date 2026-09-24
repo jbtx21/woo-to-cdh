@@ -1,8 +1,7 @@
 # Ausrollen · Checkliste (Welle 8)
 
-Gilt erst **nach dem Produktionsstopp (nach dem 01.10.2026)** und nur nach
-ausdrücklicher Freigabe (Briefing, Regeln 7 und 8). Bis dahin wird auf V:
-nichts verändert. `build.ps1 -Deploy` verweigert vorher den Dienst.
+Freigegeben am 24.09.2026, der Produktionsstopp ist aufgehoben. Die
+Änderungen auf V: machst du selbst, Schritt für Schritt (Regel 7).
 
 Reihenfolge einhalten: Jeder Schritt ist einzeln prüfbar und lässt sich
 zurücknehmen.

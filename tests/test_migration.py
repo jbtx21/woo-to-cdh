@@ -309,3 +309,31 @@ def test_load_config_warnt_bei_koexistenz(tmp_path, monkeypatch, caplog):
 
     assert "einstellungen.yaml" in quelle              # neue gelten
     assert "config.yaml" in caplog.text                # aber Warnung steht im Log
+
+
+# --- Admin-Passwort nach der Migration (Fehler beim Umstellen 24.09.2026) ----
+
+def test_admin_passwort_nach_der_migration(tmp_path, monkeypatch, capsys):
+    """config.yaml ist nach der Migration weg; --admin-password muss trotzdem
+    gehen und darf nur den Hash ändern."""
+    zugang = {"admin": {"password": m.leerer_passwort_satz(), "users": ["a.b"]},
+              "shops": {"caf": {"consumer_key": "ck_TEST", "consumer_secret": "cs_TEST"}}}
+    (tmp_path / "zugang.yaml").write_text(yaml.safe_dump(zugang), encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    assert m.main(["--admin-password", "neu-geheim"]) == 0
+    neu = yaml.safe_load((tmp_path / "zugang.yaml").read_text(encoding="utf-8"))
+    assert m.verify_admin_password("neu-geheim", neu["admin"]["password"])
+    assert neu["admin"]["users"] == ["a.b"] and neu["shops"] == zugang["shops"]
+    out = capsys.readouterr().out
+    assert "neu-geheim" not in out and "ck_TEST" not in out
+    assert not (tmp_path / "zugang.yaml.tmp").exists()
+
+
+def test_admin_passwort_ohne_zugang(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    assert m.main(["--admin-password", "x"]) == 2
+
+
+def test_ohne_config_und_ohne_passwort_bleibt_fehler(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    assert m.main([]) == 2

@@ -183,7 +183,7 @@ def probelauf_bericht(cfg: dict, *, ziel_einstellungen: Path,
 
     zeilen.append(f"zugang.yaml         ->  {ziel_zugang}")
     zeilen.append("    Admin-Passwort-Hash: wird leer angelegt "
-                  "(später über die Oberfläche setzen)")
+                  "(setzen: python migrate_config.py --admin-password …)")
     zeilen.append("    Consumer Key/Secret je Shop:")
     for shop in shops:
         name = shop.get("name") or shop.get("url") or "(ohne Namen)"
@@ -337,6 +337,24 @@ def shop_ids_migration(ordner: Path, *, probelauf: bool,
     return "\n".join(kopf + zeilen + ["", f"Gesichert nach {backup}", "Umgestellt."])
 
 
+def setze_admin_passwort(ordner: Path, passwort: str) -> str:
+    """Admin-Passwort nachträglich setzen, wenn die Migration schon gelaufen
+    ist (config.yaml liegt dann in Backup\\). Ändert in zugang.yaml nur
+    admin.password; Schlüssel und Benutzerliste bleiben, wie sie sind."""
+    pz = ordner / "zugang.yaml"
+    if not pz.exists():
+        raise FileNotFoundError(f"{pz} fehlt — erst die Migration aus config.yaml.")
+    zugang = _lade_yaml(pz)
+    admin = zugang.setdefault("admin", {}) or {}
+    zugang["admin"] = admin
+    admin["password"] = hash_admin_password(passwort)
+    admin.setdefault("users", [])
+    tmp = pz.with_name(pz.name + ".tmp")
+    _dump(tmp, zugang)
+    tmp.replace(pz)
+    return f"Admin-Passwort gesetzt in {pz} (nur der Hash, keine Schlüssel geändert)."
+
+
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
@@ -371,6 +389,15 @@ def main(argv: list[str] | None = None) -> int:
 
     config_pfad = args.config
     if not config_pfad.exists():
+        # Migration schon gelaufen: nur das Passwort nachtragen
+        if args.admin_password and not args.probelauf:
+            try:
+                print(setze_admin_passwort(config_pfad.resolve().parent,
+                                           args.admin_password))
+            except FileNotFoundError as e:
+                print(e, file=sys.stderr)
+                return 2
+            return 0
         print(f"config.yaml fehlt: {config_pfad}", file=sys.stderr)
         return 2
 

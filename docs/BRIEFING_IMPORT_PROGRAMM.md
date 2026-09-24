@@ -305,8 +305,14 @@ Vor Welle 3 klären:
    - `cdh_exe` in `einstellungen.yaml` auf den Pfad auf V: setzen — besser als
      UNC-Pfad (`\\SERVER2019TEX\Verwaltung\…`), weil V: nicht auf jedem
      Rechner gleich verbunden sein muss (COMPUTER-1 startet über UNC).
-     **Genauer Pfad fehlt noch.** Die Sperre „nur ein CDH-Fenster" prüft per
-     `tasklist` den Programmnamen und funktioniert unabhängig vom Ort.
+     Die Sperre „nur ein CDH-Fenster" prüft per `tasklist` den
+     Programmnamen und funktioniert unabhängig vom Ort.
+   - **Stand 24.09.2026:** In der Konfiguration auf V: steht heute
+     `cdh_exe: C:\CDH\CDH_WEX.EXE`, also die lokale CDH-Installation am
+     Arbeitsplatz. Empfehlung: so lassen. `CDH_WEX.EXE` gehört zum
+     CDH-Client und braucht dessen lokale Installation; auf V: kopiert läuft
+     sie womöglich nicht. Der Pfad ist an allen Arbeitsplätzen gleich, es
+     muss nichts umgestellt werden. **Bestätigung ausstehend.**
    - Windows 10: Die Oberfläche braucht die WebView2-Laufzeit. `oberflaeche.py`
      prüft sie beim Start und meldet sonst klar, wo es sie gibt; die
      Konsolen-EXE läuft ohne. Vor Welle 6 an den Win-10-Rechnern prüfen bzw.

@@ -20,6 +20,8 @@ zurücknehmen.
 
 ## B. Arbeitsplätze
 
+- [ ] Jeder Import-Arbeitsplatz: `Test-Path C:\CDH\CDH_WEX.EXE` ergibt `True`.
+      Sonst meldet der Import „CDH nicht gestartet".
 - [ ] Windows-10-Rechner: WebView2-Laufzeit prüfen/installieren
       (https://go.microsoft.com/fwlink/p/?LinkId=2124703). Ohne sie meldet die
       Oberfläche das beim Start; die Konsolen-EXE läuft trotzdem.
@@ -52,8 +54,8 @@ zurücknehmen.
 - [ ] Admin-Passwort setzen: `python migrate_config.py --admin-password …`.
       `admin.users` bleibt leer (Frage 5: ein Passwort reicht, es schützt nur
       vor versehentlichen Änderungen).
-- [ ] `cdh_exe` auf den Pfad auf V: setzen, am besten als UNC-Pfad
-      (`\\SERVER…\…\CDH_WEX.EXE`). **Genauer Pfad steht noch aus.**
+- [ ] `cdh_exe` bleibt `C:\CDH\CDH_WEX.EXE` (lokale CDH-Installation, Stand
+      24.09.). Die Migration übernimmt den Wert unverändert.
 - [ ] Ensinger: beim Eintrag `personalnummer` in `extra_excel_meta`
       `checkout_key: '_wc_billing/thwcfe-block/personalnumber'` ergänzen (Frage 6,
       ermittelt am 24.09.; Vorlage: `einstellungen.sample.yaml`).

@@ -227,3 +227,46 @@ def test_client_nutzt_eine_verbindung(monkeypatch):
     c._get("/orders")
     c._get("/products/1")
     assert len(aufrufe) == 2 and len(set(aufrufe)) == 1
+
+
+def test_versandarten_werden_gemerkt(monkeypatch):
+    aufrufe = []
+
+    class C(w.WooClient):
+        def _get(self, path, params=None):
+            aufrufe.append(path)
+            return [{"id": 1}] if path == "/shipping/zones" else [{"title": "Cham"}]
+    uhr = [1000.0]
+    monkeypatch.setattr(w.time, "monotonic", lambda: uhr[0])
+    c = C("https://shop.example/x/", "ck_T", "cs_T")
+    assert c.get_shipping_methods() == ["Cham"]
+    assert C("https://shop.example/x/", "ck_T", "cs_T").get_shipping_methods() == ["Cham"]
+    assert len(aufrufe) == 2                                  # zweites Mal aus dem Speicher
+    uhr[0] += w.VERSANDARTEN_MERKEN_SEKUNDEN + 1
+    c.get_shipping_methods()
+    assert len(aufrufe) == 4                                  # nach 30 min neu
+
+
+def test_zonen_und_bestellungen_gleichzeitig(monkeypatch, tmp_path):
+    import threading
+    import time as zeit
+    monkeypatch.setattr(w, "EXPORTED_LOG_PATH", tmp_path / "exported.log")
+    monkeypatch.setattr(w, "DELIVERY_ADDRESSES_PATH", tmp_path / "fehlt.yaml")
+    laufend, gleichzeitig, sperre = set(), [False], threading.Lock()
+
+    class C(w.WooClient):
+        def _get(self, path, params=None):
+            art = "zonen" if path.startswith("/shipping") else "orders"
+            with sperre:
+                laufend.add(art)
+                if len(laufend) == 2:
+                    gleichzeitig[0] = True
+            zeit.sleep(0.15)
+            with sperre:
+                laufend.discard(art)
+            return [] if art == "orders" else ([{"id": 1}] if path == "/shipping/zones" else [])
+    cfg = {"shops": [{"name": "Sammel", "url": "https://shop.example/s/", "consumer_key": "ck_T",
+                      "consumer_secret": "cs_T", "combine_by_delivery": True}]}
+    erg = w.abrufen(cfg, client_factory=C)
+    assert gleichzeitig[0]
+    assert erg.shops[0].warnungen == ["Keine aktive Versandart im Shop gefunden — Versandzonen prüfen."]

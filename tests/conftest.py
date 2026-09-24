@@ -85,6 +85,14 @@ def value(xml, tag):
     return xml.split(f"<{tag}>")[1].split(f"</{tag}>")[0]
 
 
+@pytest.fixture(autouse=True)
+def _versandarten_nicht_merken():
+    """Jeder Test mit eigenen Versandzonen — nichts aus dem vorigen merken."""
+    w.versandarten_vergessen()
+    yield
+    w.versandarten_vergessen()
+
+
 # --- WooCommerce ohne Netz (Welle 3/4) --------------------------------------
 
 class FakeWoo(w.WooClient):

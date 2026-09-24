@@ -174,6 +174,17 @@ class _ohne_schluessel_in_fehlern:
         raise neu from None
 
 
+VERSANDARTEN_MERKEN_SEKUNDEN = 30 * 60
+_VERSANDARTEN_CACHE: dict = {}          # base-URL → (Zeit, Titel)
+_VERSANDARTEN_SPERRE = threading.Lock()
+
+
+def versandarten_vergessen() -> None:
+    """Gemerkte Versandarten verwerfen (Tests, neu anlegen eines Shops)."""
+    with _VERSANDARTEN_SPERRE:
+        _VERSANDARTEN_CACHE.clear()
+
+
 class WooClient:
     """
     Dünner REST-API-Wrapper für WooCommerce.
@@ -283,8 +294,19 @@ class WooClient:
         return self._get(f"/products/{product_id}")
 
     def get_shipping_methods(self) -> list[str]:
-        """Titel aller aktiven Versandarten über alle Versandzonen."""
-        return versandarten_aus_zonen(self._get)
+        """Titel aller aktiven Versandarten über alle Versandzonen.
+
+        30 Minuten je Shop gemerkt: Versandzonen ändern sich praktisch nie,
+        die Abfrage kostet aber mehrere Sekunden (eine Anfrage je Zone)."""
+        jetzt = time.monotonic()
+        with _VERSANDARTEN_SPERRE:
+            treffer = _VERSANDARTEN_CACHE.get(self.base)
+        if treffer and jetzt - treffer[0] < VERSANDARTEN_MERKEN_SEKUNDEN:
+            return list(treffer[1])
+        titel = versandarten_aus_zonen(self._get)
+        with _VERSANDARTEN_SPERRE:
+            _VERSANDARTEN_CACHE[self.base] = (jetzt, list(titel))
+        return titel
 
     def mark_exported(self, order_id: int) -> None:
         now = datetime.now().isoformat(timespec="seconds")
@@ -1761,7 +1783,12 @@ def _shop_abrufen(shop_cfg: dict, global_cfg: dict, exported_locally: set,
                         "aus dem Kundenstamm. Eintrag entfernen.", shop_name)
 
     combine_mode = bool(shop_cfg.get("combine_by_delivery"))
-    _versandarten_pruefen(erg, combine_mode)
+    # Versandzonen und Bestellungen gleichzeitig holen — beides wartet nur
+    # auf den Shop. Hinweise landen vor dem Bauen, in derselben Reihenfolge
+    # wie bisher.
+    pruef_thread = threading.Thread(target=_versandarten_pruefen,
+                                    args=(erg, combine_mode), daemon=True)
+    pruef_thread.start()
 
     n_exportiert = exported_je_shop.get(shop_name, 0)
     if n_exportiert:
@@ -1787,7 +1814,10 @@ def _shop_abrufen(shop_cfg: dict, global_cfg: dict, exported_locally: set,
 
     # Erst ALLE offenen Bestellungen holen, dann bauen. So ändert sich
     # nichts an der Bestellliste, während noch paginiert wird.
-    orders = list(client.iter_new_orders(exported_locally=exported_locally))
+    try:
+        orders = list(client.iter_new_orders(exported_locally=exported_locally))
+    finally:
+        pruef_thread.join()
 
     gebaut: list[tuple] = []
     for order in orders:

@@ -91,6 +91,12 @@ def _startdauer() -> float | None:
         import ctypes
         from ctypes import wintypes
         k32 = ctypes.windll.kernel32
+        # Handles sind 64 Bit — ohne Typangaben kürzt ctypes den Pseudo-Handle
+        # von GetCurrentProcess auf 32 Bit und GetProcessTimes schlägt fehl.
+        k32.GetCurrentProcess.restype = wintypes.HANDLE
+        k32.OpenProcess.restype = wintypes.HANDLE
+        k32.GetProcessTimes.argtypes = [wintypes.HANDLE] + [ctypes.POINTER(wintypes.FILETIME)] * 4
+        k32.CloseHandle.argtypes = [wintypes.HANDLE]
         # Ein-Datei-EXE: Ein Elternprozess entpackt nach %TEMP%\_MEI…, dann
         # startet Python; Ordner-EXE: kein Entpacken, der eigene Prozess zählt.
         einzeldatei = Path(getattr(sys, "_MEIPASS", "")).name.startswith("_MEI")

@@ -696,12 +696,16 @@ Ablauf und Abbruchgründe:
 3. **YAML auf V:** wird nur gelesen und auf Gültigkeit geprüft.
 4. **Build:** drei EXE-Dateien in `dist\`:
    - `WOO_to_CDH.exe` – Konsole wie bisher, bleibt im Parallelbetrieb
-   - `WOO_to_CDH_Oberflaeche.exe` – neue Oberfläche, `ui/` ist eingebaut
+   - `WOO_to_CDH_Oberflaeche.exe` – neue Oberfläche, als **Ordner-EXE**: daneben
+     liegt der Ordner `WOO_to_CDH_Oberflaeche_Dateien` (mit `ui/`). Beide
+     gehören zusammen. Als Ein-Datei-EXE wurde sie bei jedem Start von V:
+     entpackt, das dauerte 27 s.
    - `Lieferadressen.exe` – Adressen-Tool
 5. **Selbsttest:** Beide Import-EXE starten einmal mit `--selbsttest`.
    Geprüft wird, ob alles eingepackt ist; ein Import läuft dabei nicht.
 6. **Deploy** (nur mit `-Deploy`): nur von `main`, nur nach Eingabe von
-   `JA`. Vorher wandern die bisherigen
+   `JA`. Läuft die Oberfläche noch an einem Rechner, bricht es ab, bevor
+   etwas ersetzt ist. Vorher wandern die bisherigen
    EXE-Dateien nach `Backup\exe_<Zeit>\`. Kopiert werden die drei EXE-Dateien,
    `README.md` und die Mitarbeiter-Anleitung. **Nicht** kopiert werden
    Konfiguration, Zugangsdaten, Logs und Python-Dateien (eine `.py` auf V: lädt

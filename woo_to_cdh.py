@@ -675,8 +675,14 @@ def versandarten_aus_zonen(get_json) -> list[str]:
     get_json(path) liefert die JSON-Antwort oder wirft.
     """
     titel: list[str] = []
-    for zone in get_json("/shipping/zones") or []:
-        for m in get_json(f"/shipping/zones/{zone.get('id')}/methods") or []:
+    zonen = get_json("/shipping/zones") or []
+    # Die Methoden je Zone gleichzeitig holen (4,8 s für einen Shop mit
+    # vielen Zonen, 24.09.2026); Reihenfolge bleibt die der Zonen.
+    with ThreadPoolExecutor(max_workers=max(1, min(8, len(zonen)))) as pool:
+        je_zone = list(pool.map(
+            lambda z: get_json(f"/shipping/zones/{z.get('id')}/methods") or [], zonen))
+    for methoden in je_zone:
+        for m in methoden:
             if m.get("enabled") is False:
                 continue
             t = str(m.get("title") or m.get("method_title") or "").strip()

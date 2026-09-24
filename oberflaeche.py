@@ -91,7 +91,11 @@ def _startdauer() -> float | None:
         import ctypes
         from ctypes import wintypes
         k32 = ctypes.windll.kernel32
-        h = k32.OpenProcess(0x1000, False, os.getppid())   # QUERY_LIMITED_INFORMATION
+        # Ein-Datei-EXE: Ein Elternprozess entpackt nach %TEMP%\_MEI…, dann
+        # startet Python; Ordner-EXE: kein Entpacken, der eigene Prozess zählt.
+        einzeldatei = Path(getattr(sys, "_MEIPASS", "")).name.startswith("_MEI")
+        h = (k32.OpenProcess(0x1000, False, os.getppid())   # QUERY_LIMITED_INFORMATION
+             if einzeldatei else k32.GetCurrentProcess())
         if not h:
             return None
         zeiten = [wintypes.FILETIME() for _ in range(4)]
@@ -99,7 +103,8 @@ def _startdauer() -> float | None:
             if not k32.GetProcessTimes(h, *[ctypes.byref(z) for z in zeiten]):
                 return None
         finally:
-            k32.CloseHandle(h)
+            if einzeldatei:
+                k32.CloseHandle(h)
         ft = (zeiten[0].dwHighDateTime << 32) | zeiten[0].dwLowDateTime
         return time.time() - (ft / 1e7 - 11644473600)
     except Exception:  # noqa: BLE001 — nur Messung
@@ -214,7 +219,7 @@ def main(argv: list[str] | None = None) -> int:
                  w.programmstand())
     dauer = _startdauer()
     if dauer is not None:
-        logging.info("Oberfläche: Start bis Python %.1f s (Entpacken der EXE)", dauer)
+        logging.info("Oberfläche: Start bis Python %.1f s", dauer)
     fenster = webview.create_window(
         "WooCommerce → CDH", str(UI_DATEI), js_api=api,
         width=1120, height=780, min_size=(760, 560))

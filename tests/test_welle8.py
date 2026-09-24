@@ -106,6 +106,17 @@ def test_build_deploy_nur_mit_freigabe():
     assert '$Branch -ne "main"' in BUILD      # Produktionsstopp am 24.09. aufgehoben
     assert 'Read-Host' in deploy and '-cne "JA"' in deploy
     assert deploy.index("Backup") < deploy.index("Copy-Item -Force (Join-Path dist")
+    # Oberflächen-Ordner zuerst beiseite: läuft sie noch, wird nichts ersetzt
+    assert deploy.index("Move-Item $Daten") < deploy.index("Copy-Item -Force (Join-Path dist")
+
+
+def test_build_oberflaeche_als_ordner_exe():
+    """Ein-Datei-EXE brauchte 26,8 s zum Entpacken von V: (24.09.2026)."""
+    zeile = BUILD[BUILD.index("--name WOO_to_CDH_Oberflaeche"):].splitlines()[0]
+    vorher = BUILD[:BUILD.index("--name WOO_to_CDH_Oberflaeche")].splitlines()[-1]
+    assert "--onedir" in vorher + zeile
+    assert "--contents-directory $GuiDaten" in BUILD
+    assert 'Copy-Item -Recurse -Force "$GuiOrdner\\$GuiDaten" $Target' in BUILD
 
 
 def test_ui_tests_finden_chromium_auch_unter_windows():

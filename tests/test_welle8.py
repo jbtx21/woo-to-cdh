@@ -111,3 +111,61 @@ def test_build_deploy_nur_mit_freigabe():
 def test_ui_tests_finden_chromium_auch_unter_windows():
     text = (ROOT / "tests" / "test_oberflaeche.py").read_text(encoding="utf-8")
     assert "pw.chromium.executable_path" in text and "WOO_CDH_UI_TESTS" in text
+
+
+# --- Tempo (Rückmeldung 24.09.2026: Oberfläche langsam) ------------------------
+
+def test_langsame_aufrufe_landen_im_log_ohne_argumente(caplog, monkeypatch):
+    import inspect
+    import logging
+    import time as zeit
+    import shop_api
+    caplog.set_level(logging.INFO)
+    uhr = iter([0.0, 2.5, 10.0, 10.1])
+    monkeypatch.setattr(zeit, "perf_counter", lambda: next(uhr))
+    geheim = "ck_" + "Q" * 20
+
+    @ob._mit_zeitmessung
+    class Api:
+        def zugang_erneuern(self, shop_id, key, secret):
+            return {"ok": True}
+
+        def schnell(self):
+            return 1
+
+    a = Api()
+    assert a.zugang_erneuern("caf", geheim, "cs_x") == {"ok": True}
+    assert a.schnell() == 1
+    assert "Oberfläche: zugang_erneuern dauerte 2.5 s" in caplog.text
+    assert "schnell" not in caplog.text and geheim not in caplog.text
+    assert list(inspect.signature(Api.zugang_erneuern).parameters) == \
+        ["self", "shop_id", "key", "secret"]
+    assert shop_api  # Modul geladen
+
+
+def test_oberflaeche_api_behaelt_signaturen():
+    import inspect
+    sig = inspect.signature(ob.OberflaecheApi.zugang_erneuern)
+    assert list(sig.parameters) == ["self", "shop_id", "key", "secret"]
+    assert not hasattr(ob.OberflaecheApi._init_import, "__wrapped__")   # intern unberührt
+
+
+def test_letzte_wex_neueste_zuerst(tmp_path, monkeypatch):
+    import os
+    import yaml
+    import import_api as ia
+    wex = tmp_path / "wex"
+    wex.mkdir()
+    for i in range(30):
+        f = wex / f"orders-{i:02d}.wex"
+        f.write_text("x", encoding="utf-8")
+        os.utime(f, (1_700_000_000 + i, 1_700_000_000 + i))
+    (wex / "notiz.txt").write_text("x", encoding="utf-8")
+    (wex / "unterordner.wex").mkdir()
+    (tmp_path / "einstellungen.yaml").write_text(
+        yaml.safe_dump({"cdh_import_folder": str(wex), "shops": []}), encoding="utf-8")
+    (tmp_path / "zugang.yaml").write_text("shops: {}\n", encoding="utf-8")
+    monkeypatch.setattr(w, "EXPORTED_LOG_PATH", tmp_path / "exported.log")
+    api = ia.ImportApi(tmp_path)
+    erg = api.letzte_wex(3)
+    assert [d["datei"] for d in erg["dateien"]] == ["orders-29.wex", "orders-28.wex", "orders-27.wex"]

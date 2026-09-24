@@ -18,8 +18,11 @@ Konfiguration:        einstellungen.yaml, zugang.yaml, lieferadressen.yaml
 
 from __future__ import annotations
 
+import functools
+import inspect
 import logging
 import sys
+import time
 from pathlib import Path
 
 import woo_to_cdh as w
@@ -92,6 +95,33 @@ def beim_schliessen(fenster) -> bool:
         "gesichert und gehen verloren. Trotzdem schließen?"))
 
 
+LANGSAM_SEKUNDEN = 0.5
+
+
+def _mit_zeitmessung(cls):
+    """Jede Funktion, die das Fenster aufruft, schreibt ins Log, wenn sie
+    länger als LANGSAM_SEKUNDEN braucht — nur Name und Dauer, nie die
+    Argumente (darin können Schlüssel stecken)."""
+    for name in dir(cls):
+        f = getattr(cls, name)
+        if name.startswith("_") or not callable(f):
+            continue
+
+        def huelle(self, *a, _f=f, _name=name, **kw):
+            t0 = time.perf_counter()
+            try:
+                return _f(self, *a, **kw)
+            finally:
+                dauer = time.perf_counter() - t0
+                if dauer >= LANGSAM_SEKUNDEN:
+                    logging.info("Oberfläche: %s dauerte %.1f s", _name, dauer)
+        functools.update_wrapper(huelle, f)
+        huelle.__signature__ = inspect.signature(f)
+        setattr(cls, name, huelle)
+    return cls
+
+
+@_mit_zeitmessung
 class OberflaecheApi(ShopApi, ImportApi):
     """Eine Schnittstelle für beide Tabs (pywebview kennt nur ein js_api).
     ShopApi bringt die Einstellungen (EinstellungenApi) mit."""
@@ -133,6 +163,7 @@ def main(argv: list[str] | None = None) -> int:
         logging.error("WebView2-Laufzeit fehlt — Oberfläche nicht gestartet.")
         _meldung("WooCommerce → CDH", WEBVIEW2_HINWEIS)
         return 2
+    start = time.perf_counter()
     api = OberflaecheApi(w.BASE_DIR)
     logging.info("Oberfläche gestartet von %s, Programmstand %s", api._benutzer,
                  w.programmstand())
@@ -140,6 +171,8 @@ def main(argv: list[str] | None = None) -> int:
         "WooCommerce → CDH", str(UI_DATEI), js_api=api,
         width=1120, height=780, min_size=(760, 560))
     fenster.events.closing += lambda: beim_schliessen(fenster)
+    fenster.events.loaded += lambda: logging.info(
+        "Oberfläche: Fenster bereit nach %.1f s", time.perf_counter() - start)
     # Nur WebView2, kein stiller Rückfall auf die IE-Engine
     webview.start(gui="edgechromium" if sys.platform == "win32" else None)
     return 0

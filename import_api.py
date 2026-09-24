@@ -25,6 +25,7 @@ Nur Namen ohne führenden Unterstrich sind für die Oberfläche sichtbar.
 from __future__ import annotations
 
 import copy
+import heapq
 import logging
 import os
 import re
@@ -334,15 +335,20 @@ class ImportApi:
             return {"ok": False, "fehler": "Keine Konfiguration gefunden."}
         if not ordner.exists():
             return {"ok": True, "dateien": []}
-        dateien = sorted((p for p in ordner.glob("*.wex") if p.is_file()),
-                         key=lambda p: p.stat().st_mtime, reverse=True)[:max(1, int(anzahl))]
+        # os.scandir statt glob + stat: Unter Windows liefert das Verzeichnis-
+        # Listing Größe und Zeit gleich mit — auf V: ein Netzaufruf für den
+        # ganzen Ordner statt mehrerer je Datei (das wex-archiv ist groß).
+        with os.scandir(ordner) as it:
+            eintraege = [(e.stat().st_mtime, e.name) for e in it
+                         if e.name.lower().endswith(".wex") and e.is_file()]
+        dateien = heapq.nlargest(max(1, int(anzahl)), eintraege)
         info = self._exportlog_je_datei()
         return {"ok": True, "dateien": [
-            {"datei": p.name,
-             "zeit": datetime.fromtimestamp(p.stat().st_mtime).strftime("%d.%m.%Y %H:%M"),
-             "shop": info.get(p.name, {}).get("shop", ""),
-             "orders": info.get(p.name, {}).get("orders", [])}
-            for p in dateien]}
+            {"datei": name,
+             "zeit": datetime.fromtimestamp(mtime).strftime("%d.%m.%Y %H:%M"),
+             "shop": info.get(name, {}).get("shop", ""),
+             "orders": info.get(name, {}).get("orders", [])}
+            for mtime, name in dateien]}
 
     def erneut_uebergeben(self, datei: str) -> dict:
         """Eine WEX-Datei aus dem Archiv noch einmal an CDH geben — z. B. wenn

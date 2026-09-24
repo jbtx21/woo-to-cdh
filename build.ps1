@@ -46,7 +46,10 @@ foreach ($f in "config.yaml", "einstellungen.yaml", "zugang.yaml", "lieferadress
 Write-Host "4/5 Build" -ForegroundColor Cyan
 Set-Content -Encoding UTF8 build_info.py "# Von build.ps1 erzeugt, nicht einchecken.`nSTAND = `"$Stand`""
 try {
-    $Gemeinsam = "--noconfirm", "--clean", "--onefile", "--hidden-import", "build_info"
+    # numpy zieht openpyxl nur optional nach; ohne ist die EXE deutlich kleiner
+    # und startet schneller (sie wird bei jedem Start von V: entpackt).
+    $Gemeinsam = "--noconfirm", "--clean", "--onefile", "--hidden-import", "build_info",
+                 "--exclude-module", "numpy"
     python -m PyInstaller @Gemeinsam --name WOO_to_CDH `
         --hidden-import woo_to_cdh --hidden-import openpyxl launcher.py
     if ($LASTEXITCODE -ne 0) { throw "Build WOO_to_CDH fehlgeschlagen." }

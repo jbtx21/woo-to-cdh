@@ -28,3 +28,37 @@ def test_webview2_fehlt_oder_platzhalter():
 
 def test_hinweis_nennt_download_und_konsole():
     assert "go.microsoft.com" in o.WEBVIEW2_HINWEIS and "WOO_to_CDH.exe" in o.WEBVIEW2_HINWEIS
+
+
+# --- Schließen hing mit „Keine Rückmeldung“ (24.09.2026) -------------------------
+
+class _Api:
+    def __init__(self, n):
+        self._ungesichert = n
+
+
+def test_schliessen_ohne_aenderungen_fragt_nicht():
+    assert o.beim_schliessen(_Api(0), frage=lambda *a: (_ for _ in ()).throw(AssertionError)) is True
+
+
+def test_schliessen_mit_aenderungen_fragt():
+    fragen = []
+    assert o.beim_schliessen(_Api(2), frage=lambda t, x: fragen.append(x) or False) is False
+    assert "2 Änderungen sind noch nicht gesichert" in fragen[0]
+    assert o.beim_schliessen(_Api(1), frage=lambda t, x: True) is True
+
+
+def test_schliessen_fragt_das_fenster_nicht_ab():
+    """Kein evaluate_js und kein pywebview-Dialog im Schließen-Ereignis."""
+    import inspect
+    quelle = inspect.getsource(o.beim_schliessen) + inspect.getsource(o._frage)
+    assert ".evaluate_js(" not in quelle and ".create_confirmation_dialog(" not in quelle
+
+
+def test_ungesichert_melden(tmp_path):
+    api = o.OberflaecheApi(tmp_path, benutzer="t")
+    assert api._ungesichert == 0
+    api.ungesichert_melden(3)
+    assert api._ungesichert == 3
+    api.ungesichert_melden("kaputt")
+    assert api._ungesichert == 0

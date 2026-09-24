@@ -616,3 +616,23 @@ def test_zugang_erneuern(seite):
     assert seite.locator(".tab-badge").inner_text() == "1"
     assert KEY not in seite.content()
     assert seite.fehler == []
+
+
+
+def test_seite_meldet_ungesicherte_aenderungen(seite):
+    """Für die Rückfrage beim Schließen (ohne das Fenster abzufragen)."""
+    _nav(seite, "caf")
+    seite.click("[data-a=after][data-v='']")
+    seite.wait_for_function("gemeldet === 1")
+    for _ in range(20):
+        if seite.api._ungesichert == 1:
+            break
+        seite.wait_for_timeout(50)
+    assert seite.api._ungesichert == 1
+    seite.click("#detail [data-a=discard]")
+    seite.wait_for_function("gemeldet === 0")
+    for _ in range(20):
+        if seite.api._ungesichert == 0:
+            break
+        seite.wait_for_timeout(50)
+    assert seite.api._ungesichert == 0

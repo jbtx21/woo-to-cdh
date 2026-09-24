@@ -38,7 +38,7 @@ class _Antwort:
 
 
 def test_http_fehler_ohne_schluessel(monkeypatch):
-    monkeypatch.setattr(w.requests, "get", lambda *a, **k: _Antwort())
+    monkeypatch.setattr(w.requests.Session, "get", lambda *a, **k: _Antwort())
     client = w.WooClient("https://shop.example/caf-shop/", KEY, SECRET)
     with pytest.raises(requests.HTTPError) as fehler:
         client._get("/orders")
@@ -52,7 +52,7 @@ def test_verbindungsfehler_ohne_schluessel(monkeypatch):
         raise requests.ConnectionError(
             f"HTTPSConnectionPool(host='shop.example', port=443): Max retries exceeded "
             f"with url: /caf-shop/wp-json/wc/v3/orders?consumer_key={KEY}&consumer_secret={SECRET}")
-    monkeypatch.setattr(w.requests, "put", kaputt)
+    monkeypatch.setattr(w.requests.Session, "put", kaputt)
     client = w.WooClient("https://shop.example/caf-shop/", KEY, SECRET)
     with pytest.raises(requests.ConnectionError) as fehler:
         client._put("/orders/1", {})
@@ -107,7 +107,7 @@ def test_pruefergebnis_ohne_schluessel(tmp_path, monkeypatch):
     """Welle 3/6: Sperrtexte gehen in die Oberfläche — dort nie Schlüssel."""
     monkeypatch.setattr(w, "EXPORTED_LOG_PATH", tmp_path / "exported.log")
     monkeypatch.setattr(w, "DELIVERY_ADDRESSES_PATH", tmp_path / "fehlt.yaml")
-    monkeypatch.setattr(w.requests, "get", lambda *a, **k: _Antwort())
+    monkeypatch.setattr(w.requests.Session, "get", lambda *a, **k: _Antwort())
     cfg = {"shops": [{"name": "CAF-Shop", "url": "https://shop.example/caf-shop/",
                       "consumer_key": KEY, "consumer_secret": SECRET,
                       "datev_no": 1, "order_type": "AB"}]}

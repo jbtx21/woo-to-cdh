@@ -169,3 +169,50 @@ def test_letzte_wex_neueste_zuerst(tmp_path, monkeypatch):
     api = ia.ImportApi(tmp_path)
     erg = api.letzte_wex(3)
     assert [d["datei"] for d in erg["dateien"]] == ["orders-29.wex", "orders-28.wex", "orders-27.wex"]
+
+
+def test_abrufen_parallel_in_konfig_reihenfolge(monkeypatch, tmp_path):
+    """Sieben Shops dauerten nacheinander 21,5 s; jetzt gleichzeitig, die
+    Ergebnisse bleiben in der Reihenfolge der Konfiguration."""
+    import threading
+    import time as zeit
+    monkeypatch.setattr(w, "EXPORTED_LOG_PATH", tmp_path / "exported.log")
+    monkeypatch.setattr(w, "DELIVERY_ADDRESSES_PATH", tmp_path / "fehlt.yaml")
+    gleichzeitig, aktiv, sperre = [0], [0], threading.Lock()
+
+    def langsam(shop_cfg, *a, **k):
+        with sperre:
+            aktiv[0] += 1
+            gleichzeitig[0] = max(gleichzeitig[0], aktiv[0])
+        zeit.sleep(0.2)
+        with sperre:
+            aktiv[0] -= 1
+        return w.ShopErgebnis(shop=shop_cfg["name"], shop_cfg=shop_cfg, global_cfg={})
+    monkeypatch.setattr(w, "_shop_abrufen", langsam)
+    shops = [{"name": f"S{i}", "url": f"https://shop.example/{i}/", "consumer_key": "ck_T",
+              "consumer_secret": "cs_T"} for i in range(6)]
+    shops.insert(2, {"name": "Aus", "url": "https://shop.example/aus/", "enabled": False})
+    t0 = zeit.perf_counter()
+    erg = w.abrufen({"shops": shops})
+    assert [s.shop for s in erg.shops] == [f"S{i}" for i in range(6)]
+    assert gleichzeitig[0] > 1 and zeit.perf_counter() - t0 < 1.0
+
+
+def test_client_nutzt_eine_verbindung(monkeypatch):
+    aufrufe = []
+
+    class Antwort:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return []
+
+    def get(self, *a, **k):
+        aufrufe.append(id(self))
+        return Antwort()
+    monkeypatch.setattr(w.requests.Session, "get", get)
+    c = w.WooClient("https://shop.example/x/", "ck_T", "cs_T")
+    c._get("/orders")
+    c._get("/products/1")
+    assert len(aufrufe) == 2 and len(set(aufrufe)) == 1

@@ -21,6 +21,7 @@ from __future__ import annotations
 import functools
 import inspect
 import logging
+import os
 import sys
 import time
 from pathlib import Path
@@ -80,19 +81,54 @@ def _meldung(titel: str, text: str) -> None:
         print(f"{titel}: {text}", file=sys.stderr)
 
 
-def beim_schliessen(fenster) -> bool:
-    """Fragt nach, wenn noch ungesicherte Änderungen offen sind.
-    False bricht das Schließen ab (pywebview-Regel)."""
+def _startdauer() -> float | None:
+    """Sekunden seit dem Doppelklick, einschließlich Entpacken der EXE.
+    Bei einer PyInstaller-onefile-EXE entpackt ein Elternprozess und startet
+    dann Python; gemessen wird ab dessen Start. Nur Windows, sonst None."""
+    if sys.platform != "win32" or not getattr(sys, "frozen", False):
+        return None
     try:
-        n = int(fenster.evaluate_js("window.ungesichert ? window.ungesichert() : 0") or 0)
-    except Exception:  # noqa: BLE001 — Fenster schon halb zu: schließen lassen
+        import ctypes
+        from ctypes import wintypes
+        k32 = ctypes.windll.kernel32
+        h = k32.OpenProcess(0x1000, False, os.getppid())   # QUERY_LIMITED_INFORMATION
+        if not h:
+            return None
+        zeiten = [wintypes.FILETIME() for _ in range(4)]
+        try:
+            if not k32.GetProcessTimes(h, *[ctypes.byref(z) for z in zeiten]):
+                return None
+        finally:
+            k32.CloseHandle(h)
+        ft = (zeiten[0].dwHighDateTime << 32) | zeiten[0].dwLowDateTime
+        return time.time() - (ft / 1e7 - 11644473600)
+    except Exception:  # noqa: BLE001 — nur Messung
+        return None
+
+
+def _frage(titel: str, text: str) -> bool:
+    """Ja/Nein-Frage als Windows-Meldungsfenster. Bewusst nicht über
+    pywebview: Beim Schließen läuft der Aufruf im Fenster-Thread, und
+    evaluate_js/create_confirmation_dialog warten dort auf sich selbst —
+    das Fenster hing mit „Keine Rückmeldung“ (24.09.2026)."""
+    if sys.platform != "win32":
         return True
+    import ctypes
+    MB_YESNO, MB_ICONWARNING, MB_DEFBUTTON2, IDYES = 0x4, 0x30, 0x100, 6
+    return ctypes.windll.user32.MessageBoxW(
+        None, text, titel, MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2) == IDYES
+
+
+def beim_schliessen(api, frage=_frage) -> bool:
+    """Fragt nach, wenn noch ungesicherte Änderungen offen sind. Die Zahl
+    meldet die Seite laufend selbst (ungesichert_melden), hier wird nichts
+    im Fenster abgefragt. False bricht das Schließen ab (pywebview-Regel)."""
+    n = api._ungesichert
     if not n:
         return True
-    return bool(fenster.create_confirmation_dialog(
-        "Ungesicherte Änderungen",
-        f"{n} {'Änderung ist' if n == 1 else 'Änderungen sind'} noch nicht "
-        "gesichert und gehen verloren. Trotzdem schließen?"))
+    return frage("Ungesicherte Änderungen",
+                 f"{n} {'Änderung ist' if n == 1 else 'Änderungen sind'} noch nicht "
+                 "gesichert und gehen verloren. Trotzdem schließen?")
 
 
 LANGSAM_SEKUNDEN = 0.5
@@ -130,6 +166,15 @@ class OberflaecheApi(ShopApi, ImportApi):
         ShopApi.__init__(self, base_dir, benutzer=benutzer,
                          client_factory=client_factory)
         self._init_import(oeffnen)
+        self._ungesichert = 0
+
+    def ungesichert_melden(self, anzahl) -> None:
+        """Die Seite meldet, wie viele Änderungen ungesichert sind (für die
+        Rückfrage beim Schließen)."""
+        try:
+            self._ungesichert = max(0, int(anzahl or 0))
+        except (TypeError, ValueError):
+            self._ungesichert = 0
 
 
 def selbsttest() -> list[str]:
@@ -167,10 +212,13 @@ def main(argv: list[str] | None = None) -> int:
     api = OberflaecheApi(w.BASE_DIR)
     logging.info("Oberfläche gestartet von %s, Programmstand %s", api._benutzer,
                  w.programmstand())
+    dauer = _startdauer()
+    if dauer is not None:
+        logging.info("Oberfläche: Start bis Python %.1f s (Entpacken der EXE)", dauer)
     fenster = webview.create_window(
         "WooCommerce → CDH", str(UI_DATEI), js_api=api,
         width=1120, height=780, min_size=(760, 560))
-    fenster.events.closing += lambda: beim_schliessen(fenster)
+    fenster.events.closing += lambda: beim_schliessen(api)
     fenster.events.loaded += lambda: logging.info(
         "Oberfläche: Fenster bereit nach %.1f s", time.perf_counter() - start)
     # Nur WebView2, kein stiller Rückfall auf die IE-Engine

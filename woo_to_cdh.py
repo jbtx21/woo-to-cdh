@@ -24,6 +24,7 @@ import subprocess
 import sys
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -197,6 +198,10 @@ class WooClient:
         # Erlaubt pro Shop eigene Statuslisten (siehe config.yaml).
         # Fällt auf den globalen Default zurück, wenn nichts angegeben ist.
         self.statuses = statuses if statuses else INCLUDED_STATUSES
+        # Eine Verbindung je Shop, wiederverwendet: Ohne Session baut jede
+        # Anfrage (auch jeder Artikelpreis) TCP und TLS neu auf — gemessen
+        # ~1 s je Anfrage gegen shop.texma-gmbh.de (24.09.2026).
+        self._http = requests.Session()
 
     def _auth_params(self) -> dict:
         return {
@@ -208,15 +213,15 @@ class WooClient:
         url = f"{self.base}{path}"
         merged = {**(params or {}), **self._auth_params()}
         with _ohne_schluessel_in_fehlern():
-            r = requests.get(url, params=merged, timeout=self.timeout)
+            r = self._http.get(url, params=merged, timeout=self.timeout)
             r.raise_for_status()
         return r.json()
 
     def _put(self, path: str, data: dict) -> Any:
         url = f"{self.base}{path}"
         with _ohne_schluessel_in_fehlern():
-            r = requests.put(url, params=self._auth_params(), json=data,
-                             timeout=self.timeout)
+            r = self._http.put(url, params=self._auth_params(), json=data,
+                               timeout=self.timeout)
             r.raise_for_status()
         return r.json()
 
@@ -1863,6 +1868,9 @@ def _shop_abrufen(shop_cfg: dict, global_cfg: dict, exported_locally: set,
     return erg
 
 
+ABRUF_PARALLEL = 8
+
+
 def abrufen(einstellungen: dict, trotzdem=(), client_factory=None) -> Pruefergebnis:
     """
     Nur lesend: alle aktiven Shops abrufen und die Einheiten bauen.
@@ -1880,35 +1888,44 @@ def abrufen(einstellungen: dict, trotzdem=(), client_factory=None) -> Pruefergeb
     delivery_table = load_delivery_addresses()
     trotzdem = set(trotzdem or ())
 
-    for shop_cfg in einstellungen.get("shops", []):
+    def ein_shop(shop_cfg: dict) -> ShopErgebnis | None:
         shop_name = shop_cfg.get("name", shop_cfg.get("url"))
         if not shop_cfg.get("enabled", True):
             logging.info("Shop %s ist deaktiviert — übersprungen.", shop_name)
-            continue
+            return None
         fehlt = fehlende_zugangsdaten(shop_cfg)
         if fehlt:
             logging.error("Shop %s: Zugangsdaten fehlen (%s) — in "
                           "zugang.yaml unter der Shop-id eintragen. "
                           "Shop übersprungen.", shop_name, ", ".join(fehlt))
-            ergebnis.shops.append(ShopErgebnis(
+            return ShopErgebnis(
                 shop=shop_name, shop_cfg=shop_cfg, global_cfg=einstellungen,
-                sperren=[f"Zugangsdaten fehlen ({', '.join(fehlt)})"], fehler=1))
-            continue
+                sperren=[f"Zugangsdaten fehlen ({', '.join(fehlt)})"], fehler=1)
         try:
-            ergebnis.shops.append(_shop_abrufen(
+            return _shop_abrufen(
                 shop_cfg, einstellungen, exported_locally, exported_je_shop,
                 delivery_table, trotzdem=shop_name in trotzdem,
-                client_factory=client_factory))
+                client_factory=client_factory)
         except requests.HTTPError as e:
             logging.error("Shop %s: API-Fehler: %s", shop_name, e)
-            ergebnis.shops.append(ShopErgebnis(
+            return ShopErgebnis(
                 shop=shop_name, shop_cfg=shop_cfg, global_cfg=einstellungen,
-                sperren=[f"API-Fehler: {ohne_schluessel(e)}"], fehler=1))
+                sperren=[f"API-Fehler: {ohne_schluessel(e)}"], fehler=1)
         except Exception as e:  # noqa: BLE001
             logging.exception("Shop %s: unerwarteter Fehler: %s", shop_name, e)
-            ergebnis.shops.append(ShopErgebnis(
+            return ShopErgebnis(
                 shop=shop_name, shop_cfg=shop_cfg, global_cfg=einstellungen,
-                sperren=[f"Unerwarteter Fehler: {ohne_schluessel(e)}"], fehler=1))
+                sperren=[f"Unerwarteter Fehler: {ohne_schluessel(e)}"], fehler=1)
+
+    # Die Shops gleichzeitig abrufen: Jeder hat eigenen Client und eigene
+    # Ergebnisse, gemeinsam genutzt wird nur Gelesenes (exported.log,
+    # Lieferadressen). Reihenfolge der Ergebnisse bleibt die der Konfiguration.
+    # Nacheinander dauerte es am 24.09.2026 21,5 s für sieben Shops.
+    shops = einstellungen.get("shops", []) or []
+    with ThreadPoolExecutor(max_workers=max(1, min(ABRUF_PARALLEL, len(shops)))) as pool:
+        for erg in pool.map(ein_shop, shops):
+            if erg is not None:
+                ergebnis.shops.append(erg)
     return ergebnis
 
 

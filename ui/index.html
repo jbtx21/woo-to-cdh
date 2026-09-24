@@ -516,8 +516,6 @@ async function versandartenHolen(s) {
   if (current === s.id) renderDetail();
 }
 
-// Für oberflaeche.py: ungesicherte Änderungen beim Schließen
-window.ungesichert = () => changeCount();
 
 // ----------------------------------------------------------------- Hilfen
 const $ = (s) => document.querySelector(s);
@@ -1611,7 +1609,17 @@ function renderDetail() {
   if (current === "__log") return renderLog();
   return renderSettings();
 }
-function render() { if (!geladen) return; renderTabbar(); renderOrders(); renderList(); renderDetail(); }
+function render() { if (!geladen) return; renderTabbar(); renderOrders(); renderList(); renderDetail(); meldeUngesichert(); }
+
+// oberflaeche.py fragt beim Schließen nach, ohne das Fenster abzufragen
+// (das hing unter Windows). Darum meldet die Seite jede Änderung der Zahl.
+let gemeldet = 0;
+function meldeUngesichert() {
+  const n = changeCount();
+  if (n === gemeldet) return;
+  gemeldet = n;
+  api().ungesichert_melden?.(n);
+}
 
 document.addEventListener("click", (e) => {
   const el = e.target.closest("[data-a]");
@@ -1714,6 +1722,7 @@ document.addEventListener("input", (e) => {
   renderList(); renderTabbar();
   const n = changeCount();
   const sv = document.querySelector("#detail [data-a=save]"); if (sv) sv.disabled = !n;
+  meldeUngesichert();
 });
 
 document.addEventListener("keydown", (e) => {

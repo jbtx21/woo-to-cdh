@@ -54,8 +54,9 @@ zurücknehmen.
       vor versehentlichen Änderungen).
 - [ ] `cdh_exe` auf den Pfad auf V: setzen, am besten als UNC-Pfad
       (`\\SERVER…\…\CDH_WEX.EXE`). **Genauer Pfad steht noch aus.**
-- [ ] Ensinger: `checkout_key` für die Personalnummer eintragen (Frage 6,
-      ermittelt mit `python diagnose.py Ensinger-Shop --felder`).
+- [ ] Ensinger: beim Eintrag `personalnummer` in `extra_excel_meta`
+      `checkout_key: '_wc_billing/thwcfe-block/personalnumber'` ergänzen (Frage 6,
+      ermittelt am 24.09.; Vorlage: `einstellungen.sample.yaml`).
 - [ ] Ensinger: Lenzing-Eintrag aus `lieferadressen.yaml` entfernen. Lenzing
       läuft über die Versandart „Seewalchen", gemeinsamer Auftrag (Frage 7).
 - [ ] Aus der Welle-4-Notiz: `006/` in `veredelung_prefixes`, `excel_summary`

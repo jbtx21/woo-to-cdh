@@ -158,3 +158,18 @@ def test_oberflaeche_behaelt_checkout_key(tmp_path):
         {"key": "teambestellung", "label": "Teambestellung"},
         {"checkout_key": "_billing_personalnr", "key": "personalnummer", "label": "Personal-Nr."},
         {"key": "mitarbeiterin", "label": "Vorname"}]
+
+
+def test_echter_schluessel_aus_dem_shop():
+    """Schlüssel wie am 24.09.2026 im Ensinger-Shop ermittelt (Checkout Field
+    Editor, Block-Checkout): mit Schrägstrichen, ohne display_key."""
+    shop = {"extra_excel_meta": [{"key": "personalnummer", "label": "Personalnummer",
+                                   "checkout_key": "_wc_billing/thwcfe-block/personalnumber"}]}
+    b = _bestellung(4, [_meta("_wc_billing/thwcfe-block/personalnumber", "4711"),
+                        _meta("_wc_shipping/thwcfe-block/personalnumber", "4711")],
+                    [_meta("teambestellung", "Nein", "Sie bestellen für jemand anderen?")])
+    assert _wert(b, shop) == "4711"
+    b["line_items"][0]["meta_data"] = [
+        _meta("teambestellung", "Ja", "Sie bestellen für jemand anderen?"),
+        _meta("personalnummer", "0815", "Personalnummer")]
+    assert _wert(b, shop) == "0815"

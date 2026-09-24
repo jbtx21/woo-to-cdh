@@ -337,9 +337,16 @@ Bestellungen, die nur von dort aus hätten kommen sollen, fehlen. **Zu tun
      PPOM-Feld an der Position, sonst → Checkout-Feld an der Bestellung; ist
      das leer, doch das PPOM-Feld. Die Oberfläche behält `checkout_key`
      beim Sichern (Fehler gefunden und behoben).
-   **Offen:** Die Ausgabe von `--felder` am Entwicklungsrechner erzeugen. Aus
-   der Cloud-Sitzung gibt es keinen Zugang zum Shop. Danach nach dem 01.10.
-   `checkout_key` bei Ensinger eintragen.
+   **Ermittelt 24.09.2026:** Das Checkout-Feld heißt
+   `_wc_billing/thwcfe-block/personalnumber` (Plugin Checkout Field Editor,
+   Block-Checkout). Es gibt dasselbe Feld noch einmal unter `_wc_shipping/…`,
+   maßgeblich ist das Rechnungsfeld. Am Feld hängt kein Anzeigename, deshalb
+   griff die bisherige Suche nach „personalnummer" nicht. Die Teambestellung
+   heißt im Shop „Sie bestellen für jemand anderen?" (Ja/Nein). In den
+   Vorlagen eingetragen; **nach dem 01.10.** in `einstellungen.yaml` auf V:
+   beim Ensinger-Block ergänzen. Hinweis: Der Shop hatte erst 2 Bestellungen;
+   beide Personalnummern bestanden nur aus Buchstaben (vermutlich
+   Testeingaben).
 7. ✅ **Lenzing** (Antwort 23.09.2026): gleiche Lieferadresse wie
    Seewalchen, nur eine getrennte Abteilung. Entscheidung: **keine eigene
    Versandart**, Lenzing-Bestellungen laufen über „Seewalchen" und landen mit

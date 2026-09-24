@@ -146,6 +146,9 @@ shops:
         label: Nachname (MitarbeiterIn)
       - key: personalnummer
         label: Personalnummer
+        # Selbstbestellung: Checkout-Feld an der Bestellung (Frage 6, ermittelt
+        # 24.09.2026 mit diagnose.py --felder); Teambestellung „Ja" → PPOM-Feld
+        checkout_key: '_wc_billing/thwcfe-block/personalnumber'
 
   - name: KVSW-Shop
     enabled: false                     # nach Keys eintragen auf true setzen

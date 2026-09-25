@@ -263,6 +263,47 @@ Umsetzung auf `welle-08-ausrollen` (Stand 23.09.2026, wartet auf Sichtung):
 
 **STOPP — Umstellung erst nach Freigabe.**
 
+## Welle 9 — Artikel: Sammelpflege im Tool (geplant 25.09.2026)
+
+Ziel: Artikel je Shop in einer Tabelle pflegen, klüger, sicherer und
+einfacher als ein WordPress-Bulk-Edit-Plugin (Vorbild: PW WooCommerce Bulk
+Edit). Entscheidungen 25.09.2026:
+- Felder: EK/VK, Verkaufspreis (`regular_price`), Artikelnummer (SKU),
+  Artikelname, Kurzbeschreibung, Beschreibung, Bilder, Zubehörartikel
+  (eigenes Plugin; Details folgen).
+- Änderung auf Wunsch auch in anderen Shops mit derselben Artikelnummer
+  (Option, Standard aus, eigene Vorschau je Shop).
+- Länge/Breite (EK/VK) werden im Shop nirgends angezeigt oder für
+  Versandkosten genutzt; EK/VK bleiben dort.
+
+Grundsätze für alle Etappen:
+- Nur im Admin-Modus; nur die freigegebenen Felder.
+- Nichts wird sofort geschrieben: Tabelle → Vorschau alt/neu mit Prüfungen
+  → Sichern (WooCommerce-Batch, je 100) → Änderungsverlauf mit alt/neu →
+  „Letzte Sammeländerung zurücknehmen".
+- Fachliche Begriffe (EK, VK, Marge), Varianten gruppiert unter dem Artikel.
+- Prüfungen: EK > VK, Marge unter Schwelle, 0/leer, Komma/Punkt,
+  Artikelnummer doppelt im Shop (WooCommerce lehnt das ab).
+
+Etappen:
+- **9a Tabelle und Preise:** Artikel/Varianten laden, Filter und Suche,
+  Sammelaktionen (setzen, ±Betrag/%, runden), EK/VK, Verkaufspreis,
+  Artikelnummer, Name; Vorschau, Verlauf, Zurücknehmen; Option „andere
+  Shops mit derselben Artikelnummer". Verknüpft mit „EK fehlt" im Import.
+  **STOPP — erste echte Sammeländerung nur an wenigen Artikeln.**
+- **9b Texte:** Kurzbeschreibung/Beschreibung in einem Seitenfenster mit
+  Vorschau (HTML), dazu Suchen & Ersetzen über viele Artikel.
+- **9c Bilder:** Reihenfolge, Hauptbild, entfernen und Bilder per öffentlich
+  erreichbarer Adresse zuweisen gehen über die WooCommerce-Schnittstelle.
+  **Hochladen vom Rechner** braucht die WordPress-Medienschnittstelle, die
+  die WooCommerce-Schlüssel nicht abdeckt → je Shop ein
+  WordPress-Anwendungspasswort (Benutzer → Profil → Anwendungspasswörter),
+  abgelegt in `zugang.yaml`. Klären, bevor 9c beginnt.
+- **9d Zubehörartikel:** hängt davon ab, wie das eigene Plugin die Zuordnung
+  speichert (Meta-Feld am Produkt, Upsells/Cross-Sells oder eigene Tabelle).
+  Nur Meta-Felder und Up-/Cross-Sells sind über die WooCommerce-
+  Schnittstelle erreichbar. Plugin-Details folgen.
+
 ---
 
 ## Offene Fragen an Jannik

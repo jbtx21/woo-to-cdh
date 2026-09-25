@@ -299,10 +299,19 @@ Etappen:
   die WooCommerce-Schlüssel nicht abdeckt → je Shop ein
   WordPress-Anwendungspasswort (Benutzer → Profil → Anwendungspasswörter),
   abgelegt in `zugang.yaml`. Klären, bevor 9c beginnt.
-- **9d Zubehörartikel:** hängt davon ab, wie das eigene Plugin die Zuordnung
-  speichert (Meta-Feld am Produkt, Upsells/Cross-Sells oder eigene Tabelle).
-  Nur Meta-Felder und Up-/Cross-Sells sind über die WooCommerce-
-  Schnittstelle erreichbar. Plugin-Details folgen.
+- **9d Zubehörartikel:** Plugin „CDH Required Accessories" 2.4.0 (liegt
+  vor, nicht im Repo). Speichert am Produkt das Meta-Feld
+  `_cdh_required_accessories` = Liste `{accessory_id, qty_per_unit}`; im
+  Backend zwei feste Plätze (A, B). Im Warenkorb überschreibt eine Regel an
+  der Variante die des Hauptartikels (im Backend nicht einstellbar).
+  Über `meta_data` der WooCommerce-Schnittstelle lesbar/schreibbar — **erst
+  nur lesend am echten Shop bestätigen**. Das Tool muss die Prüfungen des
+  Plugins nachbauen (greifen bei der Schnittstelle nicht): Zubehör einfaches,
+  veröffentlichtes Produkt; nicht das Produkt selbst; Menge > 0, 4
+  Nachkommastellen; **höchstens 2 Einträge**, sonst löscht das nächste
+  Speichern im Backend den Rest stillschweigend. Übertragen in andere Shops:
+  Zubehör-ID je Shop verschieden → über die Artikelnummer zuordnen, fehlt
+  sie, Hinweis statt falscher ID.
 
 ---
 

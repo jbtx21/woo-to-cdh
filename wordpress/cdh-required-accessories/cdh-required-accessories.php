@@ -1,9 +1,9 @@
 <?php
 /**
  * Plugin Name: CDH Required Accessories
- * Description: Pflicht-Zubehör pro Produkt (Aggregation je SKU, nicht entfernbar, Zubehör am Warenkorb-Ende). Stand 2.4 + 2. feste Metaboxen (A & B).
+ * Description: Pflicht-Zubehör pro Produkt (Aggregation je SKU, nicht entfernbar, Zubehör am Warenkorb-Ende). Stand 2.4 + 2. feste Metaboxen (A & B). Ab 2.5: Warenkorb-Automatik abschaltbar (WooCommerce → Einstellungen → Produkte) — dann ergänzt der TEXMA-WEX-Import das Zubehör für CDH und der Kunde sieht es nirgends.
  * Author: TEXMA
- * Version: 2.4.0
+ * Version: 2.5.0
  * Requires at least: 6.1
  * Requires PHP: 7.4
  * WC requires at least: 8.0
@@ -16,6 +16,8 @@ class CDH_Required_Accessories_24 {
     const META_KEY       = '_cdh_required_accessories'; // array of rows: [accessory_id, qty_per_unit]
     const CART_FLAG      = '_cdh_is_accessory';
     const CART_GROUP_KEY = '_cdh_group_key';
+    const OPTION_CART    = 'cdh_ra_warenkorb';           // 'yes' (Standard) | 'no'
+    const ORDER_ITEM_FLAG = '_cdh_is_accessory';          // an Bestellpositionen (ab 2.5)
 
     public function __construct() {
         // Admin UI (2 feste Slots)
@@ -23,6 +25,19 @@ class CDH_Required_Accessories_24 {
         add_action('save_post_product',        [$this, 'save_metaboxes']);
         add_action('admin_enqueue_scripts',    [$this, 'enqueue_admin_assets']);
         add_action('wp_ajax_cdh_ra_search',    [$this, 'ajax_search_products']); // Produktsuche
+
+        // Einstellung: WooCommerce → Einstellungen → Produkte (Allgemein)
+        add_filter('woocommerce_get_settings_products',    [$this, 'add_settings'], 10, 2);
+
+        if (!self::cart_enabled()) {
+            // Warenkorb-Automatik aus: Zubehör kommt nicht in den Warenkorb,
+            // in Mails, Rechnungen oder Konto. Der TEXMA-WEX-Import ergänzt es
+            // für CDH aus denselben Regeln (Schalter „Pflicht-Zubehör" im Tool).
+            // Reste aus Warenkörben von vor dem Umschalten entfernen:
+            add_action('woocommerce_cart_loaded_from_session', [$this, 'remove_accessory_lines'], 5);
+            add_action('woocommerce_before_calculate_totals',  [$this, 'remove_accessory_lines'], 5);
+            return;
+        }
 
         // Cart Sync
         add_action('woocommerce_cart_loaded_from_session', [$this, 'sync_cart']);
@@ -42,6 +57,50 @@ class CDH_Required_Accessories_24 {
         add_filter('woocommerce_cart_item_name',           [$this, 'label_cart_item_name'], 10, 3);
 
         add_filter('woocommerce_add_to_cart_validation',   [$this, 'prevent_direct_add_of_accessory'], 10, 3);
+
+        // Kennzeichen an der Bestellposition (ab 2.5), damit Auswertungen und
+        // der Import automatisch hinzugefügtes Zubehör erkennen.
+        add_action('woocommerce_checkout_create_order_line_item', [$this, 'flag_order_item'], 10, 4);
+    }
+
+    /* ================= Einstellung (ab 2.5) ================= */
+
+    public static function cart_enabled() : bool {
+        return get_option(self::OPTION_CART, 'yes') !== 'no';
+    }
+
+    public function add_settings($settings, $current_section) {
+        if ($current_section !== '') return $settings;
+        $settings[] = [
+            'title' => __('CDH Pflicht-Zubehör', 'cdh-ra'),
+            'type'  => 'title',
+            'id'    => 'cdh_ra_settings',
+        ];
+        $settings[] = [
+            'title'   => __('Zubehör im Warenkorb', 'cdh-ra'),
+            'desc'    => __('Pflicht-Zubehör automatisch in den Warenkorb legen (0,00 €)', 'cdh-ra'),
+            'desc_tip'=> __('Aus: Der Kunde sieht nur seinen Artikel – im Warenkorb, an der Kasse, in Mails und Rechnungen. Der TEXMA-WEX-Import ergänzt das Zubehör für CDH aus denselben Regeln. Vorher im Import-Tool beim Shop „Pflicht-Zubehör ergänzen“ einschalten.', 'cdh-ra'),
+            'id'      => self::OPTION_CART,
+            'type'    => 'checkbox',
+            'default' => 'yes',
+        ];
+        $settings[] = ['type' => 'sectionend', 'id' => 'cdh_ra_settings'];
+        return $settings;
+    }
+
+    public function remove_accessory_lines() {
+        if (!WC()->cart) return;
+        foreach (WC()->cart->get_cart() as $key => $item) {
+            if (!empty($item[self::CART_FLAG])) {
+                WC()->cart->remove_cart_item($key);
+            }
+        }
+    }
+
+    public function flag_order_item($item, $cart_item_key, $values, $order) {
+        if (!empty($values[self::CART_FLAG])) {
+            $item->add_meta_data(self::ORDER_ITEM_FLAG, 'yes', true);
+        }
     }
 
     /* ================= Admin ================= */

@@ -615,6 +615,27 @@ Abruf eine Übersicht: ein Blatt je Shop mit allen abgerufenen Bestellungen,
 dazu je Shop mit `excel_summary` ein Summenblatt. Die Bestellungen bleiben
 offen — nichts in WooCommerce, nichts in `exported.log`.
 
+### Pflicht-Zubehör (Welle 9)
+
+Das Plugin „CDH Required Accessories" (`wordpress/cdh-required-accessories/`)
+hinterlegt am Artikel Pflicht-Zubehör, z. B. den Stick zum Poloshirt (Plätze A
+und B im Produkt-Editor, Menge je Stück). Der Shoppreis enthält Textil und
+Veredelung; CDH bekommt beide getrennt mit EK/VK der jeweiligen Artikel.
+
+Mit `pflicht_zubehoer: true` beim Shop (Oberfläche: Einstellungen → Shop →
+Pflicht-Zubehör) ergänzt der Import das Zubehör selbst aus diesen Regeln.
+Dann kann die Warenkorb-Automatik des Plugins aus (ab Plugin 2.5:
+WooCommerce → Einstellungen → Produkte → „Zubehör im Warenkorb"), und der
+Kunde sieht nur seinen Artikel.
+
+- Regel an der Variante hat Vorrang vor der am Hauptartikel.
+- Steht das Zubehör schon in der Bestellung, wird nur der Rest ergänzt.
+- Regeln nicht lesbar oder Zubehör ohne Artikelnummer: Die Bestellung bleibt
+  offen und erscheint als Fehler, statt ohne Veredelung nach CDH zu gehen.
+- Prüfen, nur lesend: `python diagnose.py <Shop> --zubehoer`.
+
+Umstellen Schritt für Schritt: Briefing, Welle 9.
+
 ### Zusätzliche Meta-Spalten
 
 Über `extra_excel_meta` lassen sich pro Shop weitere Meta-Felder anhängen.

@@ -82,7 +82,9 @@ def _bestellung_json(o: dict, s: w.ShopErgebnis) -> dict:
         if variante and name.endswith(f" - {variante}"):
             name = name[: -(len(variante) + 3)]
         sku = (item.get("sku") or "").strip()
-        pos.append({"q": int(item.get("quantity") or 0), "sku": sku, "art": name,
+        if item.get("_zubehoer"):
+            name += " (Zubehör, automatisch)"
+        pos.append({"q": w._menge(item.get("quantity")), "sku": sku, "art": name,
                     "v": variante, "vk": _zahl(vk), "ek": _zahl(ek),
                     "ved": w._is_veredelung(sku)})
     return {"no": str(o.get("number") or o.get("id")), "name": _person(o),
@@ -109,7 +111,9 @@ def _cdh_json(e: w.Einheit, feste_orte: set) -> dict:
         else:
             hinweis = "Versandadresse aus der Bestellung"
     positionen = [{"q": p.get("quantity"), "sku": p.get("article_no") or "",
-                   "text": " · ".join(x for x in (p.get("description"), p.get("variant_text")) if x),
+                   "text": " · ".join(x for x in (p.get("description"), p.get("variant_text"),
+                                                   "Zubehör, automatisch" if p.get("zubehoer") else "")
+                                      if x),
                    "vk": _zahl(p.get("selling_price")), "trenner": not p.get("article_no")}
                   for p in w._aggregate_veredelungen(d.get("positions") or [])]
     return {"kunde": f"Kunde {d.get('datev_no')}",

@@ -263,7 +263,49 @@ Umsetzung auf `welle-08-ausrollen` (Stand 23.09.2026, wartet auf Sichtung):
 
 **STOPP — Umstellung erst nach Freigabe.**
 
-## Welle 9 — Artikel: Sammelpflege im Tool (geplant 25.09.2026)
+## Welle 9 — Pflicht-Zubehör im Import statt im Warenkorb (26.09.2026)
+
+Problem: Das Plugin „CDH Required Accessories" legt Zubehör (z. B. Stick zum
+Poloshirt) mit 0,00 € in den Warenkorb. Der Kunde sieht zwei Positionen,
+obwohl der Shoppreis Textil + Veredelung schon enthält. CDH braucht beide
+Positionen getrennt, mit eigenem EK/VK (aus Länge/Breite der Produkte).
+
+Entscheidung 26.09.2026: Das Zubehör kommt nicht mehr in den Warenkorb; der
+Import ergänzt es aus denselben Produktregeln. Kunde sieht nur seinen
+Artikel (Warenkorb, Kasse, Mails, Germanized-Rechnung, Konto).
+
+Umsetzung auf `welle-09-zubehoer-import` (wartet auf Sichtung):
+- `zubehoer_ergaenzen()` in `woo_to_cdh.py`: liest `_cdh_required_accessories`
+  (Variante vor Hauptartikel), Menge = Σ bestellte Menge × Menge je Stück,
+  hängt Positionen mit Kennzeichen an. Steht das Zubehör schon in der
+  Bestellung (alte Bestellungen, Automatik noch an), nur der Rest — nie
+  doppelt. Regeln nicht lesbar oder Zubehör ohne Artikelnummer → Bestellung
+  bleibt offen (Fehler), statt ohne Veredelung nach CDH zu gehen.
+- Schalter je Shop `pflicht_zubehoer` (Oberfläche: Einstellungen → Shop →
+  Pflicht-Zubehör), Standard aus. WEX, Excel, Summenblatt, „So geht es an
+  CDH" enthalten das Zubehör („Zubehör, automatisch").
+- **Nachweis:** Die WEX ist byte-gleich zu `tests/golden/einzeln.wex`, also
+  zum bisherigen Weg über die Warenkorb-Zeilen. Golden-WEX unverändert.
+- `python diagnose.py <Shop> --zubehoer`: zeigt nur lesend alle Regeln,
+  prüft Zubehör (einfach, veröffentlicht, mit Artikelnummer) und meldet
+  Zubehör, das im Katalog noch sichtbar ist.
+- Plugin 2.5.0 in `wordpress/cdh-required-accessories/` (2.4.0 als
+  Ausgangsstand im Verlauf): Schalter „Zubehör im Warenkorb" unter
+  WooCommerce → Einstellungen → Produkte (Standard an = Verhalten wie 2.4).
+  Aus: keine Warenkorb-Automatik, Reste in alten Warenkörben werden
+  entfernt. An: Bestellpositionen bekommen `_cdh_is_accessory`.
+
+Umstellen je Shop, in dieser Reihenfolge:
+1. Tool ausrollen, `diagnose.py <Shop> --zubehoer`: Regeln sichtbar?
+2. Zubehör-Produkte im Shop auf Katalogsichtbarkeit „Versteckt".
+3. Im Tool beim Shop „Pflicht-Zubehör ergänzen" einschalten. (Ab jetzt
+   doppelt sich nichts: Zeilen aus dem Warenkorb werden erkannt.)
+4. Plugin 2.5.0 einspielen, Testbestellung, WEX prüfen.
+5. Im Shop „Zubehör im Warenkorb" ausschalten, Testbestellung, WEX prüfen.
+
+**STOPP — erste Umstellung nur in einem Shop, mit Testbestellung.**
+
+## Welle 10 — Artikel: Sammelpflege im Tool (geplant 25.09.2026)
 
 Ziel: Artikel je Shop in einer Tabelle pflegen, klüger, sicherer und
 einfacher als ein WordPress-Bulk-Edit-Plugin (Vorbild: PW WooCommerce Bulk
@@ -286,20 +328,20 @@ Grundsätze für alle Etappen:
   Artikelnummer doppelt im Shop (WooCommerce lehnt das ab).
 
 Etappen:
-- **9a Tabelle und Preise:** Artikel/Varianten laden, Filter und Suche,
+- **10a Tabelle und Preise:** Artikel/Varianten laden, Filter und Suche,
   Sammelaktionen (setzen, ±Betrag/%, runden), EK/VK, Verkaufspreis,
   Artikelnummer, Name; Vorschau, Verlauf, Zurücknehmen; Option „andere
   Shops mit derselben Artikelnummer". Verknüpft mit „EK fehlt" im Import.
   **STOPP — erste echte Sammeländerung nur an wenigen Artikeln.**
-- **9b Texte:** Kurzbeschreibung/Beschreibung in einem Seitenfenster mit
+- **10b Texte:** Kurzbeschreibung/Beschreibung in einem Seitenfenster mit
   Vorschau (HTML), dazu Suchen & Ersetzen über viele Artikel.
-- **9c Bilder:** Reihenfolge, Hauptbild, entfernen und Bilder per öffentlich
+- **10c Bilder:** Reihenfolge, Hauptbild, entfernen und Bilder per öffentlich
   erreichbarer Adresse zuweisen gehen über die WooCommerce-Schnittstelle.
   **Hochladen vom Rechner** braucht die WordPress-Medienschnittstelle, die
   die WooCommerce-Schlüssel nicht abdeckt → je Shop ein
   WordPress-Anwendungspasswort (Benutzer → Profil → Anwendungspasswörter),
-  abgelegt in `zugang.yaml`. Klären, bevor 9c beginnt.
-- **9d Zubehörartikel:** Plugin „CDH Required Accessories" 2.4.0 (liegt
+  abgelegt in `zugang.yaml`. Klären, bevor 10c beginnt.
+- **10d Zubehörartikel:** Plugin „CDH Required Accessories" 2.4.0 (liegt
   vor, nicht im Repo). Speichert am Produkt das Meta-Feld
   `_cdh_required_accessories` = Liste `{accessory_id, qty_per_unit}`; im
   Backend zwei feste Plätze (A, B). Im Warenkorb überschreibt eine Regel an

@@ -636,3 +636,14 @@ def test_seite_meldet_ungesicherte_aenderungen(seite):
             break
         seite.wait_for_timeout(50)
     assert seite.api._ungesichert == 0
+
+
+def test_pflicht_zubehoer_schalter(seite):
+    _nav(seite, "caf")
+    seite.wait_for_selector("text=Zubehör aus den Artikelregeln ergänzen")
+    seite.click("label:has(input[data-c=zubehoer]) .switch")
+    seite.wait_for_selector("text=Der Import legt das Pflicht-Zubehör selbst an")
+    seite.click("#detail [data-a=save]")
+    seite.wait_for_selector("#hud.show:has-text('Gesichert')")
+    assert _cfg(seite.ordner)["shops"][0]["pflicht_zubehoer"] is True
+    assert seite.fehler == []

@@ -16,6 +16,8 @@ Aufruf:
     python diagnose.py Ensinger-Shop --felder
                                      # welche Zusatzfelder gibt es? (Namen,
                                      # Häufigkeit, Muster — keine Werte)
+    python diagnose.py Ensinger-Shop --zubehoer
+                                     # Pflicht-Zubehör-Regeln (Plugin) prüfen
 """
 
 from __future__ import annotations
@@ -501,6 +503,70 @@ def felder_ausgeben(shop_cfg: dict) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Pflicht-Zubehör — liefert der Shop die Regeln? (Welle 9, nur lesend)
+# ---------------------------------------------------------------------------
+
+def zubehoer_uebersicht(abruf: Callable[..., tuple[int, Any]]) -> dict:
+    """Alle Produkte lesen und die Zubehör-Regeln des Plugins „CDH Required
+    Accessories" zeigen. Findet sie nichts, obwohl im Backend Zubehör
+    gepflegt ist, gibt die Schnittstelle das Feld nicht heraus."""
+    produkte, seite = [], 1
+    while True:
+        status, teil = abruf("/products", {"per_page": 100, "page": seite})
+        if status != 200 or not isinstance(teil, list):
+            return {"fehler": f"Abruf fehlgeschlagen (Status {status})"}
+        produkte += teil
+        if len(teil) < 100:
+            break
+        seite += 1
+    nach_id = {p.get("id"): p for p in produkte}
+    regeln, zubehoer_ids = [], set()
+    for p in produkte:
+        r = w._zubehoer_regeln(p)
+        if not r:
+            continue
+        zeilen = []
+        for acc, per in r:
+            z = nach_id.get(acc)
+            zubehoer_ids.add(acc)
+            if z is None:
+                zeilen.append(("?", per, f"Zubehör {acc} nicht im Shop gefunden"))
+            elif z.get("type") != "simple" or z.get("status") != "publish":
+                zeilen.append((z.get("sku") or "?", per,
+                               "kein einfaches, veröffentlichtes Produkt"))
+            else:
+                zeilen.append((z.get("sku") or "?", per, "" if z.get("sku") else "ohne Artikelnummer"))
+        regeln.append({"sku": p.get("sku") or "", "name": p.get("name") or "", "zubehoer": zeilen})
+    sichtbar = sorted(nach_id[i].get("sku") or str(i) for i in zubehoer_ids
+                      if i in nach_id and nach_id[i].get("catalog_visibility", "visible") != "hidden")
+    return {"produkte": len(produkte), "regeln": regeln, "sichtbar": sichtbar}
+
+
+def zubehoer_ausgeben(shop_cfg: dict) -> None:
+    base, auth = _basis_und_auth(shop_cfg)
+    erg = zubehoer_uebersicht(lambda path, params=None: get(base, auth, path, params))
+    line("═")
+    print(f"  PFLICHT-ZUBEHÖR — {shop_cfg.get('name', shop_cfg['url'])}")
+    line("═")
+    if "fehler" in erg:
+        bullet(ERR, erg["fehler"])
+        return
+    print(f"  {erg['produkte']} Produkte gelesen, {len(erg['regeln'])} mit Zubehör-Regel.")
+    if not erg["regeln"]:
+        bullet(WARN, "Keine Regel gefunden. Ist im Backend Zubehör gepflegt, gibt die "
+                     "Schnittstelle das Feld nicht heraus — dann Bescheid geben.")
+    for r in erg["regeln"]:
+        teile = [f"{menge:g} × {sku}" + (f" ({hinweis})" if hinweis else "")
+                 for sku, menge, hinweis in r["zubehoer"]]
+        symbol = WARN if any(h for _s, _m, h in r["zubehoer"]) else OK
+        bullet(symbol, f"{r['sku'] or '?'} {r['name']}: " + ", ".join(teile))
+    if erg["sichtbar"]:
+        bullet(WARN, "Im Katalog noch sichtbar (Katalogsichtbarkeit auf „Versteckt“ "
+                     "stellen): " + ", ".join(erg["sichtbar"]))
+    print()
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
@@ -574,6 +640,7 @@ def main() -> int:
 
     argumente = [a for a in sys.argv[1:] if not a.startswith("--")]
     nur_felder = "--felder" in sys.argv[1:]
+    nur_zubehoer = "--zubehoer" in sys.argv[1:]
     wanted = argumente[0] if argumente else None
     shops, quelle = lade_shops(wanted)
     print(f"(Konfiguration geladen aus: {quelle})")
@@ -593,7 +660,12 @@ def main() -> int:
                   f"fehlen ({', '.join(fehlt)}) — übersprungen.",
                   file=sys.stderr)
             continue
-        felder_ausgeben(s) if nur_felder else diagnose_shop(s)
+        if nur_felder:
+            felder_ausgeben(s)
+        elif nur_zubehoer:
+            zubehoer_ausgeben(s)
+        else:
+            diagnose_shop(s)
 
     return 0
 

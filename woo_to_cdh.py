@@ -384,6 +384,110 @@ class OrderBuildError(Exception):
     """Bestellung konnte nicht in das CDH-Format gebracht werden."""
 
 
+# ---------------------------------------------------------------------------
+# Pflicht-Zubehör aus den Produktregeln (Welle 9)
+# ---------------------------------------------------------------------------
+# Plugin „CDH Required Accessories" speichert am Produkt (oder an der
+# Variante, die dann Vorrang hat) eine Liste {accessory_id, qty_per_unit}.
+# Mit pflicht_zubehoer: true im Shop legt der Import das Zubehör selbst an —
+# der Kunde sieht es nirgends (Warenkorb-Automatik im Plugin aus), CDH
+# bekommt Textil und Veredelung trotzdem getrennt, mit EK/VK des Zubehörs.
+
+ZUBEHOER_META = "_cdh_required_accessories"
+
+
+def _menge(x) -> int | float:
+    """Stückzahl: ganze Zahlen als int, sonst auf 4 Stellen gerundet."""
+    try:
+        f = float(x or 0)
+    except (TypeError, ValueError):
+        return 0
+    return int(round(f)) if abs(f - round(f)) < 1e-4 else round(f, 4)
+
+
+def _zubehoer_regeln(daten: dict) -> list[tuple[int, float]]:
+    """Regeln aus meta_data eines Produkts/einer Variante lesen."""
+    for m in (daten or {}).get("meta_data") or []:
+        if m.get("key") != ZUBEHOER_META:
+            continue
+        wert = m.get("value")
+        zeilen = list(wert.values()) if isinstance(wert, dict) else (wert or [])
+        regeln = []
+        for z in zeilen:
+            if not isinstance(z, dict):
+                continue
+            try:
+                acc, per = int(z.get("accessory_id") or 0), float(z.get("qty_per_unit") or 0)
+            except (TypeError, ValueError):
+                continue
+            if acc > 0 and per > 0:
+                regeln.append((acc, per))
+        return regeln
+    return []
+
+
+def zubehoer_ergaenzen(order: dict, client: "WooClient", cache: dict) -> list[dict]:
+    """Hängt das Pflicht-Zubehör als eigene Positionen an order["line_items"].
+
+    Menge = Σ (bestellte Menge × Menge je Stück) je Zubehör. Steht das
+    Zubehör schon als echte Zeile in der Bestellung (ältere Bestellungen,
+    Warenkorb-Automatik noch an), wird nur der Rest ergänzt — nie doppelt.
+    Wirft OrderBuildError, wenn Regeln oder Zubehör nicht lesbar sind: Dann
+    bleibt die Bestellung offen, statt ohne Veredelung nach CDH zu gehen.
+    Liefert die ergänzten Positionen.
+    """
+    if order.get("_zubehoer_ergaenzt"):
+        return []
+    items = order.get("line_items") or []
+    order_no = order.get("number") or order.get("id")
+
+    def holen(schluessel, abruf):
+        if schluessel not in cache:
+            try:
+                cache[schluessel] = abruf()
+            except requests.RequestException as e:
+                raise OrderBuildError(
+                    f"Bestellung {order_no}: Zubehör-Regeln nicht abrufbar "
+                    f"({ohne_schluessel(e)})") from None
+        return cache[schluessel]
+
+    bedarf: dict[int, float] = {}
+    for it in items:
+        pid, vid = it.get("product_id"), it.get("variation_id") or 0
+        regeln = []
+        if vid:
+            regeln = _zubehoer_regeln(holen(("zubehoer-var", pid, vid),
+                                            lambda: client.get_variation(pid, vid)))
+        if not regeln:
+            regeln = _zubehoer_regeln(holen(("zubehoer-prod", pid),
+                                            lambda: client.get_product(pid)))
+        for acc, per in regeln:
+            if acc == pid:
+                continue
+            bedarf[acc] = bedarf.get(acc, 0.0) + float(it.get("quantity") or 0) * per
+
+    ergaenzt = []
+    for acc, menge in bedarf.items():
+        vorhanden = sum(float(it.get("quantity") or 0) for it in items
+                        if it.get("product_id") == acc and not it.get("variation_id"))
+        rest = _menge(menge - vorhanden)
+        if rest <= 0:
+            continue
+        prod = holen(("zubehoer-prod", acc), lambda: client.get_product(acc))
+        sku = str(prod.get("sku") or "").strip()
+        if not sku:
+            raise OrderBuildError(
+                f"Bestellung {order_no}: Zubehör {acc} ({prod.get('name') or '?'}) "
+                f"hat keine Artikelnummer.")
+        ergaenzt.append({"id": None, "product_id": acc, "variation_id": 0,
+                         "sku": sku, "name": str(prod.get("name") or "").strip(),
+                         "quantity": rest, "total": "0.00", "meta_data": [],
+                         "_zubehoer": True})
+    order["line_items"] = items + ergaenzt
+    order["_zubehoer_ergaenzt"] = True
+    return ergaenzt
+
+
 def build_wex_data(order: dict, shop_cfg: dict, client: WooClient,
                    price_cache: dict) -> dict:
     """
@@ -470,7 +574,7 @@ def build_wex_data(order: dict, shop_cfg: dict, client: WooClient,
                 f"Bestellung {order_no}, Position {idx + 1}: SKU fehlt."
             )
 
-        quantity = int(item.get("quantity") or 0)
+        quantity = _menge(item.get("quantity"))
         product_name = (item.get("name") or "").strip()
         variant_text = _extract_variant_text(item)
 
@@ -487,6 +591,7 @@ def build_wex_data(order: dict, shop_cfg: dict, client: WooClient,
             "variant_text":  variant_text,
             "selling_price": vk,
             "buying_price":  ek,
+            **({"zubehoer": True} if item.get("_zubehoer") else {}),
         })
 
     return {
@@ -630,8 +735,8 @@ def _aggregate_all_positions(positions: list[dict]) -> list[dict]:
         if key in index_map:
             existing = result[index_map[key]]
             try:
-                existing["quantity"] = int(existing.get("quantity", 0)) \
-                                       + int(pos.get("quantity", 0))
+                existing["quantity"] = _menge(float(existing.get("quantity", 0))
+                                              + float(pos.get("quantity", 0)))
             except (TypeError, ValueError):
                 existing["quantity"] = (str(existing.get("quantity") or "")
                                         + "+" + str(pos.get("quantity") or ""))
@@ -960,8 +1065,8 @@ def _aggregate_veredelungen(positions: list[dict]) -> list[dict]:
                 # Menge auf bestehende Position addieren
                 existing = result[index_map[key]]
                 try:
-                    existing["quantity"] = int(existing.get("quantity", 0)) \
-                                           + int(pos.get("quantity", 0))
+                    existing["quantity"] = _menge(float(existing.get("quantity", 0))
+                                                  + float(pos.get("quantity", 0)))
                 except (TypeError, ValueError):
                     # Fallback: Mengen als Strings, wenn Umwandlung nicht klappt
                     existing["quantity"] = (str(existing.get("quantity") or "")
@@ -1247,7 +1352,7 @@ def _row_from_order_position(order: dict, item: dict, shop_cfg: dict,
 
     # Preise über den bekannten Weg
     ek, vk = extract_ek_vk(client, item, price_cache)
-    quantity = int(item.get("quantity") or 0)
+    quantity = _menge(item.get("quantity"))
     total = item.get("total")
     try:
         vk_gesamt = float(total) if total not in (None, "") else 0.0
@@ -1406,7 +1511,7 @@ def summen_zeilen(orders: list, by: str = "ort",
                 name = name[: -(len(variante) + 3)]
             key = ((ort or "ohne Lieferort") if je_ort else "", sku, name,
                    _variant_text_labeled(item))
-            summen[key] = summen.get(key, 0) + int(item.get("quantity") or 0)
+            summen[key] = _menge(summen.get(key, 0) + _menge(item.get("quantity")))
 
     headers = ["Artikelnummer", "Artikelname", "Artikeltext 2", "Anzahl"]
     if je_ort:
@@ -1823,6 +1928,10 @@ def _shop_abrufen(shop_cfg: dict, global_cfg: dict, exported_locally: set,
     for order in orders:
         order_no = order.get("number") or order.get("id")
         try:
+            if shop_cfg.get("pflicht_zubehoer"):
+                for z in zubehoer_ergaenzen(order, client, erg.price_cache):
+                    logging.info("[%s] Bestellung %s: Pflicht-Zubehör %s × %s ergänzt.",
+                                 shop_name, order_no, z["quantity"], z["sku"])
             wex_data = build_wex_data(order, shop_cfg, client, erg.price_cache)
         except OrderBuildError as e:
             logging.error("[%s] Bestellung %s übersprungen: %s",

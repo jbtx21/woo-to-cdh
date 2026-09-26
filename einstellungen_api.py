@@ -161,6 +161,7 @@ def shop_zu_ui(shop: dict, glob: dict, adressen: dict, index: int,
         "after": _after(shop, glob),
         "days": sorted(int(d) for d in (shop.get("import_on_days") or [])),
         "nameInNo": bool(name_in_no),
+        "zubehoer": bool(shop.get("pflicht_zubehoer", False)),
         "bundling": buendelung,
         "orte": _orte_ui(adressen),
         "excel": _excel_ui(shop.get("extra_excel_meta")),
@@ -195,6 +196,11 @@ def _ui_auf_shop(neu: dict, alt_ui: dict, shop: dict, glob: dict) -> None:
         shop["status_after_export"] = neu["after"] or ""
     if geaendert("nameInNo"):
         shop["order_no_with_name"] = bool(neu["nameInNo"])
+    if geaendert("zubehoer"):
+        if neu["zubehoer"]:
+            shop["pflicht_zubehoer"] = True
+        else:
+            shop.pop("pflicht_zubehoer", None)
     if geaendert("bundling"):
         b = neu["bundling"]
         if b == "einzeln":
@@ -302,6 +308,8 @@ def _beschreibe(alt: dict, neu: dict) -> list[str]:
         t.append(f"{n}: Bündelung auf {BUENDELUNG_TEXT[neu['bundling']]}")
     if alt["nameInNo"] != neu["nameInNo"]:
         t.append(f"{n}: Name in Bestellnummer {'an' if neu['nameInNo'] else 'aus'}")
+    if alt.get("zubehoer") != neu.get("zubehoer"):
+        t.append(f"{n}: Pflicht-Zubehör ergänzen {'an' if neu.get('zubehoer') else 'aus'}")
     if alt["unknownOrt"] != neu["unknownOrt"]:
         t.append(f"{n}: Lieferort ohne feste Adresse → {UNKNOWN_TEXT[neu['unknownOrt']]}")
     if (alt["excelSum"], alt["excelSumBy"], alt["excelSumVed"]) != \

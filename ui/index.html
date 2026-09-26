@@ -1096,6 +1096,20 @@ function renderSettings() {
       </div>
 
       <div class="group">
+        <div class="group-head">Pflicht-Zubehör</div>
+        <div class="card">
+          <label class="row"><span class="row-body">
+            <span class="row-main"><span class="row-title">Zubehör aus den Artikelregeln ergänzen</span>
+              <div class="row-sub">z. B. Stick zum Poloshirt</div></span>
+            <span class="switch"><input type="checkbox" data-c="zubehoer" ${s.zubehoer ? "checked" : ""}><span class="t"></span></span>
+          </span></label>
+        </div>
+        <div class="group-foot">${s.zubehoer
+          ? "Der Import legt das Pflicht-Zubehör selbst an, mit EK/VK des Zubehör-Artikels. Im Shop dafür die Warenkorb-Automatik des Plugins ausschalten, dann sieht der Kunde nur seinen Artikel. Steht das Zubehör schon in der Bestellung, wird nichts doppelt ergänzt."
+          : "Aus: Nur was in der Bestellung steht, geht an CDH (bisheriger Weg über die Warenkorb-Automatik des Plugins)."}</div>
+      </div>
+
+      <div class="group">
         <div class="group-head">Kundenadresse</div>
         <div class="card">${senderBlock(s)}</div>
         <div class="group-foot">An CDH geht nur die Debitornummer. CDH setzt die Anschrift aus dem Kundenstamm ein und ändert ihn nie.</div>
@@ -1709,6 +1723,7 @@ document.addEventListener("change", (e) => {
   if (c === "active") s.active = e.target.checked;
   if (c === "alldays") s.days = e.target.checked ? [] : [1];
   if (c === "nameInNo") s.nameInNo = e.target.checked;
+  if (c === "zubehoer") s.zubehoer = e.target.checked;
   if (c === "excelSum") s.excelSum = e.target.checked;
   if (c === "excelSumVed") s.excelSumVed = e.target.checked;
   render();

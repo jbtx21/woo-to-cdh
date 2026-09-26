@@ -305,6 +305,12 @@ Umstellen je Shop, in dieser Reihenfolge:
 
 **STOPP — erste Umstellung nur in einem Shop, mit Testbestellung.**
 
+Stand 26.09.2026: Das Plugin ist in **allen** Shops aktiv. Vorschlag: zuerst
+CAF (Einzel-Shop, überschaubar), Ensinger erst nach dem Stichtag 01.10.
+Den Schalter im Tool einzuschalten ist gefahrlos, solange die
+Warenkorb-Automatik noch läuft: Die vorhandenen Zeilen werden erkannt, die
+WEX bleibt gleich.
+
 ## Welle 10 — Artikel: Sammelpflege im Tool (geplant 25.09.2026)
 
 Ziel: Artikel je Shop in einer Tabelle pflegen, klüger, sicherer und

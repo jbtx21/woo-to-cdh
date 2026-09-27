@@ -131,7 +131,8 @@ def test_laden_varianten_unter_dem_artikel(api):
     assert m == {"id": 11, "parent": 10, "typ": "variation", "status": "publish",
                  "sku": "042/POLO-M", "name": "Poloshirt", "variante": "M",
                  "merkmale": [{"name": "Größe", "option": "M"}],
-                 "ek": 12.1, "vk": 24.9, "preis": 29.9, "kurz": "", "text": "", "bilder": []}
+                 "ek": 12.1, "vk": 24.9, "preis": 29.9, "kurz": "", "text": "", "bilder": [],
+                 "zubehoer": [], "zubehoer_eigen": False}
     assert erg["artikel"][0]["ek"] is None and erg["letzte"] is None
     assert ArtikelWoo.posts == []
 
@@ -526,3 +527,79 @@ def test_bilder_nicht_in_andere_shops(mit_bildern):
     mit_bildern.artikel_laden("caf")
     erg = _aendern(mit_bildern, (20, "bilder", [502]), andere=True)
     assert [s["name"] for s in erg["shops"]] == ["CAF-Shop"]
+
+
+# --- Pflicht-Zubehör (Welle 10d) -------------------------------------------------
+
+REGEL = "_cdh_required_accessories"
+
+
+@pytest.fixture
+def mit_zubehoer(api):
+    k = _shop(CAF)
+    k["produkte"][40] = _p(40, "Stick Logo", "004/STICK", "2.10", "5.50", "0")
+    k["produkte"][41] = {**_p(41, "Druck Entwurf", "004/DRUCK", "1", "2", "0"), "status": "draft"}
+    k["produkte"][42] = _p(42, "Stick ohne Nummer", "", "1", "2", "0")
+    k["produkte"][10]["meta_data"] = [{"key": "_andere_meta", "value": "bleibt"}]
+    k["varianten"][10][12]["meta_data"] = [{"key": REGEL, "value": [{"accessory_id": 40, "qty_per_unit": 2}]}]
+    return api
+
+
+def test_zubehoer_laden(mit_zubehoer):
+    _shop(CAF)["produkte"][20]["meta_data"] = [
+        {"key": REGEL, "value": {"a": {"accessory_id": 40, "qty_per_unit": "1"}}}]   # Plugin: Plätze A/B
+    z = {r["id"]: r for r in mit_zubehoer.artikel_laden("caf")["artikel"]}
+    assert z[20]["zubehoer"] == [{"id": 40, "menge": 1.0}]
+    assert z[12]["zubehoer_eigen"] is True and z[11]["zubehoer_eigen"] is False
+    assert z[12]["zubehoer"] == []                         # an Varianten nicht pflegbar
+
+
+def test_zubehoer_setzen_sichern_zurueck(mit_zubehoer):
+    api = mit_zubehoer
+    api.artikel_laden("caf")
+    erg = _aendern(api, (10, "zubehoer", [{"id": 40, "menge": "1,5"}]))
+    assert erg["fehler"] == [] and erg["vorschau_id"]
+    zeile = erg["shops"][0]["zeilen"][0]
+    assert (zeile["feldname"], zeile["alt"], zeile["neu"]) == (
+        "Pflicht-Zubehör", "keins", "004/STICK Stick Logo × 1,5")
+    assert "042/POLO Poloshirt: Varianten mit eigener Regel (L) — dort gilt weiter deren Regel." \
+        in erg["warnungen"]
+    assert any("„Pflicht-Zubehör ergänzen“ für CAF-Shop aus" in t for t in erg["warnungen"])
+    api.artikel_sichern(erg["vorschau_id"])
+    assert ArtikelWoo.posts[0][1] == {"update": [{"id": 10, "meta_data": [
+        {"key": REGEL, "value": [{"accessory_id": 40, "qty_per_unit": 1.5}]}]}]}
+    meta = _shop(CAF)["produkte"][10]["meta_data"]
+    assert {"key": "_andere_meta", "value": "bleibt"} in meta
+    # Der Import liest dieselbe Regel
+    assert w._zubehoer_regeln(_shop(CAF)["produkte"][10]) == [(40, 1.5)]
+    assert "Pflicht-Zubehör keins → 004/STICK Stick Logo × 1,5" in api._p_verlauf.read_text(encoding="utf-8")
+    api.artikel_zuruecknehmen(api._letzte_info()["datei"], True)
+    assert w._zubehoer_regeln(_shop(CAF)["produkte"][10]) == []
+
+
+@pytest.mark.parametrize("aenderung, text", [
+    ((11, "zubehoer", [{"id": 40, "menge": 1}]), "wird am Hauptartikel gepflegt"),
+    ((20, "zubehoer", [{"id": 40, "menge": 1}, {"id": 30, "menge": 1}, {"id": 42, "menge": 1}]),
+     "Höchstens 2 Zubehörartikel"),
+    ((20, "zubehoer", [{"id": 20, "menge": 1}]), "nicht sein eigenes Zubehör"),
+    ((20, "zubehoer", [{"id": 10, "menge": 1}]), "muss ein einfacher Artikel sein"),
+    ((20, "zubehoer", [{"id": 41, "menge": 1}]), "ist nicht veröffentlicht"),
+    ((20, "zubehoer", [{"id": 42, "menge": 1}]), "hat keine Artikelnummer"),
+    ((20, "zubehoer", [{"id": 999, "menge": 1}]), "gibt es im Shop nicht"),
+    ((20, "zubehoer", [{"id": 40, "menge": 0}]), "größer als 0"),
+    ((20, "zubehoer", [{"id": 40, "menge": 1}, {"id": 40, "menge": 2}]), "doppelt"),
+    ((20, "zubehoer", [{"id": 40, "menge": "x"}]), "ist ungültig"),
+])
+def test_zubehoer_pruefungen_wie_plugin(mit_zubehoer, aenderung, text):
+    mit_zubehoer.artikel_laden("caf")
+    erg = _aendern(mit_zubehoer, aenderung)
+    assert erg["vorschau_id"] is None and any(text in f for f in erg["fehler"]), erg["fehler"]
+
+
+def test_zubehoer_ohne_hinweis_wenn_im_tool_an(mit_zubehoer, tmp_path):
+    einst = yaml.safe_load((tmp_path / "einstellungen.yaml").read_text(encoding="utf-8"))
+    einst["shops"][0]["pflicht_zubehoer"] = True
+    (tmp_path / "einstellungen.yaml").write_text(yaml.safe_dump(einst), encoding="utf-8")
+    mit_zubehoer.artikel_laden("caf")
+    erg = _aendern(mit_zubehoer, (20, "zubehoer", [{"id": 40, "menge": 1}]))
+    assert erg["warnungen"] == [] and erg["vorschau_id"]

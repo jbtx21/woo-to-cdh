@@ -218,6 +218,10 @@ class ArtikelWoo(FakeWoo):
                     e.setdefault("dimensions", {}).update(v)
                 elif k == "images":
                     e["images"] = [self._bild(b) for b in v]
+                elif k == "meta_data":                 # je Schlüssel ersetzen, Rest bleibt
+                    alt = [m for m in e.get("meta_data") or []
+                           if m["key"] not in {x["key"] for x in v}]
+                    e["meta_data"] = alt + copy.deepcopy(v)
                 elif k == "image":
                     e["image"] = self._bild(v) if v.get("id") or v.get("src") else None
                 elif k != "id":

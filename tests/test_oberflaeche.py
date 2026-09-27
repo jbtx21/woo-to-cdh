@@ -778,12 +778,14 @@ def test_artikel_aendern_vorschau_sichern(artikelseite):
     assert p.locator("[data-tab=artikel] .tab-badge").inner_text() == "1"
     # Sammelaktion: Poloshirt wählt beide Varianten, VK +10 %
     p.click("#artikelPane [data-a=art-sel][data-id='10']")
+    p.wait_for_selector("#artikelPane [data-a=art-sel][data-id='11'][aria-checked=true]")
     p.click("[data-a=art-aktion]")
     p.click("[data-a=art-af][data-v=vk]")
     p.click("[data-a=art-aa][data-v=prozent]")
     p.fill("#aa-wert", "10")
     p.click("[data-a=art-anwenden]")
-    assert _zelle(p, 11, "vk").input_value() == "27,39"
+    p.wait_for_selector("#hud.show:has-text('VK: 2 Werte gesetzt')")
+    assert _zelle(p, 11, "vk").input_value() == "27,39", p.evaluate("JSON.stringify(art.entwurf)")
     assert _zelle(p, 12, "vk").input_value() == "27,39"
     assert p.locator("#art-zaehler").inner_text() == "3 Änderungen"
     p.click("#artikelPane [data-a=art-vorschau]")
@@ -924,7 +926,7 @@ def test_artikel_bilder_zuordnen(artikelseite):
     zelle = "#artikelPane [data-a=art-bilder][data-id='20']"
     assert p.locator(f"{zelle} .tag").inner_text() == "2"
     p.click(zelle)
-    p.wait_for_selector("text=Am Artikel")
+    p.wait_for_selector("text=am Artikel")
     namen = lambda: p.locator("#overlay .bild-grid").first.locator(".bild-name").all_inner_texts()  # noqa: E731
     assert namen() == ["cap-vorne", "cap-hinten"]
     p.click("#overlay [data-a=art-bild-haupt][data-i='1']")
@@ -989,4 +991,42 @@ def test_artikel_bild_je_farbe(artikelseite):
     p.wait_for_selector("#hud.show:has-text('3 Änderungen gesichert')")
     v = k["varianten"][10]
     assert (v[11]["image"]["id"], v[13]["image"]["id"], v[12]["image"]["id"]) == (503, 503, 504)
+    assert p.fehler == []
+
+
+# --- Pflicht-Zubehör (Welle 10d) ---------------------------------------------------
+
+def test_artikel_pflicht_zubehoer(artikelseite):
+    p = artikelseite
+    k = p.katalog["https://shop.example/caf-shop/"]
+    k["produkte"][40] = {"id": 40, "type": "simple", "status": "publish", "name": "Stick Logo",
+                         "sku": "004/STICK", "regular_price": "0",
+                         "dimensions": {"length": "2.10", "width": "5.50", "height": ""}}
+    k["varianten"][10][12]["meta_data"] = [{"key": "_cdh_required_accessories",
+                                            "value": [{"accessory_id": 40, "qty_per_unit": 2}]}]
+    p.click("[data-a=art-reload]")
+    p.wait_for_selector("#artikelPane tr[data-id='40']")
+    assert p.locator("#artikelPane tr[data-id='12'] td.zu").inner_text() == "eigene Regel"
+    p.click("#artikelPane [data-a=art-sel][data-id='20']")
+    p.click("#artikelPane [data-a=art-zub][data-id='10']")
+    p.wait_for_selector("text=Varianten mit eigener Regel")
+    # nur zulässige Artikel zur Wahl: einfach, veröffentlicht, mit Nummer, nicht er selbst
+    optionen = p.locator("#zs-0 option").all_inner_texts()
+    assert optionen[0] == "— kein Zubehör —" and "004/STICK · Stick Logo" in optionen
+    assert not any("042/POLO ·" in o for o in optionen)
+    p.select_option("#zs-0", "40")
+    p.fill("[data-zm='0']", "1,5")
+    p.click("[data-a=art-zub-alle]")
+    p.wait_for_selector("#hud.show:has-text('Zubehör auf 1 Artikel übertragen')")
+    p.click("#overlay .nav-r [data-a=close]")
+    assert p.locator("#artikelPane [data-a=art-zub][data-id='10']").inner_text() == "Stick Logo × 1,5"
+    assert p.locator("#artikelPane [data-a=art-zub][data-id='20']").inner_text() == "Stick Logo × 1,5"
+    p.click("#artikelPane [data-a=art-vorschau]")
+    p.wait_for_selector("#overlay button[data-a=art-sichern]:has-text('2 sichern')")
+    assert "004/STICK Stick Logo × 1,5" in p.locator("#overlay").inner_text()
+    assert "Varianten mit eigener Regel (L)" in p.locator("#overlay").inner_text()
+    p.click("[data-a=art-sichern]")
+    p.wait_for_selector("#hud.show:has-text('2 Änderungen gesichert')")
+    assert w._zubehoer_regeln(k["produkte"][10]) == [(40, 1.5)]
+    assert w._zubehoer_regeln(k["produkte"][20]) == [(40, 1.5)]
     assert p.fehler == []

@@ -704,6 +704,22 @@ die Anzahl.
   Größe usw.). Ein Klick auf ein Bild des Artikels setzt es für alle
   Varianten der Gruppe. „–" entfernt das eigene Bild. „gemischt" heißt, die
   Varianten der Gruppe haben unterschiedliche Bilder.
+
+**Pflicht-Zubehör (Welle 10d), nur am Hauptartikel:** Spalte „Zubehör" öffnet
+Platz A und B wie im Produkt-Editor des Plugins: Zubehörartikel und Menge je
+Stück. Geschrieben wird dasselbe Feld `_cdh_required_accessories`, das der
+Import liest.
+- Die Plugin-Prüfungen, die über die Schnittstelle nicht greifen, prüft das
+  Tool selbst: höchstens 2 Einträge (mehr löscht der Produkt-Editor beim
+  nächsten Speichern), nur veröffentlichte einfache Artikel mit
+  Artikelnummer, nicht der Artikel selbst, Menge > 0, nichts doppelt.
+- Varianten mit eigener Regel zeigt die Tabelle mit „eigene Regel"; diese
+  Regel hat Vorrang und wird im Tool nicht geändert (Hinweis in der
+  Vorschau).
+- „Auf ausgewählte Artikel übertragen" setzt dieselbe Regel an allen
+  angehakten Artikeln. Filter „Mit Zubehör".
+- Hinweis in der Vorschau, wenn „Pflicht-Zubehör ergänzen" beim Shop aus
+  ist. Nicht in andere Shops übertragen (Artikel-ids je Shop verschieden).
 - Kein Hochladen vom Rechner (Entscheidung 27.09.2026), daher keine
   WordPress-Anwendungspasswörter nötig.
 - Prüfungen: unbekannte Bild-id, ungültige Adresse, mehr als 20 Bilder,

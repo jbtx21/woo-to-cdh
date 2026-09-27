@@ -242,6 +242,7 @@ button.row:active, .row.tap:active { background: var(--fill); }
   width: 100%; max-width: 540px; max-height: calc(100% - 40px); overflow-y: auto;
   background: var(--bg); border-radius: 14px; animation: rise .25s ease-out;
 }
+.sheet .navbar .nav-c { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0 10px; }
 .sheet .navbar { position: sticky; background: var(--bar); border-radius: 14px 14px 0 0; }
 .sheet .content { padding: 20px 16px 28px; }
 .form-row { display: flex; align-items: center; gap: 12px; min-height: 46px; padding-left: 16px; }
@@ -443,6 +444,9 @@ table.art { width: 100%; border-collapse: collapse; font-size: 14px; font-featur
 .bild .knoepfe button { flex: 1; color: #fff; padding: 5px 0; text-align: center; font-size: 13px; }
 .bild .knoepfe button:disabled { opacity: .35; cursor: default; }
 .bild-wahl:hover { outline: 2px solid var(--blue); outline-offset: -2px; }
+.art td.zu { font-size: 14px; max-width: 200px; }
+.art td.zu .navlink { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; text-align: left; }
+.art td.zu .navlink.neu { font-weight: 600; }
 .var-knoepfe { display: flex; flex-wrap: wrap; gap: 6px; }
 .var-wahl { border-radius: 8px; padding: 2px; border: 2px solid transparent; }
 .var-wahl.an { border-color: var(--blue); }
@@ -1410,7 +1414,7 @@ function closeOverlay() {
   if (overlay?.busy) return;                 // Assistent/Zugang wartet auf Python
   const war = overlay?.kind;
   overlay = null; $("#overlay").innerHTML = "";
-  if (war === "art-text" || war === "art-bilder") renderArtikel();   // Markierung „geändert“ in der Tabelle
+  if (["art-text", "art-bilder", "art-zub"].includes(war)) renderArtikel();   // Markierung „geändert“ in der Tabelle
 }
 
 function sheetDone() {
@@ -1494,7 +1498,7 @@ async function pwSubmit() {
 function adminEnd() {
   adminUntil = 0; unlocked = {};
   api().admin_abmelden();
-  if (overlay && ["wizard", "access", "staffel", "art-aktion", "art-vorschau", "art-undo", "art-text", "art-ersetzen", "art-bilder"].includes(overlay.kind)) closeOverlay();
+  if (overlay && ["wizard", "access", "staffel", "art-aktion", "art-vorschau", "art-undo", "art-text", "art-ersetzen", "art-bilder", "art-zub"].includes(overlay.kind)) closeOverlay();
   render(); hud("Admin-Modus beendet");
 }
 
@@ -1777,8 +1781,8 @@ async function accessSave() {
 let art = { shopId: null, laden: false, fehler: "", liste: [], andere: [], letzte: null, marge: 10, bilder: {},
   entwurf: {}, auswahl: new Set(), suche: "", filter: "alle" };
 const ART_ZAHLEN = ["preis", "vk", "ek"];
-const ART_NAMEN = { preis: "Verkaufspreis", vk: "VK", ek: "EK", sku: "Artikelnummer", name: "Artikelname", kurz: "Kurzbeschreibung", text: "Beschreibung", bilder: "Bilder" };
-const ART_FILTER = [["alle", "Alle"], ["ek", "EK fehlt"], ["vk", "VK fehlt"], ["ekvk", "EK > VK"], ["marge", "Marge niedrig"], ["text", "Text fehlt"], ["bild", "Ohne Bild"], ["neu", "Geändert"]];
+const ART_NAMEN = { preis: "Verkaufspreis", vk: "VK", ek: "EK", sku: "Artikelnummer", name: "Artikelname", kurz: "Kurzbeschreibung", text: "Beschreibung", bilder: "Bilder", zubehoer: "Pflicht-Zubehör" };
+const ART_FILTER = [["alle", "Alle"], ["ek", "EK fehlt"], ["vk", "VK fehlt"], ["ekvk", "EK > VK"], ["marge", "Marge niedrig"], ["text", "Text fehlt"], ["bild", "Ohne Bild"], ["zub", "Mit Zubehör"], ["neu", "Geändert"]];
 const ART_TEXTE = ["kurz", "text"];
 
 const artAnzahl = () => Object.keys(art.entwurf).length;
@@ -1803,7 +1807,7 @@ function setEntwurf(z, f, text) {
   const k = `${z.id}:${f}`;
   const gleich = ART_ZAHLEN.includes(f)
     ? (() => { const a = zahlLesen(text), b = z[f]; return (a == null && b == null) || (a != null && b != null && Math.abs(a - b) < 0.00005); })()
-    : f === "bilder" ? JSON.stringify(text) === JSON.stringify(z[f] || [])
+    : f === "bilder" || f === "zubehoer" ? JSON.stringify(text) === JSON.stringify(z[f] || [])
     : ART_TEXTE.includes(f) ? String(text) === String(z[f] ?? "")
     : String(text).trim() === String(z[f] ?? "");
   if (gleich) delete art.entwurf[k]; else art.entwurf[k] = text;
@@ -1821,6 +1825,7 @@ function artPasst(z) {
   if (f === "vk") return z.typ !== "variable" && artZahl(z, "vk") == null;
   if (f === "ekvk") { const m = artMarge(z); return m != null && m < 0; }
   if (f === "marge") { const m = artMarge(z); return m != null && m < art.marge; }
+  if (f === "zub") return !z.parent && artWert(z, "zubehoer").length > 0;
   if (f === "bild") return !z.parent && !artWert(z, "bilder").length;
   if (f === "text") return !z.parent && ART_TEXTE.some((t) => !String(artWert(z, t)).trim());
   if (f === "neu") return Object.keys(art.entwurf).some((k) => k.startsWith(`${z.id}:`));
@@ -1909,6 +1914,7 @@ function artZeile(z) {
     <td class="name">${name}</td>
     ${artBildZelle(z)}
     ${z.parent ? `<td></td>` : artTextZelle(z)}
+    ${artZubZelle(z)}
     ${zahl("preis")}${zahl("vk")}${zahl("ek")}
     <td class="m" data-marge="${z.id}">${artMargeText(z)}</td>
   </tr>`;
@@ -1955,9 +1961,9 @@ function renderArtikel() {
       <div class="art-wrap"><table class="art">
         <thead><tr>
           <th class="c" style="padding-left:12px"><button data-a="art-alle" role="checkbox" aria-checked="${!!alleAn}" aria-label="Alle sichtbaren auswählen" style="display:grid;place-items:center;width:28px"><span class="selc">${I.tick}</span></button></th>
-          <th>Artikelnummer</th><th>Artikel</th><th>Bild</th><th>Texte</th><th class="r">Verkaufspreis</th><th class="r">VK</th><th class="r">EK</th><th class="r">Marge</th>
+          <th>Artikelnummer</th><th>Artikel</th><th>Bild</th><th>Texte</th><th>Zubehör</th><th class="r">Verkaufspreis</th><th class="r">VK</th><th class="r">EK</th><th class="r">Marge</th>
         </tr></thead>
-        <tbody>${zeilen.map(artZeile).join("") || `<tr><td colspan="9" style="padding:16px;color:var(--label-2)">Keine Treffer.</td></tr>`}</tbody>
+        <tbody>${zeilen.map(artZeile).join("") || `<tr><td colspan="10" style="padding:16px;color:var(--label-2)">Keine Treffer.</td></tr>`}</tbody>
       </table></div>
       <div class="group-foot">${plural(art.liste.filter((z) => z.typ !== "variable").length, "Artikel", "Artikel")} und Varianten${zeilen.length !== art.liste.length ? `, ${zeilen.length} Zeilen sichtbar` : ""}. Verkaufspreis ist der Preis im Shop, VK und EK gehen an CDH. Enter springt eine Zeile weiter.</div>`;
   }
@@ -2231,10 +2237,10 @@ function drawArtBilder() {
     .sort((a, b) => (eltern.includes(b) - eltern.includes(a)) || bildName(a).localeCompare(bildName(b), "de"));
   const zeigen = alle.slice(0, 60);
   const wahl = (r) => `<div><button class="bild bild-wahl" data-a="art-bild-dazu" data-r="${r}" aria-label="${esc(bildName(r))} hinzufügen">${bildImg(r)}</button><div class="bild-name">${esc(bildName(r))}</div></div>`;
-  zeigeBlatt(sheetShell(`Bilder · ${_bezJs(z)}`,
+  zeigeBlatt(sheetShell("Bilder",
     `<button class="navlink" data-a="art-bilder-reset" ${geaendert ? "" : "disabled"}>Zurücksetzen</button>`,
     `<button class="navlink bold" data-a="close">Fertig</button>`, `
-    <div class="group"><div class="group-head">${variante ? "Bild der Variante" : "Am Artikel"}</div><div class="card">
+    <div class="group"><div class="group-head">${esc(_bezJs(z))} — ${variante ? "Bild der Variante" : "am Artikel"}</div><div class="card">
       ${jetzt.length ? `<div class="bild-grid">${jetzt.map(kachel).join("")}</div>`
         : `<div class="row"><span class="row-body"><span class="row-main"><span class="row-title" style="color:var(--label-2)">${variante ? "Kein eigenes Bild — im Shop erscheint das Bild des Hauptartikels." : "Kein Bild"}</span></span></span></div>`}
     </div>${variante ? "" : `<div class="group-foot">Das erste Bild ist das Hauptbild im Shop, die weiteren bilden die Galerie.</div>`}</div>
@@ -2312,6 +2318,76 @@ function artBildAktion(a, el) {
     if (z.parent) b.splice(0, b.length, u); else if (!b.includes(u)) b.push(u);
   }
   artBilderSetzen(b);
+}
+
+// --- Pflicht-Zubehör (Welle 10d): nur am Hauptartikel, höchstens zwei
+// Einträge (Plätze A und B wie im Plugin). Die Regeln des Plugins prüft
+// Python in der Vorschau nach.
+const zubName = (id) => { const a = artById(id); return a ? [a.sku, a.name].filter(Boolean).join(" ") : `#${id}`; };
+const mengeText = (m) => zahlText(m).replace(/,?0+$/, "") || "0";
+
+function artZubZelle(z) {
+  if (z.parent) return `<td class="zu">${z.zubehoer_eigen ? `<span class="tag" title="Diese Variante hat im Shop eine eigene Regel, die Vorrang hat">eigene Regel</span>` : ""}</td>`;
+  const r = artWert(z, "zubehoer");
+  const neu = `${z.id}:zubehoer` in art.entwurf;
+  const text = r.length ? r.map((x) => `${esc(artById(x.id)?.name || `#${x.id}`)} × ${esc(mengeText(x.menge))}`).join(", ") : "+";
+  return `<td class="zu"><button class="navlink${neu ? " neu" : ""}" style="font-size:14px${r.length ? "" : ";color:var(--label-3)"}" data-a="art-zub" data-id="${z.id}" title="${esc(r.map((x) => zubName(x.id)).join(", "))}">${text}</button></td>`;
+}
+
+function openArtZub(id) {
+  const z = artById(id);
+  const r = artWert(z, "zubehoer").map((x) => ({ id: x.id, menge: mengeText(x.menge) }));
+  while (r.length < 2) r.push({ id: 0, menge: "1" });
+  overlay = { kind: "art-zub", id, plaetze: r };
+  drawArtZub();
+}
+
+function artZubUebernehmen() {
+  const o = overlay, z = artById(o.id);
+  const regeln = o.plaetze.filter((p) => p.id).map((p) => ({ id: p.id, menge: zahlLesen(p.menge) ?? 0 }));
+  setEntwurf(z, "zubehoer", regeln);
+  renderTabbar(); meldeUngesichert();
+  const r = $("#overlay [data-a=art-zub-reset]"); if (r) r.disabled = !(`${z.id}:zubehoer` in art.entwurf);
+}
+
+function drawArtZub() {
+  const o = overlay, z = artById(o.id);
+  const kandidaten = art.liste.filter((a) => a.typ === "simple" && a.status === "publish" && a.sku && a.id !== z.id)
+    .sort((a, b) => a.sku.localeCompare(b.sku, "de"));
+  const eigene = artVarianten(z.id).filter((v) => v.zubehoer_eigen).map((v) => v.variante || v.sku);
+  const andere = [...art.auswahl].map(artById).filter((a) => a && !a.parent && a.id !== z.id);
+  const platz = (p, i) => `
+    <div class="form-row"><span class="row-body">
+      <label for="zs-${i}">Platz ${"AB"[i]}</label>
+      <select class="art-select" id="zs-${i}" data-zs="${i}" style="flex:1;max-width:none;color:var(--label)">
+        <option value="0">— kein Zubehör —</option>
+        ${kandidaten.map((a) => `<option value="${a.id}" ${a.id === p.id ? "selected" : ""}>${esc(a.sku)} · ${esc(a.name)}</option>`).join("")}
+        ${p.id && !kandidaten.some((a) => a.id === p.id) ? `<option value="${p.id}" selected>${esc(zubName(p.id))} (nicht zulässig)</option>` : ""}
+      </select>
+      <input data-zm="${i}" value="${esc(p.menge)}" inputmode="decimal" aria-label="Menge je Stück Platz ${"AB"[i]}" style="width:70px;flex:none;text-align:right${p.id ? "" : ";visibility:hidden"}" ${p.id ? "" : "disabled"}>
+      <span style="color:var(--label-2);font-size:13px;flex:none${p.id ? "" : ";visibility:hidden"}">je Stück</span>
+    </span></div>`;
+  zeigeBlatt(sheetShell("Pflicht-Zubehör",
+    `<button class="navlink" data-a="art-zub-reset" ${`${z.id}:zubehoer` in art.entwurf ? "" : "disabled"}>Zurücksetzen</button>`,
+    `<button class="navlink bold" data-a="close">Fertig</button>`, `
+    <div class="group"><div class="group-head">${esc(_bezJs(z))}</div><div class="card">${o.plaetze.map(platz).join("")}</div>
+      <div class="group-foot">Zum Beispiel der Stick zum Poloshirt: Menge je Stück des Artikels. Nur veröffentlichte einfache Artikel mit Artikelnummer. Höchstens zwei, wie im Produkt-Editor (Platz A und B).</div></div>
+    ${eigene.length ? `<div class="group"><div class="card"><div class="row warn"><span class="icon">${I.warn}</span><span class="row-body"><span class="row-main">
+      <span class="row-title">Varianten mit eigener Regel</span><div class="row-sub" style="white-space:normal">${esc(eigene.join(", "))} — dort gilt weiter deren Regel. Ändern im Produkt-Editor des Shops.</div></span></span></div></div></div>` : ""}
+    ${andere.length ? `<div class="group"><div class="card">
+      <button class="row action" data-a="art-zub-alle"><span class="row-body"><span class="row-main"><span class="row-title">Auf ${plural(andere.length, "ausgewählten Artikel", "ausgewählte Artikel")} übertragen</span>
+      <div class="row-sub">${esc(andere.slice(0, 4).map((a) => a.name).join(", "))}${andere.length > 4 ? " …" : ""}</div></span></span></button>
+    </div></div>` : ""}
+    <div class="group-foot">Beim Import ergänzt das Tool das Zubehör in der WEX, wenn beim Shop „Pflicht-Zubehör ergänzen“ an ist. Gesichert wird erst mit der Vorschau.</div>`));
+}
+
+function artZubAlle() {
+  artZubUebernehmen();
+  const z = artById(overlay.id), regeln = artWert(z, "zubehoer");
+  const ziele = [...art.auswahl].map(artById).filter((a) => a && !a.parent && a.id !== z.id && !regeln.some((r) => r.id === a.id));
+  ziele.forEach((a) => setEntwurf(a, "zubehoer", regeln.map((r) => ({ ...r }))));
+  renderTabbar(); meldeUngesichert();
+  hud(`Zubehör auf ${plural(ziele.length, "Artikel", "Artikel")} übertragen`);
 }
 
 // --- Vorschau und Sichern
@@ -2479,6 +2555,9 @@ document.addEventListener("click", (e) => {
     }
     case "art-ersetzen": openArtErsetzen(); break;
     case "art-bilder": openArtBilder(+el.dataset.id); break;
+    case "art-zub": openArtZub(+el.dataset.id); break;
+    case "art-zub-alle": artZubAlle(); break;
+    case "art-zub-reset": delete art.entwurf[`${overlay.id}:zubehoer`]; openArtZub(overlay.id); renderTabbar(); meldeUngesichert(); break;
     case "art-var-merkmal": overlay.merkmal = el.dataset.v; drawArtBilder(); break;
     case "art-var-bild": artVarBildSetzen(+el.dataset.g, +el.dataset.r); break;
     case "art-bild-links": case "art-bild-rechts": case "art-bild-haupt": case "art-bild-weg":
@@ -2556,6 +2635,10 @@ document.addEventListener("click", (e) => {
 
 document.addEventListener("change", (e) => {
   if (e.target.id === "art-shop") { artOeffnen(e.target.value); return; }
+  if (e.target.dataset?.zs != null) {
+    const p = overlay.plaetze[+e.target.dataset.zs]; p.id = +e.target.value;
+    artZubUebernehmen(); drawArtZub(); return;
+  }
   if (e.target.matches?.("[data-art-andere]")) { artVorschau(e.target.checked); return; }
   const c = e.target.dataset?.c; if (!c) return;
   // Debitornummer wird schon beim Tippen übernommen ("input"). Hier nicht neu
@@ -2575,6 +2658,7 @@ document.addEventListener("change", (e) => {
 document.addEventListener("input", (e) => {
   if (e.target.dataset?.af) { artNachEingabe(e.target); return; }
   if (e.target.id === "art-ta") { artTextEingabe(e.target); return; }
+  if (e.target.dataset?.zm != null) { overlay.plaetze[+e.target.dataset.zm].menge = e.target.value; artZubUebernehmen(); return; }
   if (e.target.id === "art-bild-such") {
     overlay.such = e.target.value; const pos = e.target.selectionStart;
     drawArtBilder(); const f = $("#art-bild-such"); f.focus(); f.setSelectionRange(pos, pos); return;

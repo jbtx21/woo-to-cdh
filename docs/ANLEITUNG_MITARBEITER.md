@@ -114,6 +114,14 @@ den Shop.
 - Neue Bilder vom eigenen Rechner lädst du weiter im Shop hoch. Danach
   stehen sie hier zur Auswahl.
 
+**Pflicht-Zubehör:** In der Spalte **Zubehör** stellst du zum Beispiel den
+Stick zum Poloshirt ein.
+- Es gibt Platz A und B, dazu die Menge je Stück.
+- Sind mehrere Artikel angehakt, überträgt **Auf ausgewählte Artikel
+  übertragen** die Regel auf alle.
+- „eigene Regel" bei einer Variante heißt: Dort gilt eine eigene Einstellung
+  aus dem Shop.
+
 **VK und EK** gehen an CDH, der **Verkaufspreis** ist der Preis im Shop.
 
 ## 7. Wenn etwas nicht geht

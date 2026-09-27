@@ -410,6 +410,15 @@ Etappen:
   Speichern im Backend den Rest stillschweigend. Übertragen in andere Shops:
   Zubehör-ID je Shop verschieden → über die Artikelnummer zuordnen, fehlt
   sie, Hinweis statt falscher ID.
+  **Umgesetzt 27.09.2026:**
+  - Nur am Hauptartikel (Entscheidung), Plätze A und B.
+  - Die Prüfungen des Plugins sind nachgebaut: höchstens 2, einfach,
+    veröffentlicht, mit Artikelnummer, nicht er selbst, Menge > 0, nichts
+    doppelt.
+  - Varianten mit eigener Regel werden angezeigt und nicht angefasst.
+  - Batch mit `meta_data` (nur dieser Schlüssel, andere Meta bleiben).
+  - „Auf ausgewählte übertragen“.
+  - Kein Übertragen in andere Shops.
 
 ---
 

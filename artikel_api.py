@@ -9,7 +9,8 @@ Artikelnummer, Artikelname. Nichts wird sofort geschrieben:
                                  Welle 10b mit Kurzbeschreibung und Beschreibung,
                                  seit 10c mit Bildern (nur zuordnen: Reihenfolge,
                                  Hauptbild, entfernen, Bilder des Shops oder per
-                                 öffentlicher Adresse — kein Hochladen)
+                                 öffentlicher Adresse — kein Hochladen), seit
+                                 10d mit Pflicht-Zubehör am Hauptartikel
   artikel_vorschau(shop, änderungen, andere_shops)
                                  frisch aus dem Shop lesen, prüfen, alt/neu
                                  zeigen — auf Wunsch auch für andere Shops mit
@@ -46,10 +47,12 @@ from shop_api import ShopApi
 
 FELDER = {"ek": "EK", "vk": "VK", "preis": "Verkaufspreis",
           "sku": "Artikelnummer", "name": "Artikelname",
-          "kurz": "Kurzbeschreibung", "text": "Beschreibung", "bilder": "Bilder"}
+          "kurz": "Kurzbeschreibung", "text": "Beschreibung", "bilder": "Bilder",
+          "zubehoer": "Pflicht-Zubehör"}
 PREISFELDER = ("ek", "vk", "preis")
 TEXTFELDER = ("kurz", "text")      # HTML, nur am Hauptartikel
 WOO_FELD = {"preis": "regular_price", "kurz": "short_description", "text": "description"}
+MAX_ZUBEHOER = 2                  # Plugin: Plätze A und B, mehr löscht der Produkt-Editor
 MAX_BILDER = 20                   # je Artikel; Varianten haben genau 0 oder 1
 _BILD_ADRESSE = re.compile(r"^https://[^\s]+\.(?:jpe?g|png|webp|gif)(?:\?[^\s]*)?$", re.I)
 UEBERTRAGBAR = PREISFELDER        # in andere Shops mit derselben Artikelnummer
@@ -58,8 +61,8 @@ SPRUNG_WARNUNG = 50               # Prozent Preisänderung: Tippfehler?
 BATCH = 100                       # WooCommerce nimmt höchstens 100 je Batch
 KATALOG_SEKUNDEN = 600            # so lange gilt ein gelesener Katalog für die Vorschau
 PRODUKT_FELDER = ("id,type,status,name,sku,regular_price,dimensions,short_description,"
-                  "description,images")
-VARIANTEN_FELDER = "id,status,sku,regular_price,dimensions,attributes,image"
+                  "description,images,meta_data")
+VARIANTEN_FELDER = "id,status,sku,regular_price,dimensions,attributes,image,meta_data"
 _ZAHL = re.compile(r"^\d+(?:[.,]\d{1,4})?$")
 
 
@@ -83,7 +86,12 @@ def _zeile(p: dict, eltern: dict | None = None) -> dict:
             "preis": w._zahl_oder_none(p.get("regular_price")),
             "kurz": "" if eltern else str(p.get("short_description") or ""),
             "text": "" if eltern else str(p.get("description") or ""),
-            "bilder": [int(b["id"]) for b in _bilder_roh(p, eltern) if b.get("id")]}
+            "bilder": [int(b["id"]) for b in _bilder_roh(p, eltern) if b.get("id")],
+            # Pflicht-Zubehör (Plugin „CDH Required Accessories“): gepflegt nur am
+            # Hauptartikel; bei Varianten nur, ob sie eine eigene Regel haben
+            "zubehoer": [] if eltern else [{"id": a, "menge": round(m, 4)}
+                                           for a, m in w._zubehoer_regeln(p)],
+            "zubehoer_eigen": bool(eltern) and bool(w._zubehoer_regeln(p))}
 
 
 def _bilder_roh(p: dict, eltern: dict | None) -> list[dict]:
@@ -132,6 +140,16 @@ def _wert(feld: str, roh):
         return round(float(t.replace(",", ".")), 4)
     if feld in TEXTFELDER:
         return str(roh if roh is not None else "")
+    if feld == "zubehoer":
+        regeln = []
+        for r in roh or []:
+            if not isinstance(r, dict) or isinstance(r.get("id"), bool):
+                raise ValueError
+            acc = int(str(r.get("id")).strip())
+            menge = r.get("menge")
+            menge = float(str(menge).replace(",", ".").strip()) if menge not in (None, "") else 0.0
+            regeln.append({"id": acc, "menge": round(menge, 4)})
+        return regeln
     if feld == "bilder":
         refs = []
         for r in roh if isinstance(roh, list) else ([] if roh in (None, "") else [roh]):
@@ -300,6 +318,17 @@ def _frisch(client, eintraege: dict[int, tuple[int, str]],
     return out
 
 
+def _zubehoertext(regeln, namen: dict) -> str:
+    """„keins“ oder „004/STICK Stick Logo × 1; …“."""
+    if not regeln:
+        return "keins"
+    teile = []
+    for r in regeln:
+        menge = _zahl_schreiben(r["menge"]).rstrip("0").rstrip(".").replace(".", ",")
+        teile.append(f"{namen.get(r['id']) or '#' + str(r['id'])} × {menge}")
+    return "; ".join(teile)
+
+
 def _bild_ref(r) -> dict:
     return {"id": r} if isinstance(r, int) else {"src": r}
 
@@ -321,6 +350,10 @@ def _schreiben(client, zeilen: list[dict], antworten: dict | None = None) -> tup
             d["image"] = _bild_ref(z["neu"][0]) if z["neu"] else {"id": 0}
         elif z["feld"] == "bilder":
             d["images"] = [_bild_ref(r) for r in z["neu"]]
+        elif z["feld"] == "zubehoer":
+            d.setdefault("meta_data", []).append(
+                {"key": w.ZUBEHOER_META,
+                 "value": [{"accessory_id": r["id"], "qty_per_unit": r["menge"]} for r in z["neu"]]})
         else:
             d[WOO_FELD.get(z["feld"], z["feld"])] = z["neu"]
     gruppen = defaultdict(list)
@@ -410,12 +443,23 @@ class ArtikelApi(ShopApi):
                     fehler.append(f"{bez}: {FELDER[feld]} darf nicht leer sein.")
                 elif feld == "bilder" and not self._bilder_ok(bez, z, neu, vorrat or {}, fehler):
                     pass
+                elif feld == "zubehoer" and not self._zubehoer_ok(bez, z, neu, katalog, fehler):
+                    pass
                 elif not _gleich(neu, z[feld]):
                     echt[feld] = neu
             for feld, neu in echt.items():
                 zeilen.append({"id": iid, "parent": z["parent"], "sku": z["sku"],
                                "name": z["name"], "variante": z["variante"], "bez": bez,
                                "feld": feld, "alt": z[feld], "neu": neu})
+                if feld == "zubehoer":
+                    namen = {k["id"]: _bez(k) for k in katalog}
+                    zeilen[-1]["alt_text"] = _zubehoertext(z[feld], namen)
+                    zeilen[-1]["neu_text"] = _zubehoertext(neu, namen)
+                    eigene = [k["variante"] or k["sku"] for k in katalog
+                              if k["parent"] == iid and k.get("zubehoer_eigen")]
+                    if eigene:
+                        warnungen.append(f"{bez}: Varianten mit eigener Regel ({', '.join(eigene)}) "
+                                         "— dort gilt weiter deren Regel.")
                 if feld == "bilder":
                     zeilen[-1]["alt_text"] = _bildtext(z[feld], vorrat or {})
                     zeilen[-1]["neu_text"] = _bildtext(neu, vorrat or {})
@@ -457,6 +501,39 @@ class ArtikelApi(ShopApi):
                     fehler.append(f"{vor}Artikelnummer {sku} gibt es im Shop schon "
                                   f"({_bez(andere[0])}).")
         return zeilen
+
+    @staticmethod
+    def _zubehoer_ok(bez: str, z: dict, neu: list, katalog: list[dict], fehler: list) -> bool:
+        """Die Prüfungen des Plugins nachgebaut — über die Schnittstelle greifen sie nicht."""
+        vorher = len(fehler)
+        if z["typ"] == "variation":
+            fehler.append(f"{bez}: Pflicht-Zubehör wird am Hauptartikel gepflegt.")
+            return False
+        if len(neu) > MAX_ZUBEHOER:
+            fehler.append(f"{bez}: Höchstens {MAX_ZUBEHOER} Zubehörartikel (Plätze A und B im "
+                          "Plugin) — mehr würde der Produkt-Editor beim nächsten Speichern löschen.")
+        nach_id = {k["id"]: k for k in katalog}
+        gesehen = set()
+        for r in neu:
+            acc = nach_id.get(r["id"])
+            if r["id"] in gesehen:
+                fehler.append(f"{bez}: Zubehör #{r['id']} doppelt.")
+            gesehen.add(r["id"])
+            if r["id"] == z["id"]:
+                fehler.append(f"{bez}: Ein Artikel kann nicht sein eigenes Zubehör sein.")
+            elif acc is None:
+                fehler.append(f"{bez}: Zubehör #{r['id']} gibt es im Shop nicht — bitte neu laden.")
+            elif acc["typ"] != "simple":
+                fehler.append(f"{bez}: Zubehör {_bez(acc)} muss ein einfacher Artikel sein "
+                              "(keine Varianten).")
+            elif acc["status"] != "publish":
+                fehler.append(f"{bez}: Zubehör {_bez(acc)} ist nicht veröffentlicht.")
+            elif not acc["sku"]:
+                fehler.append(f"{bez}: Zubehör {_bez(acc)} hat keine Artikelnummer — der Import "
+                              "könnte es nicht an CDH geben.")
+            if not r["menge"] > 0:
+                fehler.append(f"{bez}: Menge je Stück muss größer als 0 sein.")
+        return len(fehler) == vorher
 
     @staticmethod
     def _bilder_ok(bez: str, z: dict, neu: list, vorrat: dict, fehler: list) -> bool:
@@ -630,7 +707,7 @@ class ArtikelApi(ShopApi):
                     neu = _wert(feld, a.get("wert"))
                 except ValueError:
                     fehler.append(f"{_bez(k)}: {FELDER[feld]} „{a.get('wert')}“ ist "
-                                  f"{'ungültig' if feld == 'bilder' else 'keine Zahl'}.")
+                                  f"{'keine Zahl' if feld in PREISFELDER else 'ungültig'}.")
                     continue
                 wuensche[(iid, feld)] = neu
                 if "alt" in a:
@@ -651,6 +728,10 @@ class ArtikelApi(ShopApi):
                     fehler.append(f"{_bez(z)}: {FELDER[feld]} wurde inzwischen im Shop "
                                   f"geändert (jetzt {jetzt}). Bitte neu laden.")
             zeilen = self._pruefen(katalog, frisch, wuensche, fehler, warnungen, vorrat=vorrat)
+            if any(z["feld"] == "zubehoer" for z in zeilen) and not shop.get("pflicht_zubehoer"):
+                warnungen.append(f"Im Tool ist „Pflicht-Zubehör ergänzen“ für {shop.get('name')} "
+                                 "aus — der Import ergänzt das Zubehör erst, wenn es an ist "
+                                 "(Einstellungen → Shop).")
             shops = [{"id": shop_id, "name": shop.get("name"), "zeilen": zeilen}]
             ohne = []
             if andere_shops and zeilen:

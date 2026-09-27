@@ -6,7 +6,10 @@ Artikel eines Shops in einer Tabelle pflegen: EK, VK, Verkaufspreis,
 Artikelnummer, Artikelname. Nichts wird sofort geschrieben:
 
   artikel_laden(shop)            Artikel und Varianten lesen (nur lesend), seit
-                                 Welle 10b mit Kurzbeschreibung und Beschreibung
+                                 Welle 10b mit Kurzbeschreibung und Beschreibung,
+                                 seit 10c mit Bildern (nur zuordnen: Reihenfolge,
+                                 Hauptbild, entfernen, Bilder des Shops oder per
+                                 öffentlicher Adresse — kein Hochladen)
   artikel_vorschau(shop, änderungen, andere_shops)
                                  frisch aus dem Shop lesen, prüfen, alt/neu
                                  zeigen — auf Wunsch auch für andere Shops mit
@@ -43,17 +46,20 @@ from shop_api import ShopApi
 
 FELDER = {"ek": "EK", "vk": "VK", "preis": "Verkaufspreis",
           "sku": "Artikelnummer", "name": "Artikelname",
-          "kurz": "Kurzbeschreibung", "text": "Beschreibung"}
+          "kurz": "Kurzbeschreibung", "text": "Beschreibung", "bilder": "Bilder"}
 PREISFELDER = ("ek", "vk", "preis")
 TEXTFELDER = ("kurz", "text")      # HTML, nur am Hauptartikel
 WOO_FELD = {"preis": "regular_price", "kurz": "short_description", "text": "description"}
+MAX_BILDER = 20                   # je Artikel; Varianten haben genau 0 oder 1
+_BILD_ADRESSE = re.compile(r"^https://[^\s]+\.(?:jpe?g|png|webp|gif)(?:\?[^\s]*)?$", re.I)
 UEBERTRAGBAR = PREISFELDER        # in andere Shops mit derselben Artikelnummer
 MARGE_WARNUNG = 10                # Prozent (VK − EK) / VK
 SPRUNG_WARNUNG = 50               # Prozent Preisänderung: Tippfehler?
 BATCH = 100                       # WooCommerce nimmt höchstens 100 je Batch
 KATALOG_SEKUNDEN = 600            # so lange gilt ein gelesener Katalog für die Vorschau
-PRODUKT_FELDER = "id,type,status,name,sku,regular_price,dimensions,short_description,description"
-VARIANTEN_FELDER = "id,status,sku,regular_price,dimensions,attributes"
+PRODUKT_FELDER = ("id,type,status,name,sku,regular_price,dimensions,short_description,"
+                  "description,images")
+VARIANTEN_FELDER = "id,status,sku,regular_price,dimensions,attributes,image"
 _ZAHL = re.compile(r"^\d+(?:[.,]\d{1,4})?$")
 
 
@@ -73,7 +79,39 @@ def _zeile(p: dict, eltern: dict | None = None) -> dict:
             "vk": w._zahl_oder_none(dims.get(w.VK_FIELD)),
             "preis": w._zahl_oder_none(p.get("regular_price")),
             "kurz": "" if eltern else str(p.get("short_description") or ""),
-            "text": "" if eltern else str(p.get("description") or "")}
+            "text": "" if eltern else str(p.get("description") or ""),
+            "bilder": [int(b["id"]) for b in _bilder_roh(p, eltern) if b.get("id")]}
+
+
+def _bilder_roh(p: dict, eltern: dict | None) -> list[dict]:
+    """images (Artikel) bzw. image (Variante) aus der Antwort des Shops."""
+    if eltern is None:
+        return [b for b in p.get("images") or [] if isinstance(b, dict)]
+    b = p.get("image")
+    return [b] if isinstance(b, dict) and b.get("id") else []
+
+
+def _vorrat_merken(p: dict, eltern: dict | None, vorrat: dict | None) -> None:
+    """Bilder, die der Shop schon hat, für die Auswahl im Tool (id → src, Name)."""
+    if vorrat is None:
+        return
+    for b in _bilder_roh(p, eltern):
+        if b.get("id") and b.get("src"):
+            vorrat[int(b["id"])] = {"src": str(b["src"]),
+                                    "name": str(b.get("name") or "").strip()
+                                    or str(b["src"]).rsplit("/", 1)[-1]}
+
+
+def _bildtext(refs, vorrat: dict) -> str:
+    """„keins“ oder „3: Hauptbild a.jpg, dazu b.jpg, c.jpg“."""
+    if not refs:
+        return "keins"
+    namen = [(vorrat.get(r) or {}).get("name") or f"Bild #{r}" if isinstance(r, int)
+             else str(r).rsplit("/", 1)[-1].split("?")[0] for r in refs]
+    if len(namen) == 1:
+        return namen[0]
+    rest = ", ".join(namen[1:4]) + (f" und {len(namen) - 4} weitere" if len(namen) > 4 else "")
+    return f"{len(namen)}: Hauptbild {namen[0]}, dazu {rest}"
 
 
 def _wert(feld: str, roh):
@@ -91,6 +129,22 @@ def _wert(feld: str, roh):
         return round(float(t.replace(",", ".")), 4)
     if feld in TEXTFELDER:
         return str(roh if roh is not None else "")
+    if feld == "bilder":
+        refs = []
+        for r in roh if isinstance(roh, list) else ([] if roh in (None, "") else [roh]):
+            if isinstance(r, bool):
+                raise ValueError
+            if isinstance(r, int) or (isinstance(r, str) and r.strip().isdigit()):
+                r = int(r)
+                if r < 1:
+                    raise ValueError
+            elif isinstance(r, str) and r.strip():
+                r = r.strip()
+            else:
+                raise ValueError
+            if r not in refs:
+                refs.append(r)
+        return refs
     return str(roh if roh is not None else "").strip()
 
 
@@ -126,6 +180,8 @@ def _ausschnitt(alt: str, neu: str, rand: int = 40, hoechstens: int = 300) -> tu
 def _aenderung(z: dict, rand: int = 15) -> str:
     """Eine Änderung als kurzer Text für Verlauf und Rücknahme."""
     feld = z["feld"]
+    if "alt_text" in z:
+        return f"{FELDER[feld]} {z['alt_text']} → {z['neu_text']}"
     if feld in TEXTFELDER:
         a, n = _ausschnitt(z["alt"], z["neu"], rand, 80)
         return f"{FELDER[feld]} „{a}“ → „{n}“"
@@ -196,8 +252,9 @@ def _seiten(client, pfad: str, felder: str, **params) -> list[dict]:
         seite += 1
 
 
-def katalog_lesen(client) -> list[dict]:
-    """Alle Artikel, Varianten direkt unter ihrem Hauptartikel."""
+def katalog_lesen(client, vorrat: dict | None = None) -> list[dict]:
+    """Alle Artikel, Varianten direkt unter ihrem Hauptartikel. vorrat
+    sammelt nebenbei die Bilder des Shops."""
     produkte = _seiten(client, "/products", PRODUKT_FELDER)
     variabel = [p for p in produkte if p.get("type") == "variable"]
     with ThreadPoolExecutor(max_workers=w.ABRUF_PARALLEL) as ex:
@@ -208,11 +265,15 @@ def katalog_lesen(client) -> list[dict]:
     zeilen = []
     for p in sorted(produkte, key=lambda p: (str(p.get("name") or "").lower(), p.get("id"))):
         zeilen.append(_zeile(p))
-        zeilen += [_zeile(v, p) for v in varianten.get(p["id"], [])]
+        _vorrat_merken(p, None, vorrat)
+        for v in varianten.get(p["id"], []):
+            zeilen.append(_zeile(v, p))
+            _vorrat_merken(v, p, vorrat)
     return zeilen
 
 
-def _frisch(client, eintraege: dict[int, tuple[int, str]]) -> dict[int, dict]:
+def _frisch(client, eintraege: dict[int, tuple[int, str]],
+            vorrat: dict | None = None) -> dict[int, dict]:
     """Aktueller Stand genau dieser Artikel. eintraege: id → (parent, Name
     des Hauptartikels). Fehlt eine id im Ergebnis, gibt es sie nicht mehr."""
     out = {}
@@ -221,6 +282,7 @@ def _frisch(client, eintraege: dict[int, tuple[int, str]]) -> dict[int, dict]:
         for p in client._get("/products", {"include": ",".join(map(str, teil)),
                                            "per_page": 100, "_fields": PRODUKT_FELDER}) or []:
             out[int(p["id"])] = _zeile(p)
+            _vorrat_merken(p, None, vorrat)
     nach_parent = defaultdict(list)
     for i, (parent, name) in eintraege.items():
         if parent:
@@ -231,13 +293,18 @@ def _frisch(client, eintraege: dict[int, tuple[int, str]]) -> dict[int, dict]:
                                  {"include": ",".join(map(str, teil)), "per_page": 100,
                                   "_fields": VARIANTEN_FELDER}) or []:
                 out[int(v["id"])] = _zeile(v, {"id": parent, "name": name})
+                _vorrat_merken(v, {"id": parent}, vorrat)
     return out
 
 
-def _schreiben(client, zeilen: list[dict]) -> tuple[set, set, dict]:
+def _bild_ref(r) -> dict:
+    return {"id": r} if isinstance(r, int) else {"src": r}
+
+
+def _schreiben(client, zeilen: list[dict], antworten: dict | None = None) -> tuple[set, set, dict]:
     """Änderungen als WooCommerce-Batch. Liefert (ok, unklar, fehler):
     ok = bestätigt geschrieben, unklar = ohne Antwort (Netz), fehler = id →
-    Meldung des Shops."""
+    Meldung des Shops. antworten sammelt id → Antwort des Shops."""
     je_artikel: dict[int, dict] = {}
     for z in zeilen:
         e = je_artikel.setdefault(z["id"], {"parent": z["parent"], "daten": {"id": z["id"]}})
@@ -247,6 +314,10 @@ def _schreiben(client, zeilen: list[dict]) -> tuple[set, set, dict]:
                 _zahl_schreiben(z["neu"])
         elif z["feld"] == "preis":
             d["regular_price"] = _zahl_schreiben(z["neu"])
+        elif z["feld"] == "bilder" and z["parent"]:
+            d["image"] = _bild_ref(z["neu"][0]) if z["neu"] else {"id": 0}
+        elif z["feld"] == "bilder":
+            d["images"] = [_bild_ref(r) for r in z["neu"]]
         else:
             d[WOO_FELD.get(z["feld"], z["feld"])] = z["neu"]
     gruppen = defaultdict(list)
@@ -270,6 +341,8 @@ def _schreiben(client, zeilen: list[dict]) -> tuple[set, set, dict]:
                         (r["error"] or {}).get("message") or "abgelehnt")
                 elif rid in ids:
                     ok.add(rid)
+                    if antworten is not None:
+                        antworten[rid] = r
             unklar |= ids - ok - set(fehler)
     return ok, unklar, fehler
 
@@ -281,6 +354,7 @@ class ArtikelApi(ShopApi):
     def __init__(self, *a, **kw):
         super().__init__(*a, **kw)
         self._kataloge: dict[str, tuple[float, list[dict]]] = {}
+        self._vorraete: dict[str, dict] = {}        # Shop → Bilder id → {src, name}
         self._vorschau: dict | None = None
         self._artikel_sperre = threading.Lock()
 
@@ -298,12 +372,15 @@ class ArtikelApi(ShopApi):
     def _katalog(self, shop_id: str, client, neu: bool = False) -> list[dict]:
         zeit, zeilen = self._kataloge.get(shop_id, (0.0, None))
         if neu or zeilen is None or time.monotonic() - zeit > KATALOG_SEKUNDEN:
-            zeilen = katalog_lesen(client)
+            vorrat = {}
+            zeilen = katalog_lesen(client, vorrat)
             self._kataloge[shop_id] = (time.monotonic(), zeilen)
+            self._vorraete[shop_id] = vorrat
         return zeilen
 
     def _pruefen(self, katalog: list[dict], frisch: dict[int, dict], wuensche: dict,
-                 fehler: list, warnungen: list, vor: str = "") -> list[dict]:
+                 fehler: list, warnungen: list, vor: str = "",
+                 vorrat: dict | None = None) -> list[dict]:
         """Wünsche {(id, feld): neu} gegen den frischen Stand prüfen. Liefert
         die echten Änderungen; Fehler blockieren das Sichern, Warnungen nicht."""
         nach_id: dict[int, dict] = defaultdict(dict)
@@ -328,12 +405,19 @@ class ArtikelApi(ShopApi):
                     fehler.append(f"{bez}: Verkaufspreis wird an den Varianten gepflegt.")
                 elif feld in ("sku", "name") and not neu:
                     fehler.append(f"{bez}: {FELDER[feld]} darf nicht leer sein.")
+                elif feld == "bilder" and not self._bilder_ok(bez, z, neu, vorrat or {}, fehler):
+                    pass
                 elif not _gleich(neu, z[feld]):
                     echt[feld] = neu
             for feld, neu in echt.items():
                 zeilen.append({"id": iid, "parent": z["parent"], "sku": z["sku"],
                                "name": z["name"], "variante": z["variante"], "bez": bez,
                                "feld": feld, "alt": z[feld], "neu": neu})
+                if feld == "bilder":
+                    zeilen[-1]["alt_text"] = _bildtext(z[feld], vorrat or {})
+                    zeilen[-1]["neu_text"] = _bildtext(neu, vorrat or {})
+                    if not neu and z["typ"] != "variation":
+                        warnungen.append(f"{bez}: danach ohne Bild.")
                 alt = z[feld]
                 if feld in PREISFELDER and alt and neu and \
                         abs(neu - alt) / alt * 100 >= SPRUNG_WARNUNG:
@@ -372,10 +456,27 @@ class ArtikelApi(ShopApi):
         return zeilen
 
     @staticmethod
+    def _bilder_ok(bez: str, z: dict, neu: list, vorrat: dict, fehler: list) -> bool:
+        vorher = len(fehler)
+        if z["typ"] == "variation" and len(neu) > 1:
+            fehler.append(f"{bez}: Eine Variante hat höchstens ein Bild.")
+        if len(neu) > MAX_BILDER:
+            fehler.append(f"{bez}: Höchstens {MAX_BILDER} Bilder.")
+        for r in neu:
+            if isinstance(r, int) and r not in vorrat and r not in z["bilder"]:
+                fehler.append(f"{bez}: Bild #{r} ist im Shop nicht bekannt — bitte neu laden.")
+            elif isinstance(r, str) and not _BILD_ADRESSE.match(r):
+                fehler.append(f"{bez}: Bildadresse „{r}“ — muss mit https:// beginnen und "
+                              "auf .jpg, .png, .webp oder .gif enden.")
+        return len(fehler) == vorher
+
+    @staticmethod
     def _anzeige(zeilen: list[dict]) -> list[dict]:
         out = []
         for z in zeilen:
-            if z["feld"] in TEXTFELDER:
+            if "alt_text" in z:
+                alt, neu = z["alt_text"], z["neu_text"]
+            elif z["feld"] in TEXTFELDER:
                 alt, neu = _ausschnitt(z["alt"], z["neu"])
                 alt, neu = alt or "leer", neu or "leer"
             else:
@@ -491,7 +592,8 @@ class ArtikelApi(ShopApi):
                       and not w.fehlende_zugangsdaten(s)]
             return {"ok": True, "shop": {"id": shop_id, "name": shop.get("name")},
                     "artikel": zeilen, "andere": andere, "letzte": self._letzte_info(),
-                    "marge_warnung": MARGE_WARNUNG}
+                    "marge_warnung": MARGE_WARNUNG,
+                    "bildvorrat": self._vorraete.get(shop_id, {})}
         except _Fehler as e:
             return {"ok": False, "fehler": str(e)}
 
@@ -524,7 +626,8 @@ class ArtikelApi(ShopApi):
                 try:
                     neu = _wert(feld, a.get("wert"))
                 except ValueError:
-                    fehler.append(f"{_bez(k)}: {FELDER[feld]} „{a.get('wert')}“ ist keine Zahl.")
+                    fehler.append(f"{_bez(k)}: {FELDER[feld]} „{a.get('wert')}“ ist "
+                                  f"{'ungültig' if feld == 'bilder' else 'keine Zahl'}.")
                     continue
                 wuensche[(iid, feld)] = neu
                 if "alt" in a:
@@ -532,17 +635,19 @@ class ArtikelApi(ShopApi):
                         gezeigt[(iid, feld)] = _wert(feld, a.get("alt"))
                     except ValueError:
                         pass
+            vorrat = self._vorraete.setdefault(shop_id, {})
             try:
                 frisch = _frisch(client, {i: (k_nach_id[i]["parent"], k_nach_id[i]["name"])
-                                          for i, _ in wuensche})
+                                          for i, _ in wuensche}, vorrat)
             except Exception as e:  # noqa: BLE001
                 raise _Fehler(f"Artikel nicht abrufbar ({w.ohne_schluessel(e)}).") from None
             for (iid, feld), alt in gezeigt.items():
                 z = frisch.get(iid)
                 if z is not None and not _gleich(alt, z[feld]):
+                    jetzt = _bildtext(z[feld], vorrat) if feld == "bilder" else _text(feld, z[feld])
                     fehler.append(f"{_bez(z)}: {FELDER[feld]} wurde inzwischen im Shop "
-                                  f"geändert (jetzt {_text(feld, z[feld])}). Bitte neu laden.")
-            zeilen = self._pruefen(katalog, frisch, wuensche, fehler, warnungen)
+                                  f"geändert (jetzt {jetzt}). Bitte neu laden.")
+            zeilen = self._pruefen(katalog, frisch, wuensche, fehler, warnungen, vorrat=vorrat)
             shops = [{"id": shop_id, "name": shop.get("name"), "zeilen": zeilen}]
             ohne = []
             if andere_shops and zeilen:
@@ -599,8 +704,15 @@ class ArtikelApi(ShopApi):
                 # 3. Schreiben
                 gesichert, meldungen = 0, []
                 for s in protokoll["shops"]:
-                    ok, unklar, fehl = _schreiben(clients[s["id"]], s["zeilen"])
+                    antworten = {}
+                    ok, unklar, fehl = _schreiben(clients[s["id"]], s["zeilen"], antworten)
                     self._kataloge.pop(s["id"], None)
+                    # Bilder per Adresse bekommen im Shop erst jetzt eine id —
+                    # die Rücknahme vergleicht mit dem, was wirklich dort steht.
+                    for z in s["zeilen"]:
+                        if z["feld"] == "bilder" and z["id"] in antworten:
+                            z["neu"] = _zeile(antworten[z["id"]],
+                                              {"id": z["parent"]} if z["parent"] else None)["bilder"]
                     for iid, text in fehl.items():
                         bez = next((z["bez"] for z in s["zeilen"] if z["id"] == iid), f"#{iid}")
                         meldungen.append(f"{bez}: {text}")
@@ -651,6 +763,8 @@ class ArtikelApi(ShopApi):
                         jetzt = frisch.get(z["id"])
                         if jetzt is not None and _gleich(jetzt[z["feld"]], z["neu"]):
                             zurueck.append({**z, "alt": z["neu"], "neu": z["alt"]})
+                            if "alt_text" in z:
+                                zurueck[-1].update(alt_text=z["neu_text"], neu_text=z["alt_text"])
                         else:
                             ausgelassen.append(f"{s['name']}: {z['bez']} — {FELDER[z['feld']]} "
                                                "inzwischen anders, bleibt.")

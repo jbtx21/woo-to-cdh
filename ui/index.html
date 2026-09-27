@@ -430,6 +430,20 @@ table.art { width: 100%; border-collapse: collapse; font-size: 14px; font-featur
 .art td.tx { white-space: nowrap; font-size: 14px; }
 .art td.tx .row-sub { margin-top: 0; font-size: 12px; }
 .textdiff { font-size: 13px; line-height: 1.45; white-space: pre-wrap; word-break: break-word; margin-top: 4px; font-family: ui-monospace, Consolas, monospace; }
+.art td.bi button { display: flex; align-items: center; gap: 4px; padding: 3px; border-radius: 8px; }
+.art td.bi button.neu { background: color-mix(in srgb, var(--blue) 15%, transparent); }
+.art .mini { width: 34px; height: 34px; border-radius: 6px; object-fit: cover; display: block; background: var(--fill); }
+.bild-leer, .art .mini.bild-leer { display: grid; place-items: center; color: var(--label-3); font-size: 18px; }
+.bild-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(108px, 1fr)); gap: 12px; padding: 12px 16px 14px; }
+.bild { position: relative; display: block; width: 100%; aspect-ratio: 1; border-radius: 10px; overflow: hidden; background: var(--fill); }
+.bild img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.bild .bild-leer { width: 100%; height: 100%; }
+.bild .haupt { position: absolute; left: 6px; top: 6px; background: var(--blue); color: #fff; font-size: 11px; font-weight: 600; padding: 2px 7px; border-radius: 6px; }
+.bild .knoepfe { position: absolute; left: 0; right: 0; bottom: 0; display: flex; background: rgba(0,0,0,.55); }
+.bild .knoepfe button { flex: 1; color: #fff; padding: 5px 0; text-align: center; font-size: 13px; }
+.bild .knoepfe button:disabled { opacity: .35; cursor: default; }
+.bild-wahl:hover { outline: 2px solid var(--blue); outline-offset: -2px; }
+.bild-name { font-size: 11px; color: var(--label-2); margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .textdiff.alt { color: var(--label-2); text-decoration: line-through; text-decoration-color: var(--label-3); }
 
 /* ----------------------------------------------------------- Mobil ---- */
@@ -1391,7 +1405,7 @@ function closeOverlay() {
   if (overlay?.busy) return;                 // Assistent/Zugang wartet auf Python
   const war = overlay?.kind;
   overlay = null; $("#overlay").innerHTML = "";
-  if (war === "art-text") renderArtikel();   // Markierung „geändert“ in der Tabelle
+  if (war === "art-text" || war === "art-bilder") renderArtikel();   // Markierung „geändert“ in der Tabelle
 }
 
 function sheetDone() {
@@ -1475,7 +1489,7 @@ async function pwSubmit() {
 function adminEnd() {
   adminUntil = 0; unlocked = {};
   api().admin_abmelden();
-  if (overlay && ["wizard", "access", "staffel", "art-aktion", "art-vorschau", "art-undo", "art-text", "art-ersetzen"].includes(overlay.kind)) closeOverlay();
+  if (overlay && ["wizard", "access", "staffel", "art-aktion", "art-vorschau", "art-undo", "art-text", "art-ersetzen", "art-bilder"].includes(overlay.kind)) closeOverlay();
   render(); hud("Admin-Modus beendet");
 }
 
@@ -1755,11 +1769,11 @@ async function accessSave() {
 // Tabelle je Shop. Änderungen bleiben hier als Entwurf, bis Python sie in der
 // Vorschau frisch gegen den Shop geprüft hat (artikel_api.py). Hier wird
 // nichts entschieden, nur angezeigt und gerechnet.
-let art = { shopId: null, laden: false, fehler: "", liste: [], andere: [], letzte: null, marge: 10,
+let art = { shopId: null, laden: false, fehler: "", liste: [], andere: [], letzte: null, marge: 10, bilder: {},
   entwurf: {}, auswahl: new Set(), suche: "", filter: "alle" };
 const ART_ZAHLEN = ["preis", "vk", "ek"];
-const ART_NAMEN = { preis: "Verkaufspreis", vk: "VK", ek: "EK", sku: "Artikelnummer", name: "Artikelname", kurz: "Kurzbeschreibung", text: "Beschreibung" };
-const ART_FILTER = [["alle", "Alle"], ["ek", "EK fehlt"], ["vk", "VK fehlt"], ["ekvk", "EK > VK"], ["marge", "Marge niedrig"], ["text", "Text fehlt"], ["neu", "Geändert"]];
+const ART_NAMEN = { preis: "Verkaufspreis", vk: "VK", ek: "EK", sku: "Artikelnummer", name: "Artikelname", kurz: "Kurzbeschreibung", text: "Beschreibung", bilder: "Bilder" };
+const ART_FILTER = [["alle", "Alle"], ["ek", "EK fehlt"], ["vk", "VK fehlt"], ["ekvk", "EK > VK"], ["marge", "Marge niedrig"], ["text", "Text fehlt"], ["bild", "Ohne Bild"], ["neu", "Geändert"]];
 const ART_TEXTE = ["kurz", "text"];
 
 const artAnzahl = () => Object.keys(art.entwurf).length;
@@ -1784,6 +1798,7 @@ function setEntwurf(z, f, text) {
   const k = `${z.id}:${f}`;
   const gleich = ART_ZAHLEN.includes(f)
     ? (() => { const a = zahlLesen(text), b = z[f]; return (a == null && b == null) || (a != null && b != null && Math.abs(a - b) < 0.00005); })()
+    : f === "bilder" ? JSON.stringify(text) === JSON.stringify(z[f] || [])
     : ART_TEXTE.includes(f) ? String(text) === String(z[f] ?? "")
     : String(text).trim() === String(z[f] ?? "");
   if (gleich) delete art.entwurf[k]; else art.entwurf[k] = text;
@@ -1801,6 +1816,7 @@ function artPasst(z) {
   if (f === "vk") return z.typ !== "variable" && artZahl(z, "vk") == null;
   if (f === "ekvk") { const m = artMarge(z); return m != null && m < 0; }
   if (f === "marge") { const m = artMarge(z); return m != null && m < art.marge; }
+  if (f === "bild") return !z.parent && !artWert(z, "bilder").length;
   if (f === "text") return !z.parent && ART_TEXTE.some((t) => !String(artWert(z, t)).trim());
   if (f === "neu") return Object.keys(art.entwurf).some((k) => k.startsWith(`${z.id}:`));
   return true;
@@ -1838,6 +1854,7 @@ async function artOeffnen(shopId, suche = null) {
   art.laden = false;
   if (!erg.ok) { art.fehler = erg.fehler; renderArtikel(); return; }
   art.liste = erg.artikel; art.andere = erg.andere; art.letzte = erg.letzte; art.marge = erg.marge_warnung;
+  art.bilder = erg.bildvorrat || {};
   // Entwurf behalten, soweit er noch vom Shop abweicht
   for (const k of Object.keys(art.entwurf)) {
     const [id, f] = k.split(":"); const z = artById(+id);
@@ -1885,6 +1902,7 @@ function artZeile(z) {
     <td class="c"><button data-a="art-sel" data-id="${z.id}" role="checkbox" aria-checked="${on}" aria-label="Auswählen"><span class="selc">${I.tick}</span></button></td>
     <td class="sku">${feld("sku", "")}</td>
     <td class="name">${name}</td>
+    ${artBildZelle(z)}
     ${z.parent ? `<td></td>` : artTextZelle(z)}
     ${zahl("preis")}${zahl("vk")}${zahl("ek")}
     <td class="m" data-marge="${z.id}">${artMargeText(z)}</td>
@@ -1932,9 +1950,9 @@ function renderArtikel() {
       <div class="art-wrap"><table class="art">
         <thead><tr>
           <th class="c" style="padding-left:12px"><button data-a="art-alle" role="checkbox" aria-checked="${!!alleAn}" aria-label="Alle sichtbaren auswählen" style="display:grid;place-items:center;width:28px"><span class="selc">${I.tick}</span></button></th>
-          <th>Artikelnummer</th><th>Artikel</th><th>Texte</th><th class="r">Verkaufspreis</th><th class="r">VK</th><th class="r">EK</th><th class="r">Marge</th>
+          <th>Artikelnummer</th><th>Artikel</th><th>Bild</th><th>Texte</th><th class="r">Verkaufspreis</th><th class="r">VK</th><th class="r">EK</th><th class="r">Marge</th>
         </tr></thead>
-        <tbody>${zeilen.map(artZeile).join("") || `<tr><td colspan="8" style="padding:16px;color:var(--label-2)">Keine Treffer.</td></tr>`}</tbody>
+        <tbody>${zeilen.map(artZeile).join("") || `<tr><td colspan="9" style="padding:16px;color:var(--label-2)">Keine Treffer.</td></tr>`}</tbody>
       </table></div>
       <div class="group-foot">${plural(art.liste.filter((z) => z.typ !== "variable").length, "Artikel", "Artikel")} und Varianten${zeilen.length !== art.liste.length ? `, ${zeilen.length} Zeilen sichtbar` : ""}. Verkaufspreis ist der Preis im Shop, VK und EK gehen an CDH. Enter springt eine Zeile weiter.</div>`;
   }
@@ -2162,6 +2180,87 @@ function artErsetzenAnwenden() {
   hud(`${plural(stellen, "Stelle", "Stellen")} in ${plural(artikel, "Artikel", "Artikeln")} ersetzt`);
 }
 
+// --- Bilder (Welle 10c): nur zuordnen. Reihenfolge, Hauptbild (das erste),
+// entfernen, Bilder, die der Shop schon hat, oder per öffentlicher Adresse.
+// Hochladen vom Rechner gibt es bewusst nicht (Entscheidung 27.09.2026).
+const bildSrc = (r) => (typeof r === "number" ? art.bilder[r]?.src || "" : r);
+const bildName = (r) => (typeof r === "number" ? art.bilder[r]?.name || `Bild #${r}` : String(r).split("/").pop().split("?")[0]);
+const bildImg = (r, cls = "") => (bildSrc(r) ? `<img class="${cls}" src="${esc(bildSrc(r))}" alt="${esc(bildName(r))}" loading="lazy">` : `<span class="${cls} bild-leer">?</span>`);
+
+function artBildZelle(z) {
+  const b = artWert(z, "bilder");
+  const neu = `${z.id}:bilder` in art.entwurf;
+  const inhalt = b.length ? `${bildImg(b[0], "mini")}${b.length > 1 ? `<span class="tag">${b.length}</span>` : ""}`
+    : `<span class="mini bild-leer">${z.parent ? "–" : "+"}</span>`;
+  return `<td class="bi"><button data-a="art-bilder" data-id="${z.id}" class="${neu ? "neu" : ""}" aria-label="Bilder ${esc(z.name)}">${inhalt}</button></td>`;
+}
+
+function openArtBilder(id) {
+  overlay = { kind: "art-bilder", id, such: "" };
+  drawArtBilder();
+}
+
+function artBilderSetzen(neu) {
+  const z = artById(overlay.id);
+  setEntwurf(z, "bilder", neu);
+  drawArtBilder(); renderTabbar(); meldeUngesichert();
+}
+
+function drawArtBilder() {
+  const o = overlay, z = artById(o.id), variante = !!z.parent;
+  const jetzt = artWert(z, "bilder");
+  const geaendert = `${z.id}:bilder` in art.entwurf;
+  const kachel = (r, i) => `<div><div class="bild">${bildImg(r)}
+      ${!variante && i === 0 ? `<span class="haupt">Hauptbild</span>` : ""}
+      <div class="knoepfe">
+        ${variante ? "" : `<button data-a="art-bild-links" data-i="${i}" ${i ? "" : "disabled"} aria-label="Nach vorn">◀</button>
+        <button data-a="art-bild-haupt" data-i="${i}" ${i ? "" : "disabled"} aria-label="Als Hauptbild">★</button>
+        <button data-a="art-bild-rechts" data-i="${i}" ${i < jetzt.length - 1 ? "" : "disabled"} aria-label="Nach hinten">▶</button>`}
+        <button data-a="art-bild-weg" data-i="${i}" aria-label="Entfernen">✕</button>
+      </div></div><div class="bild-name">${esc(bildName(r))}</div></div>`;
+  // Auswahl: bei Varianten zuerst die Bilder des Hauptartikels
+  const eltern = variante ? artWert(artById(z.parent), "bilder").filter((r) => typeof r === "number") : [];
+  const q = o.such.trim().toLowerCase();
+  const alle = Object.keys(art.bilder).map(Number)
+    .filter((r) => !jetzt.includes(r) && (!q || bildName(r).toLowerCase().includes(q)))
+    .sort((a, b) => (eltern.includes(b) - eltern.includes(a)) || bildName(a).localeCompare(bildName(b), "de"));
+  const zeigen = alle.slice(0, 60);
+  const wahl = (r) => `<div><button class="bild bild-wahl" data-a="art-bild-dazu" data-r="${r}" aria-label="${esc(bildName(r))} hinzufügen">${bildImg(r)}</button><div class="bild-name">${esc(bildName(r))}</div></div>`;
+  zeigeBlatt(sheetShell(`Bilder · ${_bezJs(z)}`,
+    `<button class="navlink" data-a="art-bilder-reset" ${geaendert ? "" : "disabled"}>Zurücksetzen</button>`,
+    `<button class="navlink bold" data-a="close">Fertig</button>`, `
+    <div class="group"><div class="group-head">${variante ? "Bild der Variante" : "Am Artikel"}</div><div class="card">
+      ${jetzt.length ? `<div class="bild-grid">${jetzt.map(kachel).join("")}</div>`
+        : `<div class="row"><span class="row-body"><span class="row-main"><span class="row-title" style="color:var(--label-2)">${variante ? "Kein eigenes Bild — im Shop erscheint das Bild des Hauptartikels." : "Kein Bild"}</span></span></span></div>`}
+    </div>${variante ? "" : `<div class="group-foot">Das erste Bild ist das Hauptbild im Shop, die weiteren bilden die Galerie.</div>`}</div>
+    <div class="group"><div class="group-head">${variante ? "Bild wählen" : "Hinzufügen"} — Bilder aus diesem Shop</div><div class="card">
+      <div style="padding:12px 16px 0"><input class="art-suche" id="art-bild-such" type="search" placeholder="Bildname suchen" value="${esc(o.such)}" style="width:100%" autocomplete="off"></div>
+      ${zeigen.length ? `<div class="bild-grid">${zeigen.map(wahl).join("")}</div>` : `<div class="group-foot" style="margin:12px 16px">Keine weiteren Bilder${q ? " zu dieser Suche" : ""}.</div>`}
+    </div>${alle.length > zeigen.length ? `<div class="group-foot">${alle.length - zeigen.length} weitere — Suche eingrenzen.</div>` : ""}</div>
+    <div class="group"><div class="group-head">Per Adresse</div><div class="card">
+      <div class="form-row"><span class="row-body"><label for="art-bild-url">Bildadresse</label>
+        <input id="art-bild-url" placeholder="https://…/bild.jpg" autocomplete="off" spellcheck="false">
+        <button class="navlink" data-a="art-bild-url" style="font-size:15px;padding-right:4px">Hinzufügen</button></span></div>
+    </div><div class="group-foot">Öffentlich erreichbares Bild (.jpg, .png, .webp, .gif). Der Shop holt es beim Sichern in seine Mediathek.</div></div>`, true));
+}
+
+const _bezJs = (z) => [z.sku, z.name].filter(Boolean).join(" ") + (z.variante ? ` (${z.variante})` : "");
+
+function artBildAktion(a, el) {
+  const z = artById(overlay.id), b = [...artWert(z, "bilder")], i = +el.dataset.i;
+  if (a === "art-bild-links") [b[i - 1], b[i]] = [b[i], b[i - 1]];
+  if (a === "art-bild-rechts") [b[i + 1], b[i]] = [b[i], b[i + 1]];
+  if (a === "art-bild-haupt") b.unshift(...b.splice(i, 1));
+  if (a === "art-bild-weg") b.splice(i, 1);
+  if (a === "art-bild-dazu") { const r = +el.dataset.r; if (z.parent) b.splice(0, b.length, r); else b.push(r); }
+  if (a === "art-bild-url") {
+    const u = $("#art-bild-url").value.trim();
+    if (!/^https:\/\/\S+\.(jpe?g|png|webp|gif)(\?\S*)?$/i.test(u)) { hud("Adresse mit https:// und .jpg, .png, .webp oder .gif"); return; }
+    if (z.parent) b.splice(0, b.length, u); else if (!b.includes(u)) b.push(u);
+  }
+  artBilderSetzen(b);
+}
+
 // --- Vorschau und Sichern
 async function artVorschau(andere) {
   const liste = Object.entries(art.entwurf).map(([k, wert]) => {
@@ -2326,6 +2425,10 @@ document.addEventListener("click", (e) => {
       drawArtText(); renderTabbar(); meldeUngesichert(); break;
     }
     case "art-ersetzen": openArtErsetzen(); break;
+    case "art-bilder": openArtBilder(+el.dataset.id); break;
+    case "art-bild-links": case "art-bild-rechts": case "art-bild-haupt": case "art-bild-weg":
+    case "art-bild-dazu": case "art-bild-url": artBildAktion(a, el); break;
+    case "art-bilder-reset": delete art.entwurf[`${overlay.id}:bilder`]; drawArtBilder(); renderTabbar(); meldeUngesichert(); break;
     case "art-ae-feld": {
       artErsetzenErfassen(); const f = overlay.felder, v = el.dataset.v;
       f.has(v) ? f.delete(v) : f.add(v); drawArtErsetzen(); break;
@@ -2417,6 +2520,10 @@ document.addEventListener("change", (e) => {
 document.addEventListener("input", (e) => {
   if (e.target.dataset?.af) { artNachEingabe(e.target); return; }
   if (e.target.id === "art-ta") { artTextEingabe(e.target); return; }
+  if (e.target.id === "art-bild-such") {
+    overlay.such = e.target.value; const pos = e.target.selectionStart;
+    drawArtBilder(); const f = $("#art-bild-such"); f.focus(); f.setSelectionRange(pos, pos); return;
+  }
   if (e.target.id === "ae-such" || e.target.id === "ae-ers") { artErsetzenErfassen(); artErsetzenInfo(); return; }
   if (e.target.id === "art-suche") {
     art.suche = e.target.value; const pos = e.target.selectionStart;

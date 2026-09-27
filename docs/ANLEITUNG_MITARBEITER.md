@@ -101,6 +101,16 @@ eine Vorschau, wie er ungefähr im Shop aussieht. Ein Wort in vielen Artikeln
 tauschen: unten **Suchen & Ersetzen**. Auch das geht erst mit der Vorschau in
 den Shop.
 
+**Bilder:** In der Spalte **Bild** öffnet sich das Bilderfenster.
+- Mit ★ wird ein Bild zum Hauptbild, mit ◀ ▶ änderst du die Reihenfolge,
+  mit ✕ entfernst du es.
+- Darunter stehen alle Bilder, die der Shop schon hat. Ein Klick fügt das
+  Bild hinzu.
+- Oder die Adresse eines Bilds im Internet eintragen.
+- Bei einer Variante wählst du ein Bild aus, meist eines vom Hauptartikel.
+- Neue Bilder vom eigenen Rechner lädst du weiter im Shop hoch. Danach
+  stehen sie hier zur Auswahl.
+
 **VK und EK** gehen an CDH, der **Verkaufspreis** ist der Preis im Shop.
 
 ## 7. Wenn etwas nicht geht

@@ -161,7 +161,8 @@ def umgebung(tmp_path, monkeypatch, orders):
 class ArtikelWoo(FakeWoo):
     """Artikel und Varianten je Shop-URL, Batch-Schreiben wie WooCommerce.
 
-    katalog[url] = {"produkte": {id: produkt}, "varianten": {parent: {id: variante}}}
+    katalog[url] = {"produkte": {id: produkt}, "varianten": {parent: {id: variante}},
+                    "medien": {id: bild}}   # Mediathek, für images/image per id
     abgelehnt: ids, die der Shop im Batch mit Fehler beantwortet."""
 
     katalog: dict = {}
@@ -170,6 +171,16 @@ class ArtikelWoo(FakeWoo):
 
     def _shop(self):
         return ArtikelWoo.katalog[self.base.replace("/wp-json/wc/v3", "/")]
+
+    def _bild(self, ref):
+        """Wie WooCommerce: id → vorhandenes Bild, src → neu in die Mediathek."""
+        medien = self._shop().setdefault("medien", {})
+        if ref.get("id"):
+            return copy.deepcopy(medien[ref["id"]])
+        neu = {"id": 9000 + len(medien), "src": ref["src"],
+               "name": ref["src"].rsplit("/", 1)[-1].rsplit(".", 1)[0]}
+        medien[neu["id"]] = neu
+        return copy.deepcopy(neu)
 
     @staticmethod
     def _auswahl(eintraege, params):
@@ -205,6 +216,10 @@ class ArtikelWoo(FakeWoo):
             for k, v in d.items():
                 if k == "dimensions":
                     e.setdefault("dimensions", {}).update(v)
+                elif k == "images":
+                    e["images"] = [self._bild(b) for b in v]
+                elif k == "image":
+                    e["image"] = self._bild(v) if v.get("id") or v.get("src") else None
                 elif k != "id":
                     e[k] = v
             antwort.append(copy.deepcopy(e))

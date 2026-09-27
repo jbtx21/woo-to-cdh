@@ -384,6 +384,17 @@ Etappen:
   Hauptbild, entfernen, vorhandene Mediathek-Bilder oder Bilder per
   öffentlich erreichbarer Adresse zuweisen, alles über die
   WooCommerce-Schnittstelle. Kein Hochladen vom Rechner.
+  **Umgesetzt 27.09.2026:**
+  - Bildvorrat: alle Bilder, die an Artikeln oder Varianten des Shops
+    hängen. Die Mediathek selbst wäre nur über die WordPress-Schnittstelle
+    lesbar.
+  - Feld `bilder` = Liste aus ids und Adressen; Artikel → `images`,
+    Variante → `image` (`{"id": 0}` = kein eigenes Bild).
+  - Nach dem Sichern steht in der Rücknahme-Datei die id, die der Shop
+    vergeben hat.
+  - Nicht in andere Shops übertragen.
+  - **Am echten Shop prüfen:** Übernimmt der Batch `image: {"id": 0}`
+    wirklich als „kein Bild" an der Variante?
 - **10d Zubehörartikel (nur am Hauptartikel, entschieden 27.09.2026):** Plugin „CDH Required Accessories" 2.4.0 (liegt
   vor, nicht im Repo). Speichert am Produkt das Meta-Feld
   `_cdh_required_accessories` = Liste `{accessory_id, qty_per_unit}`; im

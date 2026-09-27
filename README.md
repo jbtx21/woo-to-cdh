@@ -688,6 +688,25 @@ nicht geschlossene Tags ergeben einen Hinweis. Die Vorschau zeigt bei langen
 Texten nur die geänderte Stelle; die Rücknahme-Datei enthält den ganzen
 Text. Texte nur am Hauptartikel, nicht in andere Shops übertragen.
 
+**Bilder (Welle 10c), nur zuordnen:** Spalte „Bild" zeigt das Hauptbild und
+die Anzahl.
+- Im Bilderfenster: Reihenfolge ändern, als Hauptbild setzen (das erste
+  Bild), entfernen.
+- Hinzufügen aus den Bildern, die der Shop schon an anderen Artikeln
+  verwendet (mit Suche), oder per öffentlicher Adresse (`https://…` mit
+  .jpg/.png/.webp/.gif). Diese holt WooCommerce beim Sichern selbst in die
+  Mediathek.
+- Varianten haben höchstens ein Bild; zur Auswahl stehen die Bilder des
+  Hauptartikels zuerst. Ohne eigenes Bild zeigt der Shop das des
+  Hauptartikels.
+- Kein Hochladen vom Rechner (Entscheidung 27.09.2026), daher keine
+  WordPress-Anwendungspasswörter nötig.
+- Prüfungen: unbekannte Bild-id, ungültige Adresse, mehr als 20 Bilder,
+  Variante mit mehr als einem Bild; Hinweis bei Artikel ohne Bild.
+- Die Rücknahme merkt sich die ids, die der Shop den neuen Bildern gegeben
+  hat. Filter „Ohne Bild". Nicht in andere Shops übertragen (Bild-ids sind
+  je Shop verschieden).
+
 ### Zusätzliche Meta-Spalten
 
 Über `extra_excel_meta` lassen sich pro Shop weitere Meta-Felder anhängen.

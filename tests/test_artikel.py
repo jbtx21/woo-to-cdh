@@ -130,7 +130,7 @@ def test_laden_varianten_unter_dem_artikel(api):
     m = erg["artikel"][3]
     assert m == {"id": 11, "parent": 10, "typ": "variation", "status": "publish",
                  "sku": "042/POLO-M", "name": "Poloshirt", "variante": "M",
-                 "ek": 12.1, "vk": 24.9, "preis": 29.9, "kurz": "", "text": ""}
+                 "ek": 12.1, "vk": 24.9, "preis": 29.9, "kurz": "", "text": "", "bilder": []}
     assert erg["artikel"][0]["ek"] is None and erg["letzte"] is None
     assert ArtikelWoo.posts == []
 
@@ -430,3 +430,98 @@ def test_texte_leerzeichen_bleiben(api):
     erg = _aendern(api, (20, "kurz", "  Text mit Einzug\n"))
     api.artikel_sichern(erg["vorschau_id"])
     assert _shop(CAF)["produkte"][20]["short_description"] == "  Text mit Einzug\n"
+
+
+# --- Bilder (Welle 10c) --------------------------------------------------------
+
+def _bild(bid, name):
+    return {"id": bid, "src": f"https://shop.example/wp-content/uploads/{name}.jpg", "name": name}
+
+
+@pytest.fixture
+def mit_bildern(api):
+    medien = {501: _bild(501, "cap-vorne"), 502: _bild(502, "cap-hinten"),
+              503: _bild(503, "polo-rot"), 504: _bild(504, "polo-blau")}
+    k = _shop(CAF)
+    k["medien"] = medien
+    k["produkte"][20]["images"] = [medien[501], medien[502]]
+    k["produkte"][10]["images"] = [medien[503], medien[504]]
+    k["varianten"][10][11]["image"] = medien[503]
+    k["varianten"][10][12]["image"] = None
+    return api
+
+
+def test_bilder_laden_mit_vorrat(mit_bildern):
+    erg = mit_bildern.artikel_laden("caf")
+    z = {r["id"]: r for r in erg["artikel"]}
+    assert z[20]["bilder"] == [501, 502] and z[11]["bilder"] == [503] and z[12]["bilder"] == []
+    assert erg["bildvorrat"][503] == {"src": "https://shop.example/wp-content/uploads/polo-rot.jpg",
+                                      "name": "polo-rot"}
+    assert set(erg["bildvorrat"]) == {501, 502, 503, 504}
+
+
+def test_bilder_reihenfolge_hauptbild_entfernen(mit_bildern):
+    api = mit_bildern
+    api.artikel_laden("caf")
+    erg = _aendern(api, (20, "bilder", [502, 501, 504]), (12, "bilder", [504]), (11, "bilder", []))
+    assert erg["fehler"] == [] and erg["vorschau_id"]
+    zeilen = {z["id"]: z for z in erg["shops"][0]["zeilen"]}
+    assert zeilen[20]["alt"] == "2: Hauptbild cap-vorne, dazu cap-hinten"
+    assert zeilen[20]["neu"] == "3: Hauptbild cap-hinten, dazu cap-vorne, polo-blau"
+    assert zeilen[11]["neu"] == "keins" and zeilen[12]["neu"] == "polo-blau"
+    assert erg["warnungen"] == []                      # Variante ohne eigenes Bild ist normal
+    s = api.artikel_sichern(erg["vorschau_id"])
+    assert s["gesichert"] == 3
+    posts = dict(ArtikelWoo.posts)
+    assert posts["/products/batch"] == {"update": [{"id": 20, "images": [{"id": 502}, {"id": 501}, {"id": 504}]}]}
+    assert sorted(posts["/products/10/variations/batch"]["update"], key=lambda d: d["id"]) == [
+        {"id": 11, "image": {"id": 0}}, {"id": 12, "image": {"id": 504}}]
+    assert [b["id"] for b in _shop(CAF)["produkte"][20]["images"]] == [502, 501, 504]
+    assert "Bilder 2: Hauptbild cap-vorne, dazu cap-hinten → 3: Hauptbild cap-hinten" in \
+        api._p_verlauf.read_text(encoding="utf-8")
+
+
+def test_bild_per_adresse_und_ruecknahme(mit_bildern):
+    api = mit_bildern
+    api.artikel_laden("caf")
+    url = "https://cdn.example/bilder/cap-seite.webp?v=2"
+    erg = _aendern(api, (20, "bilder", [501, url]))
+    assert erg["fehler"] == [] and erg["shops"][0]["zeilen"][0]["neu"] == \
+        "2: Hauptbild cap-vorne, dazu cap-seite.webp"
+    api.artikel_sichern(erg["vorschau_id"])
+    neu_id = _shop(CAF)["produkte"][20]["images"][1]["id"]
+    assert neu_id >= 9000
+    datei = json.loads(next(api._p_artikel.glob("sammel_*.json")).read_text(encoding="utf-8"))
+    assert datei["shops"][0]["zeilen"][0]["neu"] == [501, neu_id]    # id statt Adresse
+    z = api.artikel_zuruecknehmen(api._letzte_info()["datei"], True)
+    assert z["zurueck"] == 1 and z["ausgelassen"] == []
+    assert [b["id"] for b in _shop(CAF)["produkte"][20]["images"]] == [501, 502]
+    assert "Bilder 2: Hauptbild cap-vorne, dazu cap-seite.webp → 2: Hauptbild cap-vorne, dazu cap-hinten" \
+        in api._p_verlauf.read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("aenderung, text", [
+    ((12, "bilder", [503, 504]), "Eine Variante hat höchstens ein Bild"),
+    ((20, "bilder", [777]), "Bild #777 ist im Shop nicht bekannt"),
+    ((20, "bilder", ["http://x.example/a.jpg"]), "muss mit https:// beginnen"),
+    ((20, "bilder", ["https://x.example/datei.pdf"]), "auf .jpg, .png, .webp oder .gif enden"),
+    ((20, "bilder", [True]), "Bilder „[True]“ ist ungültig"),
+    ((20, "bilder", list(range(501, 505)) + [f"https://x.example/{i}.jpg" for i in range(17)]),
+     "Höchstens 20 Bilder"),
+])
+def test_bilder_fehler(mit_bildern, aenderung, text):
+    mit_bildern.artikel_laden("caf")
+    erg = _aendern(mit_bildern, aenderung)
+    assert erg["vorschau_id"] is None and any(text in f for f in erg["fehler"]), erg["fehler"]
+
+
+def test_bilder_warnung_ohne_bild(mit_bildern):
+    mit_bildern.artikel_laden("caf")
+    erg = _aendern(mit_bildern, (20, "bilder", []))
+    assert erg["vorschau_id"] and erg["warnungen"] == ["042/CAP Cap: danach ohne Bild."]
+
+
+def test_bilder_nicht_in_andere_shops(mit_bildern):
+    mit_bildern.artikel_laden("caf")
+    erg = _aendern(mit_bildern, (20, "bilder", [502]), andere=True)
+    assert [s["name"] for s in erg["shops"]] == ["CAF-Shop"]

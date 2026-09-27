@@ -14,6 +14,7 @@ import glob
 import json
 import os
 import threading
+import urllib.parse
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -711,12 +712,19 @@ def _artikelshop():
         return {"id": vid, "status": "publish", "sku": sku, "regular_price": preis,
                 "attributes": [{"name": "Größe", "option": gr}],
                 "dimensions": {"length": ek, "width": vk, "height": ""}}
+    medien = {i: {"id": i, "name": n, "src": "data:image/svg+xml," + urllib.parse.quote(
+        f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10" fill="{f}"/></svg>')}
+        for i, n, f in ((501, "cap-vorne", "#c33"), (502, "cap-hinten", "#933"),
+                        (503, "polo-rot", "#e44"), (504, "polo-blau", "#44e"))}
     return {
         "https://shop.example/caf-shop/": {
-            "produkte": {10: p(10, "Poloshirt", "042/POLO", "", "", "", "variable"),
+            "medien": medien,
+            "produkte": {10: {**p(10, "Poloshirt", "042/POLO", "", "", "", "variable"),
+                              "images": [medien[503], medien[504]]},
                          20: {**p(20, "Cap", "042/CAP", "4.07", "7.65", "9.90"),
                               "short_description": "<p>Kappe mit Logo</p>",
-                              "description": '<p class="Logo">Logo vorne, Logo hinten.</p>'},
+                              "description": '<p class="Logo">Logo vorne, Logo hinten.</p>',
+                              "images": [medien[501], medien[502]]},
                          30: p(30, "Anstecker", "042/PIN", "", "2.00", "2.50")},
             "varianten": {10: {11: v(11, "042/POLO-M", "M", "12.10", "24.90", "29.90"),
                                12: v(12, "042/POLO-L", "L", "12.10", "24.90", "29.90")}}},
@@ -907,3 +915,47 @@ def test_artikel_suchen_ersetzen(artikelseite):
     assert cap["description"] == '<p class="Logo">Stick vorne, Stick hinten.</p>'
     assert cap["short_description"] == "<p>Kappe mit Stick</p>"
     assert p.fehler == []
+
+
+# --- Bilder (Welle 10c) ---------------------------------------------------------
+
+def test_artikel_bilder_zuordnen(artikelseite):
+    p = artikelseite
+    zelle = "#artikelPane [data-a=art-bilder][data-id='20']"
+    assert p.locator(f"{zelle} .tag").inner_text() == "2"
+    p.click(zelle)
+    p.wait_for_selector("text=Am Artikel")
+    namen = lambda: p.locator("#overlay .bild-grid").first.locator(".bild-name").all_inner_texts()  # noqa: E731
+    assert namen() == ["cap-vorne", "cap-hinten"]
+    p.click("#overlay [data-a=art-bild-haupt][data-i='1']")
+    assert namen() == ["cap-hinten", "cap-vorne"]
+    p.click("#overlay [data-a=art-bild-weg][data-i='1']")
+    p.click("#overlay [data-a=art-bild-dazu][data-r='504']")
+    p.fill("#art-bild-url", "https://cdn.example/cap-seite.webp")
+    p.click("#overlay [data-a=art-bild-url]")
+    assert namen() == ["cap-hinten", "polo-blau", "cap-seite.webp"]
+    p.fill("#art-bild-url", "ftp://falsch")
+    p.click("#overlay [data-a=art-bild-url]")
+    p.wait_for_selector("#hud.show:has-text('https://')")
+    p.click("#overlay .nav-r [data-a=close]")
+    assert "neu" in p.locator(zelle).get_attribute("class")
+    # Variante: Bilder des Hauptartikels zuerst, genau eins
+    p.click("#artikelPane [data-a=art-bilder][data-id='12']")
+    p.wait_for_selector("text=Bild der Variante")
+    assert p.locator("#overlay [data-a=art-bild-dazu]").first.get_attribute("data-r") in ("503", "504")
+    p.click("#overlay [data-a=art-bild-dazu][data-r='503']")
+    p.click("#overlay [data-a=art-bild-dazu][data-r='504']")
+    assert p.locator("#overlay .bild-grid").first.locator(".bild-name").all_inner_texts() == ["polo-blau"]
+    p.click("#overlay .nav-r [data-a=close]")
+    p.click("#artikelPane [data-a=art-vorschau]")
+    p.wait_for_selector("#overlay button[data-a=art-sichern]:has-text('2 sichern')")
+    text = p.locator("#overlay").inner_text()
+    assert "3: Hauptbild cap-hinten, dazu polo-blau, cap-seite.webp" in text
+    p.click("[data-a=art-sichern]")
+    p.wait_for_selector("#hud.show:has-text('2 Änderungen gesichert')")
+    k = p.katalog["https://shop.example/caf-shop/"]
+    assert [b["name"] for b in k["produkte"][20]["images"]] == ["cap-hinten", "polo-blau", "cap-seite"]
+    assert k["varianten"][10][12]["image"]["id"] == 504
+    # Nach außen ging nur die Vorschau des Bilds per Adresse (im Test gesperrt)
+    assert set(p.extern) == {"https://cdn.example/cap-seite.webp"}
+    assert set(p.fehler) <= {"Failed to load resource: net::ERR_FAILED"}

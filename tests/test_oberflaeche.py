@@ -714,7 +714,9 @@ def _artikelshop():
     return {
         "https://shop.example/caf-shop/": {
             "produkte": {10: p(10, "Poloshirt", "042/POLO", "", "", "", "variable"),
-                         20: p(20, "Cap", "042/CAP", "4.07", "7.65", "9.90"),
+                         20: {**p(20, "Cap", "042/CAP", "4.07", "7.65", "9.90"),
+                              "short_description": "<p>Kappe mit Logo</p>",
+                              "description": '<p class="Logo">Logo vorne, Logo hinten.</p>'},
                          30: p(30, "Anstecker", "042/PIN", "", "2.00", "2.50")},
             "varianten": {10: {11: v(11, "042/POLO-M", "M", "12.10", "24.90", "29.90"),
                                12: v(12, "042/POLO-L", "L", "12.10", "24.90", "29.90")}}},
@@ -823,7 +825,11 @@ def test_artikel_fehler_und_andere_shops(artikelseite):
 def test_artikel_ungesichert_beim_schliessen(artikelseite):
     p = artikelseite
     _zelle(p, 30, "ek").fill("1,20")
-    p.wait_for_function("gemeldet === 1")
+    # Die Seite meldet asynchron — auf Python warten, nicht nur auf die Seite
+    for _ in range(50):
+        if p.api._ungesichert == 1:
+            break
+        p.wait_for_timeout(50)
     assert p.api._ungesichert == 1
 
 
@@ -846,4 +852,58 @@ def test_ek_fehlt_nachtragen_oeffnet_artikel(importseite):
     p.wait_for_selector("#artikelPane tr[data-id='30']")
     assert p.locator("#art-suche").input_value() == "042/PIN"
     assert p.locator("#artikelPane tbody tr").count() == 1
+    assert p.fehler == []
+
+
+# --- Texte (Welle 10b) ----------------------------------------------------------
+
+def test_artikel_texte_mit_vorschau(artikelseite):
+    p = artikelseite
+    p.click("#artikelPane [data-a=art-text][data-id='20']")
+    p.wait_for_selector("#art-ta")
+    assert p.locator("#art-ta").input_value() == "<p>Kappe mit Logo</p>"
+    assert p.locator("#art-ta-vorschau").get_attribute("sandbox") == ""
+    p.fill("#art-ta", "<p>Kappe mit <b>Stick</b></p>")
+    p.wait_for_function("document.querySelector('#art-ta-vorschau').srcdoc.includes('<b>Stick</b>')")
+    assert "geändert" in p.locator("#art-ta-info").inner_text()
+    # Skripte laufen in der Vorschau nicht (Rahmen ohne allow-scripts)
+    p.click("[data-a=art-tf][data-v=text]")
+    p.fill("#art-ta", '<p>Hallo</p><img src="x.png" onerror="parent.__xss = 1">')
+    p.wait_for_timeout(400)
+    assert p.evaluate("window.__xss") is None
+    p.click("[data-a=art-text-reset]")
+    assert p.locator("#art-ta").input_value().startswith('<p class="Logo">')
+    p.click("#overlay .nav-r [data-a=close]")
+    assert p.locator("#artikelPane [data-a=art-text][data-id='20']").inner_text() == "Texte ●"
+    p.click("#artikelPane [data-a=art-vorschau]")
+    p.wait_for_selector("#overlay button[data-a=art-sichern]:has-text('1 sichern')")
+    assert p.locator("#overlay .textdiff.alt").inner_text() == "<p>Kappe mit Logo</p>"
+    p.click("[data-a=art-sichern]")
+    p.wait_for_selector("#hud.show:has-text('1 Änderung gesichert')")
+    assert p.katalog["https://shop.example/caf-shop/"]["produkte"][20]["short_description"] == \
+        "<p>Kappe mit <b>Stick</b></p>"
+    # Einzige Konsolenmeldung: das geblockte onerror — Beleg, dass die Sperre greift
+    assert any("sandboxed" in f and "allow-scripts" in f for f in p.fehler)
+    assert [f for f in p.fehler if "sandboxed" not in f] == []
+
+
+def test_artikel_suchen_ersetzen(artikelseite):
+    p = artikelseite
+    p.click("#artikelPane [data-a=art-ersetzen]")
+    p.fill("#ae-such", "logo")
+    p.fill("#ae-ers", "Stick")
+    p.wait_for_selector("#ae-info:has-text('3 Treffer in 1 Artikel')")   # nicht im class-Attribut
+    p.click("[data-a=art-ae-gk]")
+    p.wait_for_selector("#ae-info:has-text('0 Treffer')")
+    assert p.locator("#overlay [data-a=art-ersetzen-ok]").is_disabled()
+    p.click("[data-a=art-ae-gk]")
+    p.click("[data-a=art-ersetzen-ok]")
+    p.wait_for_selector("#hud.show:has-text('3 Stellen in 1 Artikel ersetzt')")
+    p.click("#artikelPane [data-a=art-vorschau]")
+    p.wait_for_selector("#overlay button[data-a=art-sichern]:has-text('2 sichern')")
+    p.click("[data-a=art-sichern]")
+    p.wait_for_selector("#hud.show:has-text('2 Änderungen gesichert')")
+    cap = p.katalog["https://shop.example/caf-shop/"]["produkte"][20]
+    assert cap["description"] == '<p class="Logo">Stick vorne, Stick hinten.</p>'
+    assert cap["short_description"] == "<p>Kappe mit Stick</p>"
     assert p.fehler == []

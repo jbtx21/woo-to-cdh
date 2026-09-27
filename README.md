@@ -677,6 +677,17 @@ Nichts geht sofort in den Shop:
 In der Prüfansicht des Imports führt „nachtragen" bei „EK fehlt" direkt zum
 Artikel.
 
+**Texte (Welle 10b):** Spalte „Texte" öffnet Kurzbeschreibung und
+Beschreibung (HTML) mit einer Vorschau, wie es ungefähr im Shop aussieht.
+Die Vorschau läuft in einem abgeschotteten Rahmen ohne Skripte. **Suchen &
+Ersetzen** über die ausgewählten Artikel (sonst alle) in Kurzbeschreibung,
+Beschreibung und/oder Artikelname; ersetzt wird nur im Text, nie in
+HTML-Tags. Beides landet im Entwurf und geht über dieselbe Vorschau:
+Texte mit Skript-Code (`<script>`, `javascript:`, `on…=`) werden abgelehnt,
+nicht geschlossene Tags ergeben einen Hinweis. Die Vorschau zeigt bei langen
+Texten nur die geänderte Stelle; die Rücknahme-Datei enthält den ganzen
+Text. Texte nur am Hauptartikel, nicht in andere Shops übertragen.
+
 ### Zusätzliche Meta-Spalten
 
 Über `extra_excel_meta` lassen sich pro Shop weitere Meta-Felder anhängen.

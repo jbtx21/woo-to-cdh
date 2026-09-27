@@ -368,6 +368,18 @@ Etappen:
     erben ihn (WooCommerce).
 - **10b Texte:** Kurzbeschreibung/Beschreibung in einem Seitenfenster mit
   Vorschau (HTML), dazu Suchen & Ersetzen über viele Artikel.
+  **Umgesetzt 27.09.2026:**
+  - Texte werden mit dem Katalog geladen.
+  - Das Seitenfenster zeigt Quelltext und Vorschau; die Vorschau läuft im
+    Rahmen mit `sandbox`, also ohne Skripte.
+  - Suchen & Ersetzen: in den ausgewählten oder allen Artikeln, nur
+    außerhalb von HTML-Tags.
+  - Prüfungen: Skript-Code wird abgelehnt, bei ungeschlossenen Tags gibt es
+    einen Hinweis.
+  - Vorschau und Verlauf zeigen nur die geänderte Stelle, die Rücknahme den
+    vollständigen Text.
+  - Texte gibt es nur am Hauptartikel; sie werden nicht in andere Shops
+    übertragen.
 - **10c Bilder (nur Zuordnung, entschieden 27.09.2026):** Reihenfolge,
   Hauptbild, entfernen, vorhandene Mediathek-Bilder oder Bilder per
   öffentlich erreichbarer Adresse zuweisen, alles über die

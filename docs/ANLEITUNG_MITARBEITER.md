@@ -95,6 +95,12 @@ die Preise auch in den anderen Shops mit derselben Artikelnummer. Erst mit
 Etwas falsch gesichert? Oben rechts **Zurücknehmen**. Das macht die letzte
 Sammeländerung rückgängig.
 
+**Texte:** In der Spalte **Texte** öffnen sich Kurzbeschreibung und
+Beschreibung. Oben steht der Text mit seinen Formatierungen (HTML), darunter
+eine Vorschau, wie er ungefähr im Shop aussieht. Ein Wort in vielen Artikeln
+tauschen: unten **Suchen & Ersetzen**. Auch das geht erst mit der Vorschau in
+den Shop.
+
 **VK und EK** gehen an CDH, der **Verkaufspreis** ist der Preis im Shop.
 
 ## 7. Wenn etwas nicht geht

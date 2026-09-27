@@ -5,7 +5,8 @@ TEXMA — Artikel-Sammelpflege (Welle 10a)
 Artikel eines Shops in einer Tabelle pflegen: EK, VK, Verkaufspreis,
 Artikelnummer, Artikelname. Nichts wird sofort geschrieben:
 
-  artikel_laden(shop)            Artikel und Varianten lesen (nur lesend)
+  artikel_laden(shop)            Artikel und Varianten lesen (nur lesend), seit
+                                 Welle 10b mit Kurzbeschreibung und Beschreibung
   artikel_vorschau(shop, änderungen, andere_shops)
                                  frisch aus dem Shop lesen, prüfen, alt/neu
                                  zeigen — auf Wunsch auch für andere Shops mit
@@ -24,6 +25,7 @@ Admin-Modus; die Prüfungen sitzen hier, nicht im Fenster.
 
 from __future__ import annotations
 
+import difflib
 import json
 import logging
 import re
@@ -33,20 +35,24 @@ import time
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
+from html.parser import HTMLParser
 
 import woo_to_cdh as w
 from einstellungen_api import _Fehler, _schreibe_atomar
 from shop_api import ShopApi
 
 FELDER = {"ek": "EK", "vk": "VK", "preis": "Verkaufspreis",
-          "sku": "Artikelnummer", "name": "Artikelname"}
+          "sku": "Artikelnummer", "name": "Artikelname",
+          "kurz": "Kurzbeschreibung", "text": "Beschreibung"}
 PREISFELDER = ("ek", "vk", "preis")
+TEXTFELDER = ("kurz", "text")      # HTML, nur am Hauptartikel
+WOO_FELD = {"preis": "regular_price", "kurz": "short_description", "text": "description"}
 UEBERTRAGBAR = PREISFELDER        # in andere Shops mit derselben Artikelnummer
 MARGE_WARNUNG = 10                # Prozent (VK − EK) / VK
 SPRUNG_WARNUNG = 50               # Prozent Preisänderung: Tippfehler?
 BATCH = 100                       # WooCommerce nimmt höchstens 100 je Batch
 KATALOG_SEKUNDEN = 600            # so lange gilt ein gelesener Katalog für die Vorschau
-PRODUKT_FELDER = "id,type,status,name,sku,regular_price,dimensions"
+PRODUKT_FELDER = "id,type,status,name,sku,regular_price,dimensions,short_description,description"
 VARIANTEN_FELDER = "id,status,sku,regular_price,dimensions,attributes"
 _ZAHL = re.compile(r"^\d+(?:[.,]\d{1,4})?$")
 
@@ -65,7 +71,9 @@ def _zeile(p: dict, eltern: dict | None = None) -> dict:
                                    for a in p.get("attributes") or []) if eltern else "",
             "ek": w._zahl_oder_none(dims.get(w.EK_FIELD)),
             "vk": w._zahl_oder_none(dims.get(w.VK_FIELD)),
-            "preis": w._zahl_oder_none(p.get("regular_price"))}
+            "preis": w._zahl_oder_none(p.get("regular_price")),
+            "kurz": "" if eltern else str(p.get("short_description") or ""),
+            "text": "" if eltern else str(p.get("description") or "")}
 
 
 def _wert(feld: str, roh):
@@ -81,6 +89,8 @@ def _wert(feld: str, roh):
         if not _ZAHL.match(t):
             raise ValueError
         return round(float(t.replace(",", ".")), 4)
+    if feld in TEXTFELDER:
+        return str(roh if roh is not None else "")
     return str(roh if roh is not None else "").strip()
 
 
@@ -96,6 +106,63 @@ def _text(feld: str, x) -> str:
     if feld in PREISFELDER:
         return _zahl_schreiben(x).replace(".", ",")
     return str(x)
+
+
+def _ausschnitt(alt: str, neu: str, rand: int = 40, hoechstens: int = 300) -> tuple[str, str]:
+    """Die geänderte Stelle eines langen Textes mit etwas Umfeld, alt und neu."""
+    alt, neu = alt or "", neu or ""
+    ops = [o for o in difflib.SequenceMatcher(None, alt, neu, autojunk=False).get_opcodes()
+           if o[0] != "equal"]
+    if not ops:
+        return "", ""
+    anfang = max(0, ops[0][1] - rand)       # vor der ersten Änderung sind beide gleich
+
+    def teil(t, ende):
+        ende = min(len(t), ende + rand, anfang + hoechstens)
+        return ("…" if anfang else "") + t[anfang:ende] + ("…" if ende < len(t) else "")
+    return teil(alt, ops[-1][2]), teil(neu, ops[-1][4])
+
+
+def _aenderung(z: dict, rand: int = 15) -> str:
+    """Eine Änderung als kurzer Text für Verlauf und Rücknahme."""
+    feld = z["feld"]
+    if feld in TEXTFELDER:
+        a, n = _ausschnitt(z["alt"], z["neu"], rand, 80)
+        return f"{FELDER[feld]} „{a}“ → „{n}“"
+    return f"{FELDER[feld]} {_text(feld, z['alt'])} → {_text(feld, z['neu'])}"
+
+
+class _Tags(HTMLParser):
+    LEER = {"br", "hr", "img", "input", "meta", "link", "source", "wbr", "area", "col",
+            "embed", "param", "track", "base"}
+
+    def __init__(self):
+        super().__init__()
+        self.offen, self.fehler = [], 0
+
+    def handle_starttag(self, tag, attrs):
+        if tag not in self.LEER:
+            self.offen.append(tag)
+
+    def handle_endtag(self, tag):
+        if tag in self.LEER:
+            return
+        if tag in self.offen:
+            while self.offen.pop() != tag:
+                self.fehler += 1
+        else:
+            self.fehler += 1
+
+
+def _html_maengel(t: str) -> int:
+    """Nicht geschlossene oder überzählige Tags."""
+    p = _Tags()
+    p.feed(t or "")
+    p.close()
+    return p.fehler + len(p.offen)
+
+
+_SKRIPT = re.compile(r"<\s*script|javascript:|\son\w+\s*=", re.I)
 
 
 def _zahl_schreiben(x) -> str:
@@ -181,7 +248,7 @@ def _schreiben(client, zeilen: list[dict]) -> tuple[set, set, dict]:
         elif z["feld"] == "preis":
             d["regular_price"] = _zahl_schreiben(z["neu"])
         else:
-            d[z["feld"]] = z["neu"]
+            d[WOO_FELD.get(z["feld"], z["feld"])] = z["neu"]
     gruppen = defaultdict(list)
     for e in je_artikel.values():
         pfad = f"/products/{e['parent']}/variations/batch" if e["parent"] else "/products/batch"
@@ -253,6 +320,10 @@ class ArtikelApi(ShopApi):
             for feld, neu in felder.items():
                 if feld == "name" and z["typ"] == "variation":
                     fehler.append(f"{bez}: Varianten haben keinen eigenen Namen.")
+                elif feld in TEXTFELDER and z["typ"] == "variation":
+                    fehler.append(f"{bez}: Texte werden am Hauptartikel gepflegt.")
+                elif feld in TEXTFELDER and _SKRIPT.search(neu or ""):
+                    fehler.append(f"{bez}: {FELDER[feld]} enthält Skript-Code — nicht erlaubt.")
                 elif feld == "preis" and z["typ"] == "variable":
                     fehler.append(f"{bez}: Verkaufspreis wird an den Varianten gepflegt.")
                 elif feld in ("sku", "name") and not neu:
@@ -268,6 +339,10 @@ class ArtikelApi(ShopApi):
                         abs(neu - alt) / alt * 100 >= SPRUNG_WARNUNG:
                     warnungen.append(f"{bez}: {FELDER[feld]} ändert sich um "
                                      f"{(neu - alt) / alt * 100:+.0f} % — Tippfehler?")
+            for feld in TEXTFELDER:
+                if feld in echt and _html_maengel(echt[feld]) > _html_maengel(z[feld]):
+                    warnungen.append(f"{bez}: {FELDER[feld]} — HTML-Tags nicht sauber "
+                                     "geschlossen, im Shop prüfen.")
             if "ek" in echt or "vk" in echt:
                 ek, vk = echt.get("ek", z["ek"]), echt.get("vk", z["vk"])
                 if ek is not None and vk is not None and ek > vk:
@@ -298,9 +373,17 @@ class ArtikelApi(ShopApi):
 
     @staticmethod
     def _anzeige(zeilen: list[dict]) -> list[dict]:
-        return [{"id": z["id"], "bez": z["bez"], "feld": z["feld"], "feldname": FELDER[z["feld"]],
-                 "alt": _text(z["feld"], z["alt"]), "neu": _text(z["feld"], z["neu"])}
-                for z in zeilen]
+        out = []
+        for z in zeilen:
+            if z["feld"] in TEXTFELDER:
+                alt, neu = _ausschnitt(z["alt"], z["neu"])
+                alt, neu = alt or "leer", neu or "leer"
+            else:
+                alt, neu = _text(z["feld"], z["alt"]), _text(z["feld"], z["neu"])
+            out.append({"id": z["id"], "bez": z["bez"], "feld": z["feld"],
+                        "feldname": FELDER[z["feld"]], "alt": alt, "neu": neu,
+                        "text": z["feld"] in TEXTFELDER})
+        return out
 
     def _andere_shops(self, shop_id: str, zeilen: list[dict], fehler: list,
                       warnungen: list) -> tuple[list[dict], list[str]]:
@@ -379,15 +462,13 @@ class ArtikelApi(ShopApi):
                 "anzahl": len(zeilen),
                 "shops": [{"name": s.get("name"), "anzahl": len(s.get("zeilen") or [])}
                           for s in d.get("shops") or [] if s.get("zeilen")],
-                "zeilen": [f"{s.get('name')}: {z['bez']} — {FELDER[z['feld']]} "
-                           f"{_text(z['feld'], z['alt'])} → {_text(z['feld'], z['neu'])}"
+                "zeilen": [f"{s.get('name')}: {z['bez']} — {_aenderung(z)}"
                            for s in d.get("shops") or [] for z in s.get("zeilen") or []][:60]}
 
     def _verlauf_artikel(self, shop_name: str, zeilen: list[dict], was: str) -> None:
         je = defaultdict(list)
         for z in zeilen:
-            je[z["bez"]].append(f"{FELDER[z['feld']]} {_text(z['feld'], z['alt'])} → "
-                                f"{_text(z['feld'], z['neu'])}")
+            je[z["bez"]].append(_aenderung(z))
         texte = [f"{shop_name}: {was}, {len(je)} Artikel"]
         texte += [f"{shop_name}: {bez} — {'; '.join(t)}" for bez, t in je.items()]
         self._verlauf_schreiben(texte)

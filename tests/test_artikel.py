@@ -130,7 +130,7 @@ def test_laden_varianten_unter_dem_artikel(api):
     m = erg["artikel"][3]
     assert m == {"id": 11, "parent": 10, "typ": "variation", "status": "publish",
                  "sku": "042/POLO-M", "name": "Poloshirt", "variante": "M",
-                 "ek": 12.1, "vk": 24.9, "preis": 29.9}
+                 "ek": 12.1, "vk": 24.9, "preis": 29.9, "kurz": "", "text": ""}
     assert erg["artikel"][0]["ek"] is None and erg["letzte"] is None
     assert ArtikelWoo.posts == []
 
@@ -355,3 +355,78 @@ def test_kopie_des_katalogs_bleibt_unberuehrt(api):
     vorher = copy.deepcopy(erg["artikel"])
     api.artikel_sichern(_aendern(api, (20, "vk", "8,00"))["vorschau_id"])
     assert erg["artikel"] == vorher
+
+
+# --- Texte (Welle 10b) --------------------------------------------------------
+
+LANG = "<p>Poloshirt aus Baumwolle, " + "sehr angenehm zu tragen. " * 20 + "Waschbar bei 60 Grad.</p>"
+
+
+def test_ausschnitt_zeigt_nur_die_stelle():
+    alt, neu = aa._ausschnitt(LANG, LANG.replace("60 Grad", "40 Grad"))
+    assert alt.startswith("…") and alt.endswith("Waschbar bei 60 Grad.</p>")
+    assert neu.endswith("Waschbar bei 40 Grad.</p>") and len(neu) < 60
+    assert aa._ausschnitt("abc", "abc") == ("", "")
+    assert aa._ausschnitt("", "Neu") == ("", "Neu")
+
+
+def test_html_maengel():
+    assert aa._html_maengel("<p>a<br>b <strong>c</strong></p>") == 0
+    assert aa._html_maengel("<p>a <strong>b</p>") == 1
+    assert aa._html_maengel("a</li>") == 1
+
+
+def test_texte_laden_vorschau_sichern(api):
+    _shop(CAF)["produkte"][20]["short_description"] = "<p>Kappe mit Logo</p>"
+    _shop(CAF)["produkte"][20]["description"] = LANG
+    erg = api.artikel_laden("caf")
+    cap = next(z for z in erg["artikel"] if z["id"] == 20)
+    assert cap["kurz"] == "<p>Kappe mit Logo</p>" and cap["text"] == LANG
+    neu_lang = LANG.replace("60 Grad", "40 Grad")
+    v = _aendern(api, (20, "kurz", "<p>Kappe mit Stick</p>"), (20, "text", neu_lang))
+    assert v["fehler"] == [] and v["vorschau_id"]
+    zeilen = {z["feld"]: z for z in v["shops"][0]["zeilen"]}
+    assert zeilen["kurz"]["alt"] == "<p>Kappe mit Logo</p>" and zeilen["kurz"]["text"] is True
+    assert zeilen["text"]["neu"].endswith("40 Grad.</p>") and len(zeilen["text"]["neu"]) < 80
+    s = api.artikel_sichern(v["vorschau_id"])
+    assert s["gesichert"] == 2
+    assert ArtikelWoo.posts[0][1] == {"update": [{"id": 20, "short_description": "<p>Kappe mit Stick</p>",
+                                                  "description": neu_lang}]}
+    verlauf = api._p_verlauf.read_text(encoding="utf-8")
+    assert "Beschreibung „…" in verlauf and "60 Grad.</p>“ → „…" in verlauf
+    assert "sehr angenehm zu tragen. sehr angenehm" not in verlauf        # nicht der ganze Text
+    # Rücknahme stellt den vollständigen Text wieder her
+    api.artikel_zuruecknehmen(api._letzte_info()["datei"], True)
+    assert _shop(CAF)["produkte"][20]["description"] == LANG
+
+
+@pytest.mark.parametrize("wert, text", [
+    ('<p onclick="x()">Hi</p>', "enthält Skript-Code"),
+    ("<script>alert(1)</script>", "enthält Skript-Code"),
+    ('<a href="javascript:x">a</a>', "enthält Skript-Code"),
+])
+def test_texte_ohne_skripte(api, wert, text):
+    api.artikel_laden("caf")
+    erg = _aendern(api, (20, "text", wert))
+    assert erg["vorschau_id"] is None and text in erg["fehler"][0]
+
+
+def test_texte_nur_am_hauptartikel(api):
+    api.artikel_laden("caf")
+    erg = _aendern(api, (11, "kurz", "Hallo"))
+    assert erg["fehler"] == ["042/POLO-M Poloshirt (M): Texte werden am Hauptartikel gepflegt."]
+
+
+def test_texte_warnung_bei_kaputtem_html(api):
+    _shop(CAF)["produkte"][30]["description"] = "<p>alt <b>kaputt</p>"      # schon vorher 1 Mangel
+    api.artikel_laden("caf")
+    erg = _aendern(api, (20, "text", "<p>Neu <strong>fett</p>"), (30, "text", "<p>neu <b>kaputt</p>"))
+    assert erg["vorschau_id"]
+    assert erg["warnungen"] == ["042/CAP Cap: Beschreibung — HTML-Tags nicht sauber geschlossen, im Shop prüfen."]
+
+
+def test_texte_leerzeichen_bleiben(api):
+    api.artikel_laden("caf")
+    erg = _aendern(api, (20, "kurz", "  Text mit Einzug\n"))
+    api.artikel_sichern(erg["vorschau_id"])
+    assert _shop(CAF)["produkte"][20]["short_description"] == "  Text mit Einzug\n"

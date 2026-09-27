@@ -154,3 +154,58 @@ def umgebung(tmp_path, monkeypatch, orders):
         ],
     }
     return {"cfg": cfg, "tmp": tmp_path, "cdh": cdh}
+
+
+# --- Artikel ohne Netz (Welle 10) -------------------------------------------
+
+class ArtikelWoo(FakeWoo):
+    """Artikel und Varianten je Shop-URL, Batch-Schreiben wie WooCommerce.
+
+    katalog[url] = {"produkte": {id: produkt}, "varianten": {parent: {id: variante}}}
+    abgelehnt: ids, die der Shop im Batch mit Fehler beantwortet."""
+
+    katalog: dict = {}
+    posts: list = []
+    abgelehnt: set = set()
+
+    def _shop(self):
+        return ArtikelWoo.katalog[self.base.replace("/wp-json/wc/v3", "/")]
+
+    @staticmethod
+    def _auswahl(eintraege, params):
+        params = params or {}
+        if params.get("include"):
+            ids = {int(i) for i in str(params["include"]).split(",")}
+            return [copy.deepcopy(e) for i, e in eintraege.items() if i in ids]
+        if params.get("page", 1) != 1:
+            return []
+        return [copy.deepcopy(e) for e in eintraege.values()]
+
+    def _get(self, path, params=None):
+        teile = path.strip("/").split("/")
+        if teile[0] == "products" and len(teile) == 1:
+            return self._auswahl(self._shop()["produkte"], params)
+        if teile[0] == "products" and len(teile) == 3 and teile[2] == "variations":
+            return self._auswahl(self._shop()["varianten"].get(int(teile[1]), {}), params)
+        return super()._get(path, params)
+
+    def _post(self, path, data):
+        ArtikelWoo.posts.append((path, copy.deepcopy(data)))
+        teile = path.strip("/").split("/")
+        shop = self._shop()
+        ziel = shop["produkte"] if teile[1] == "batch" else shop["varianten"][int(teile[1])]
+        antwort = []
+        for d in data.get("update", []):
+            if d["id"] in ArtikelWoo.abgelehnt:
+                antwort.append({"id": d["id"], "error": {
+                    "code": "product_invalid_sku",
+                    "message": "Ungültige oder doppelte Artikelnummer."}})
+                continue
+            e = ziel[d["id"]]
+            for k, v in d.items():
+                if k == "dimensions":
+                    e.setdefault("dimensions", {}).update(v)
+                elif k != "id":
+                    e[k] = v
+            antwort.append(copy.deepcopy(e))
+        return {"update": antwort}

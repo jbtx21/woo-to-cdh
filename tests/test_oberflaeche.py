@@ -698,3 +698,152 @@ def test_staffelpreise_pflegen(seite):
     seite.wait_for_selector(".alert-box:has-text('größer als VK')")
     assert len(StaffelWoo.puts) == 1
     assert seite.fehler == []
+
+
+# --- Artikel (Welle 10a) ------------------------------------------------------
+
+def _artikelshop():
+    def p(pid, name, sku, ek, vk, preis, typ="simple"):
+        return {"id": pid, "type": typ, "status": "publish", "name": name, "sku": sku,
+                "regular_price": preis, "dimensions": {"length": ek, "width": vk, "height": ""}}
+
+    def v(vid, sku, gr, ek, vk, preis):
+        return {"id": vid, "status": "publish", "sku": sku, "regular_price": preis,
+                "attributes": [{"name": "Größe", "option": gr}],
+                "dimensions": {"length": ek, "width": vk, "height": ""}}
+    return {
+        "https://shop.example/caf-shop/": {
+            "produkte": {10: p(10, "Poloshirt", "042/POLO", "", "", "", "variable"),
+                         20: p(20, "Cap", "042/CAP", "4.07", "7.65", "9.90"),
+                         30: p(30, "Anstecker", "042/PIN", "", "2.00", "2.50")},
+            "varianten": {10: {11: v(11, "042/POLO-M", "M", "12.10", "24.90", "29.90"),
+                               12: v(12, "042/POLO-L", "L", "12.10", "24.90", "29.90")}}},
+        "https://shop.example/agrar/": {
+            "produkte": {70: p(70, "Cap", "042/CAP", "4.00", "7.50", "9.50")}, "varianten": {}},
+    }
+
+
+@pytest.fixture
+def artikelseite(importseite):
+    from conftest import ArtikelWoo
+    ArtikelWoo.katalog, ArtikelWoo.posts, ArtikelWoo.abgelehnt = _artikelshop(), [], set()
+    importseite.api._client_factory = ArtikelWoo
+    importseite.click("[data-a=tab][data-tab=artikel]")
+    importseite.wait_for_selector("text=Mit Admin-Passwort öffnen")
+    importseite.click("[data-a=art-unlock]")
+    _admin(importseite)
+    importseite.wait_for_selector("#artikelPane tr[data-id='11']")
+    importseite.posts = ArtikelWoo.posts
+    importseite.katalog = ArtikelWoo.katalog
+    return importseite
+
+
+def _zelle(page, iid, feld):
+    return page.locator(f"#artikelPane input[data-id='{iid}'][data-af='{feld}']")
+
+
+def test_artikel_tabelle(artikelseite):
+    p = artikelseite
+    assert p.locator("#artikelPane tbody tr").count() == 5
+    assert _zelle(p, 11, "vk").input_value() == "24,90"
+    assert _zelle(p, 30, "ek").input_value() == ""
+    assert p.locator("#artikelPane [data-marge='20']").inner_text() == "47 %"
+    # Varianten: kein Namensfeld, Hauptartikel ohne Verkaufspreis
+    assert _zelle(p, 11, "name").count() == 0 and _zelle(p, 10, "preis").count() == 0
+    assert p.locator("#art-shop option").all_inner_texts() == ["CAF-Shop", "Agrar-Shop"]
+    # Filter und Suche
+    p.click("[data-a=art-filter][data-v=ek]")
+    assert p.locator("#artikelPane tbody tr").count() == 1
+    p.click("[data-a=art-filter][data-v=alle]")
+    p.fill("#art-suche", "polo-l")
+    assert [r.get_attribute("data-id") for r in p.locator("#artikelPane tbody tr").all()] == ["10", "12"]
+    assert p.fehler == [] and p.extern == []
+
+
+def test_artikel_aendern_vorschau_sichern(artikelseite):
+    p = artikelseite
+    _zelle(p, 20, "ek").fill("7,40")
+    assert "neu" in _zelle(p, 20, "ek").get_attribute("class")
+    assert p.locator("#artikelPane [data-marge='20'] .warn-text").inner_text() == "3 %"
+    assert p.locator("[data-tab=artikel] .tab-badge").inner_text() == "1"
+    # Sammelaktion: Poloshirt wählt beide Varianten, VK +10 %
+    p.click("#artikelPane [data-a=art-sel][data-id='10']")
+    p.click("[data-a=art-aktion]")
+    p.click("[data-a=art-af][data-v=vk]")
+    p.click("[data-a=art-aa][data-v=prozent]")
+    p.fill("#aa-wert", "10")
+    p.click("[data-a=art-anwenden]")
+    assert _zelle(p, 11, "vk").input_value() == "27,39"
+    assert _zelle(p, 12, "vk").input_value() == "27,39"
+    assert p.locator("#art-zaehler").inner_text() == "3 Änderungen"
+    p.click("#artikelPane [data-a=art-vorschau]")
+    p.wait_for_selector("#overlay button[data-a=art-sichern]:has-text('3 sichern')")
+    text = p.locator("#overlay").inner_text()
+    assert "042/CAP Cap: Marge nur 3 %." in text
+    assert "042/POLO-M Poloshirt (M)" in text and "24,90" in text and "27,39" in text
+    assert p.posts == []
+    p.click("[data-a=art-sichern]")
+    p.wait_for_selector("#hud.show:has-text('3 Änderungen gesichert')")
+    p.wait_for_selector("#artikelPane [data-a=art-undo]")
+    assert _zelle(p, 11, "vk").input_value() == "27,39"
+    assert "neu" not in _zelle(p, 11, "vk").get_attribute("class")
+    assert p.katalog["https://shop.example/caf-shop/"]["varianten"][10][12]["dimensions"]["width"] == "27.39"
+    assert p.locator("[data-tab=artikel] .tab-badge").count() == 0
+    # Zurücknehmen
+    p.click("[data-a=art-undo]")
+    p.wait_for_selector("text=3 Änderungen zurücknehmen")
+    p.click("[data-a=art-undo-ok]")
+    p.wait_for_selector("#hud.show:has-text('3 Änderungen zurückgenommen')")
+    p.wait_for_function("document.querySelector(\"#artikelPane input[data-id='11'][data-af='vk']\")?.value === '24,90'")
+    assert p.locator("#artikelPane [data-a=art-undo]").count() == 0
+    assert p.fehler == []
+
+
+def test_artikel_fehler_und_andere_shops(artikelseite):
+    p = artikelseite
+    _zelle(p, 20, "ek").fill("9")
+    p.click("#artikelPane [data-a=art-vorschau]")
+    p.wait_for_selector("text=Nicht sicherbar")
+    assert "EK (9,00) größer als VK (7,65)" in p.locator("#overlay").inner_text()
+    assert p.locator("#overlay [data-a=art-sichern]").is_disabled()
+    p.click("#overlay [data-a=close] >> nth=-1")
+    _zelle(p, 20, "ek").fill("4,07")
+    _zelle(p, 20, "vk").fill("7,95")
+    p.click("#artikelPane [data-a=art-vorschau]")
+    p.wait_for_selector("#overlay button[data-a=art-sichern]:has-text('1 sichern')")
+    p.click("#overlay label:has([data-art-andere]) .switch")
+    p.wait_for_selector("#overlay button[data-a=art-sichern]:has-text('2 sichern')")
+    assert "Agrar-Shop: 042/CAP Cap" in p.locator("#overlay").inner_text()
+    p.click("[data-a=art-sichern]")
+    p.wait_for_selector("#hud.show:has-text('2 Änderungen gesichert')")
+    assert p.katalog["https://shop.example/agrar/"]["produkte"][70]["dimensions"]["width"] == "7.95"
+    assert p.fehler == []
+
+
+def test_artikel_ungesichert_beim_schliessen(artikelseite):
+    p = artikelseite
+    _zelle(p, 30, "ek").fill("1,20")
+    p.wait_for_function("gemeldet === 1")
+    assert p.api._ungesichert == 1
+
+
+def test_ek_fehlt_nachtragen_oeffnet_artikel(importseite):
+    from conftest import ArtikelWoo
+    ArtikelWoo.katalog, ArtikelWoo.posts = _artikelshop(), []
+    importseite.api._client_factory = ArtikelWoo
+    p = importseite
+    p.evaluate("""() => {
+      fetched = { time: new Date(), sperre: "", shops: [{ id: "caf", name: "CAF-Shop", uebersprungen: false,
+        sperren: [], warnungen: [], fehler: [], einheiten: [{ key: "k1", art: "bestellung", titel: "#1",
+        datei: "x.wex", warnungen: [], sperren: [], gesperrt: false,
+        orders: [{ no: "1", name: "Erika", ort: "", sum: 2, pos: [{ q: 1, sku: "042/PIN", art: "Anstecker",
+          v: "", vk: 2, ek: null, ved: false }] }],
+        cdh: { kunde: "", kundeHinweis: "", auftrag: "", lieferart: "", lieferung: [], lieferHinweis: "", positionen: [] } }] }] };
+      openOrder("k1", "1");
+    }""")
+    p.click("[data-a=art-sku]")
+    _admin(p)
+    p.wait_for_selector("#artikelPane tr[data-id='30']")
+    assert p.locator("#art-suche").input_value() == "042/PIN"
+    assert p.locator("#artikelPane tbody tr").count() == 1
+    assert p.fehler == []

@@ -236,6 +236,14 @@ class WooClient:
             r.raise_for_status()
         return r.json()
 
+    def _post(self, path: str, data: dict) -> Any:
+        url = f"{self.base}{path}"
+        with _ohne_schluessel_in_fehlern():
+            r = self._http.post(url, params=self._auth_params(), json=data,
+                                timeout=self.timeout)
+            r.raise_for_status()
+        return r.json()
+
     def iter_new_orders(self, page_size: int = 50,
                          exported_locally: set | None = None):
         """

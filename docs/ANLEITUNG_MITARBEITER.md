@@ -17,7 +17,7 @@ dem Tab **Import**.
 
 Kommt die Meldung „WebView2 fehlt": Das betrifft einzelne Rechner mit
 Windows 10. Bitte bei der IT melden. Bis dahin funktioniert der Import wie
-bisher über **WOO_to_CDH.exe** (Abschnitt 6).
+bisher über **WOO_to_CDH.exe** (Abschnitt 7).
 
 ## 2. Bestellungen abrufen
 
@@ -76,7 +76,28 @@ Nach dem Abrufen erstellt **Excel** oben rechts eine Übersicht aller offenen Be
 alle Shops oder einen. Dabei wird nichts übernommen und im Shop nichts
 verändert.
 
-## 6. Wenn etwas nicht geht
+## 6. Artikel pflegen (nur mit Admin-Passwort)
+
+Im Tab **Artikel** stehen alle Artikel des oben links gewählten Shops. Einen
+Preis, eine Artikelnummer oder einen Namen direkt in der Tabelle ändern.
+Geänderte Felder sind blau. **Enter** springt in dieselbe Spalte der nächsten
+Zeile.
+
+Viele auf einmal: Zeilen links anhaken (ein Hauptartikel hakt seine Varianten
+mit an), dann **Sammelaktion**, zum Beispiel „VK, ± Prozent, 5".
+
+Danach **Vorschau**. Sie zeigt alt → neu und prüft alles noch einmal gegen den
+Shop. Rote Punkte zuerst in der Tabelle korrigieren, orange Punkte kurz
+ansehen. Wer möchte, schaltet **Auch in anderen Shops** ein: Dann ändern sich
+die Preise auch in den anderen Shops mit derselben Artikelnummer. Erst mit
+**… sichern** geht es in den Shop.
+
+Etwas falsch gesichert? Oben rechts **Zurücknehmen**. Das macht die letzte
+Sammeländerung rückgängig.
+
+**VK und EK** gehen an CDH, der **Verkaufspreis** ist der Preis im Shop.
+
+## 7. Wenn etwas nicht geht
 
 - **„Import läuft an … seit …"**: An einem anderen Rechner läuft gerade ein
   Import. Abrufen und Ansehen geht, Importieren erst, wenn er fertig ist. Es darf immer nur ein Import gleichzeitig laufen.

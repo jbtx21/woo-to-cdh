@@ -332,6 +332,11 @@ Edit). Entscheidungen 25.09.2026:
 - Länge/Breite (EK/VK) werden im Shop nirgends angezeigt oder für
   Versandkosten genutzt; EK/VK bleiben dort.
 
+Entscheidungen 27.09.2026: **Bilder nur zuordnen** (Reihenfolge, Hauptbild,
+entfernen, per Adresse zuweisen). Kein Hochladen vom Rechner, also keine
+WordPress-Anwendungspasswörter. **Zubehörartikel nur am Hauptartikel**,
+Regeln an Varianten pflegt das Tool nicht.
+
 Grundsätze für alle Etappen:
 - Nur im Admin-Modus; nur die freigegebenen Felder.
 - Nichts wird sofort geschrieben: Tabelle → Vorschau alt/neu mit Prüfungen
@@ -347,15 +352,27 @@ Etappen:
   Artikelnummer, Name; Vorschau, Verlauf, Zurücknehmen; Option „andere
   Shops mit derselben Artikelnummer". Verknüpft mit „EK fehlt" im Import.
   **STOPP — erste echte Sammeländerung nur an wenigen Artikeln.**
+  **Umgesetzt 27.09.2026** (`artikel_api.py`, Tab „Artikel“):
+  - Tabelle: Varianten unter dem Hauptartikel, Suche, Filter (EK fehlt, VK
+    fehlt, EK > VK, Marge < 10 %, Geändert).
+  - Sammelaktion: setzen, ± Betrag, ± %, runden auf 0,05, 0,10 oder 1 €.
+  - Vorschau: frisch gelesen, blockiert bei Fehlern.
+  - Sichern: noch einmal gegen den Shop verglichen, Rücknahme-Datei in
+    `Backup\Artikel\`, Batch je 100, Verlauf je Artikel.
+  - Zurücknehmen: nur die letzte Sammeländerung, nur unveränderte Werte.
+  - Andere Shops: nur Preise, eigene Prüfung je Shop.
+  - „nachtragen“ bei „EK fehlt“ im Import.
+  - Artikelname nur am Hauptartikel; Verkaufspreis variabler Artikel an den
+    Varianten.
+  - EK/VK am variablen Hauptartikel erlaubt: Varianten ohne eigenen Wert
+    erben ihn (WooCommerce).
 - **10b Texte:** Kurzbeschreibung/Beschreibung in einem Seitenfenster mit
   Vorschau (HTML), dazu Suchen & Ersetzen über viele Artikel.
-- **10c Bilder:** Reihenfolge, Hauptbild, entfernen und Bilder per öffentlich
-  erreichbarer Adresse zuweisen gehen über die WooCommerce-Schnittstelle.
-  **Hochladen vom Rechner** braucht die WordPress-Medienschnittstelle, die
-  die WooCommerce-Schlüssel nicht abdeckt → je Shop ein
-  WordPress-Anwendungspasswort (Benutzer → Profil → Anwendungspasswörter),
-  abgelegt in `zugang.yaml`. Klären, bevor 10c beginnt.
-- **10d Zubehörartikel:** Plugin „CDH Required Accessories" 2.4.0 (liegt
+- **10c Bilder (nur Zuordnung, entschieden 27.09.2026):** Reihenfolge,
+  Hauptbild, entfernen, vorhandene Mediathek-Bilder oder Bilder per
+  öffentlich erreichbarer Adresse zuweisen, alles über die
+  WooCommerce-Schnittstelle. Kein Hochladen vom Rechner.
+- **10d Zubehörartikel (nur am Hauptartikel, entschieden 27.09.2026):** Plugin „CDH Required Accessories" 2.4.0 (liegt
   vor, nicht im Repo). Speichert am Produkt das Meta-Feld
   `_cdh_required_accessories` = Liste `{accessory_id, qty_per_unit}`; im
   Backend zwei feste Plätze (A, B). Im Warenkorb überschreibt eine Regel an

@@ -647,6 +647,36 @@ Länge (EK) und Breite (VK) wie bisher. WEX, Excel-Kontrollliste und „So geht
 es an CDH" zeigen den Staffelpreis. Das Tool lehnt ungültige Stufen ab (EK
 größer als VK, doppelte Menge); der Produkt-Editor verwirft dann nur das EK.
 
+### Artikel-Sammelpflege (Welle 10a)
+
+Tab **Artikel** in der Oberfläche (nur Admin-Modus, `artikel_api.py`): alle
+Artikel eines Shops in einer Tabelle, Varianten unter ihrem Hauptartikel.
+Änderbar: **Verkaufspreis** (`regular_price`), **VK** (Breite), **EK**
+(Länge), **Artikelnummer**, **Artikelname** (nur Hauptartikel/einfache
+Artikel). Suche, Filter (EK fehlt, VK fehlt, EK > VK, Marge niedrig,
+Geändert) und Sammelaktionen (setzen, ± Betrag, ± Prozent, runden) auf die
+ausgewählten Zeilen.
+
+Nichts geht sofort in den Shop:
+
+1. **Vorschau** liest die geänderten Artikel frisch aus dem Shop und prüft.
+   Fehler blockieren das Sichern: keine Zahl, EK größer als VK, Artikelnummer
+   leer oder im Shop schon vergeben, inzwischen im Shop geändert. Warnungen
+   nicht: Marge unter 10 %, Preissprung ab 50 % („Tippfehler?"), EK/VK/Preis
+   leer oder 0.
+2. Auf Wunsch **auch in anderen Shops mit derselben Artikelnummer** — nur
+   EK, VK und Verkaufspreis, mit demselben neuen Wert, geprüft mit den Werten
+   des jeweiligen Shops. Gibt es die Artikelnummer dort mehrfach, bleibt der
+   Shop außen vor (Hinweis).
+3. **Sichern** vergleicht noch einmal mit dem Shop, legt dann
+   `Backup\Artikel\sammel_<Zeit>.json` (alt/neu) an und schreibt per
+   WooCommerce-Batch (je 100). Jede Änderung steht im Änderungsverlauf.
+4. **Zurücknehmen** (nur die letzte Sammeländerung) schreibt die alten Werte
+   zurück, aber nur dort, wo im Shop noch der damals gesicherte Wert steht.
+
+In der Prüfansicht des Imports führt „nachtragen" bei „EK fehlt" direkt zum
+Artikel.
+
 ### Zusätzliche Meta-Spalten
 
 Über `extra_excel_meta` lassen sich pro Shop weitere Meta-Felder anhängen.

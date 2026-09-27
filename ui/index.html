@@ -72,6 +72,8 @@ button { background: none; border: 0; padding: 0; cursor: pointer; text-align: i
 .split { height: 100%; display: grid; grid-template-columns: 330px 1fr; }
 .shell[data-tab="import"] .split { display: none; }
 .shell[data-tab="settings"] #importPane { display: none; }
+.shell[data-tab="artikel"] .split, .shell[data-tab="artikel"] #importPane { display: none; }
+.shell:not([data-tab="artikel"]) #artikelPane { display: none; }
 
 /* Tab-Leiste: auf dem Desktop schwebend oben (iPadOS), mobil unten */
 .tabbar {
@@ -377,6 +379,49 @@ button.row:active, .row.tap:active { background: var(--fill); }
 .sheets { display: flex; flex-wrap: wrap; gap: 6px; padding: 12px 16px 0; }
 .sheets span { font-size: 12px; padding: 4px 10px; border-radius: 6px; background: var(--fill); color: var(--label-2); }
 
+/* ------------------------------------------------ Artikel (Welle 10) ---- */
+.content.wide { max-width: 1180px; }
+.art-werkzeug { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 0 0 12px; }
+.art-suche {
+  flex: 1 1 240px; min-width: 0; padding: 8px 12px; border-radius: 10px; border: 0;
+  background: var(--fill); outline: none; font-size: 15px;
+}
+.chip { font-size: 13px; padding: 6px 12px; border-radius: 16px; background: var(--fill); white-space: nowrap; }
+.chip[aria-pressed="true"] { background: var(--blue); color: #fff; font-weight: 600; }
+.art-wrap { background: var(--card); border-radius: 12px; overflow-x: auto; }
+table.art { width: 100%; border-collapse: collapse; font-size: 14px; font-feature-settings: "tnum" 1; }
+.art th {
+  text-align: left; font-weight: 600; font-size: 12px; color: var(--label-2); padding: 9px 6px;
+  white-space: nowrap; background: var(--card);
+}
+.art th.r { text-align: right; padding-right: 12px; }
+.art td { padding: 2px 6px; border-top: .5px solid var(--sep); vertical-align: middle; }
+.art tr.var td { border-top-style: dotted; }
+.art td.c { width: 40px; padding: 0 0 0 12px; }
+.art td.c button { display: grid; place-items: center; width: 28px; height: 32px; }
+.art td.sku { width: 170px; }
+.art td.name { min-width: 180px; }
+.art tr.var td.name { padding-left: 24px; color: var(--label-2); }
+.art td.m { text-align: right; white-space: nowrap; color: var(--label-2); width: 70px; padding-right: 12px; }
+.art td.leer { text-align: right; color: var(--label-3); padding-right: 12px; }
+.art td.z { text-align: right; width: 104px; }
+.art input {
+  width: 100%; min-width: 0; font: inherit; color: inherit; background: transparent;
+  border: .5px solid transparent; border-radius: 6px; padding: 5px 6px; outline: none;
+}
+.art input:hover { border-color: var(--sep); }
+.art input:focus { border-color: var(--blue); background: var(--bg); }
+.art input.z { text-align: right; width: 92px; }
+.art input.neu { background: color-mix(in srgb, var(--blue) 15%, transparent); font-weight: 600; }
+.art .tag { font-size: 11px; color: var(--label-2); background: var(--fill); border-radius: 5px; padding: 1px 6px; margin-left: 4px; white-space: nowrap; }
+.fehl-text { color: var(--red); }
+.art-select {
+  font: inherit; font-size: 15px; color: var(--blue); background: none; border: 0; outline: none;
+  max-width: 220px; cursor: pointer;
+}
+.aend { display: flex; gap: 8px; font-size: 13px; color: var(--label-2); font-feature-settings: "tnum" 1; }
+.aend b { color: var(--label); font-weight: 600; }
+
 /* ----------------------------------------------------------- Mobil ---- */
 @media (max-width: 760px) {
   .shell { grid-template-rows: 1fr auto; }
@@ -386,7 +431,7 @@ button.row:active, .row.tap:active { background: var(--fill); }
   .split[data-view="detail"] .pane.list { display: none; }
   .tabbar {
     position: static; transform: none; border-radius: 0; box-shadow: none; border: 0;
-    border-top: .5px solid var(--sep); display: grid; grid-template-columns: 1fr 1fr; padding: 6px 0 2px;
+    border-top: .5px solid var(--sep); display: grid; grid-template-columns: repeat(3, 1fr); padding: 6px 0 2px;
   }
   .tabbar button {
     flex-direction: column; gap: 2px; padding: 2px 0 4px; border-radius: 0; font-size: 10.5px; font-weight: 500;
@@ -422,6 +467,7 @@ button.row:active, .row.tap:active { background: var(--fill); }
 <div class="shell" id="shell" data-tab="import">
   <main class="stage">
     <section class="pane single" id="importPane" aria-label="Import"></section>
+    <section class="pane single" id="artikelPane" aria-label="Artikel"></section>
     <div class="split" id="split" data-view="list">
       <section class="pane list" id="list"></section>
       <section class="pane detail" id="detail"></section>
@@ -546,6 +592,7 @@ const I = {
   share: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 2.5v10M6.5 6 10 2.5 13.5 6M5 9H4v8.5h12V9h-1"/></svg>`,
   gear: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.8v2.4M12 18.8v2.4M21.2 12h-2.4M5.2 12H2.8M18.5 5.5l-1.7 1.7M7.2 16.8l-1.7 1.7M18.5 18.5l-1.7-1.7M7.2 7.2 5.5 5.5"/></svg>`,
   tray24: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><path d="M3.5 14 6 5h12l2.5 9v5h-17v-5Z"/><path d="M3.5 14h5l1.2 2.4h4.6L15.5 14h5"/></svg>`,
+  tag24: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" aria-hidden="true"><path d="M3.5 12.2V4.5a1 1 0 0 1 1-1h7.7l8.3 8.3a1 1 0 0 1 0 1.4l-7.3 7.3a1 1 0 0 1-1.4 0L3.5 12.2Z"/><circle cx="8" cy="8" r="1.5"/></svg>`,
   down: `<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 3v10M5.5 8.5 10 13l4.5-4.5M4 16.5h12"/></svg>`,
 };
 
@@ -635,9 +682,10 @@ function navbar() {
 
 function renderTabbar() {
   const n = changeCount();
-  $("#tabbar").innerHTML = [["import", "Import", I.tray24], ["settings", "Einstellungen", I.gear]].map(([id, l, ic]) => `
+  const badge = { settings: n, artikel: artAnzahl() };
+  $("#tabbar").innerHTML = [["import", "Import", I.tray24], ["artikel", "Artikel", I.tag24], ["settings", "Einstellungen", I.gear]].map(([id, l, ic]) => `
     <button role="tab" data-a="tab" data-tab="${id}" aria-selected="${tab === id}">
-      ${ic}<span>${l}</span>${id === "settings" && n ? `<span class="tab-badge" aria-label="${n} ungesichert">${n}</span>` : ""}
+      ${ic}<span>${l}</span>${badge[id] ? `<span class="tab-badge" aria-label="${badge[id]} ungesichert">${badge[id]}</span>` : ""}
     </button>`).join("");
   $("#shell").dataset.tab = tab;
 }
@@ -827,6 +875,9 @@ function openOrder(key, no) {
   const u = unitByKey(key); if (!u) return;
   const o = u.orders.find((x) => x.no === no); if (!o) return;
   const c = u.cdh;
+  const sid = fetched.shops.find((x) => x.einheiten.includes(u))?.id;
+  const pflegen = (p) => (p.sku && shopById(sid)?.zugang
+    ? ` <button class="navlink" style="font-size:13px" data-a="art-sku" data-shop="${esc(sid)}" data-sku="${esc(p.sku)}">nachtragen</button>` : "");
   overlay = { kind: "order" };
   const liefer = c.lieferung.length ? c.lieferung.map(esc).join("<br>") : `<span style="color:var(--label-2)">keine</span>`;
   $("#overlay").innerHTML = sheetShell(`Bestellung ${o.no}`, "",
@@ -841,10 +892,10 @@ function openOrder(key, no) {
       ${o.pos.map((p) => `<div class="row"><span class="row-body pos">
         <span class="q">${p.q}×</span>
         <span class="row-main"><span class="row-title">${esc(p.art)}</span><div class="row-sub">${esc([p.sku, p.v].filter(Boolean).join(" · "))}</div></span>
-        <span class="p">${p.vk == null ? `<span class="warn-text">VK fehlt</span>` : eur(p.vk)}<div class="row-sub">${p.ek == null ? `<span class="warn-text">EK fehlt</span>` : `EK ${eur(p.ek)}`}</div></span>
+        <span class="p">${p.vk == null ? `<span class="warn-text">VK fehlt</span>` : eur(p.vk)}<div class="row-sub">${p.ek == null ? `<span class="warn-text">EK fehlt</span>${pflegen(p)}` : `EK ${eur(p.ek)}`}</div></span>
       </span></div>`).join("")}
     </div>
-    ${o.pos.some((p) => p.ek == null) ? `<div class="group-foot">Ohne EK bleibt das Feld in CDH leer. Im Shop bei der Variante unter „Länge“ nachtragen.</div>` : ""}
+    ${o.pos.some((p) => p.ek == null) ? `<div class="group-foot">Ohne EK bleibt das Feld in CDH leer. „Nachtragen“ öffnet den Artikel im Tab Artikel; danach neu abrufen.</div>` : ""}
     </div>
 
     <div class="group"><div class="group-head">So geht es an CDH</div><div class="card">
@@ -1412,7 +1463,7 @@ async function pwSubmit() {
 function adminEnd() {
   adminUntil = 0; unlocked = {};
   api().admin_abmelden();
-  if (overlay && ["wizard", "access", "staffel"].includes(overlay.kind)) closeOverlay();
+  if (overlay && ["wizard", "access", "staffel", "art-aktion", "art-vorschau", "art-undo"].includes(overlay.kind)) closeOverlay();
   render(); hud("Admin-Modus beendet");
 }
 
@@ -1688,19 +1739,391 @@ async function accessSave() {
   meldung("Zugang erneuert", erg.hinweis);
 }
 
+// ------------------------------------------------------------ Artikel (Welle 10a)
+// Tabelle je Shop. Änderungen bleiben hier als Entwurf, bis Python sie in der
+// Vorschau frisch gegen den Shop geprüft hat (artikel_api.py). Hier wird
+// nichts entschieden, nur angezeigt und gerechnet.
+let art = { shopId: null, laden: false, fehler: "", liste: [], andere: [], letzte: null, marge: 10,
+  entwurf: {}, auswahl: new Set(), suche: "", filter: "alle" };
+const ART_ZAHLEN = ["preis", "vk", "ek"];
+const ART_NAMEN = { preis: "Verkaufspreis", vk: "VK", ek: "EK", sku: "Artikelnummer", name: "Artikelname" };
+const ART_FILTER = [["alle", "Alle"], ["ek", "EK fehlt"], ["vk", "VK fehlt"], ["ekvk", "EK > VK"], ["marge", "Marge niedrig"], ["neu", "Geändert"]];
+
+const artAnzahl = () => Object.keys(art.entwurf).length;
+const artById = (id) => art.liste.find((z) => z.id === id);
+const zahlText = (x) => (x == null || x === "" ? "" : (+x).toFixed(4).replace(/0{1,2}$/, "").replace(".", ","));
+const zahlLesen = (t) => {
+  const s = String(t ?? "").replace(/[€\s]/g, "").replace(",", ".");
+  if (s === "") return null;
+  return /^-?\d+(\.\d+)?$/.test(s) ? +s : NaN;
+};
+const artOriginal = (z, f) => (ART_ZAHLEN.includes(f) ? zahlText(z[f]) : z[f] ?? "");
+const artWert = (z, f) => (`${z.id}:${f}` in art.entwurf ? art.entwurf[`${z.id}:${f}`] : artOriginal(z, f));
+const artZahl = (z, f) => (`${z.id}:${f}` in art.entwurf ? zahlLesen(art.entwurf[`${z.id}:${f}`]) : z[f]);
+const artVarianten = (id) => art.liste.filter((z) => z.parent === id);
+
+function artStandardShop() {
+  const s = shopById(current);
+  return (s?.zugang ? s : shops.find((x) => x.zugang))?.id || null;
+}
+
+function setEntwurf(z, f, text) {
+  const k = `${z.id}:${f}`;
+  const gleich = ART_ZAHLEN.includes(f)
+    ? (() => { const a = zahlLesen(text), b = z[f]; return (a == null && b == null) || (a != null && b != null && Math.abs(a - b) < 0.00005); })()
+    : String(text).trim() === String(z[f] ?? "");
+  if (gleich) delete art.entwurf[k]; else art.entwurf[k] = text;
+}
+
+function artMarge(z) {
+  const ek = artZahl(z, "ek"), vk = artZahl(z, "vk");
+  if (ek == null || vk == null || Number.isNaN(ek) || Number.isNaN(vk) || !vk) return null;
+  return (vk - ek) / vk * 100;
+}
+
+function artPasst(z) {
+  const f = art.filter;
+  if (f === "ek") return z.typ !== "variable" && artZahl(z, "ek") == null;
+  if (f === "vk") return z.typ !== "variable" && artZahl(z, "vk") == null;
+  if (f === "ekvk") { const m = artMarge(z); return m != null && m < 0; }
+  if (f === "marge") { const m = artMarge(z); return m != null && m < art.marge; }
+  if (f === "neu") return Object.keys(art.entwurf).some((k) => k.startsWith(`${z.id}:`));
+  return true;
+}
+
+// Sichtbare Zeilen: Filter und Suche; ein Hauptartikel erscheint, wenn er
+// selbst oder eine seiner Varianten passt, Treffer der Suche im Hauptartikel
+// zeigen alle Varianten.
+function artSichtbar() {
+  const q = art.suche.trim().toLowerCase();
+  const suchTreffer = (z) => !q || [artWert(z, "sku"), z.name, z.variante].some((t) => String(t).toLowerCase().includes(q));
+  const out = [];
+  for (const z of art.liste) {
+    if (z.parent) continue;
+    const kinder = artVarianten(z.id);
+    const elternSuche = suchTreffer(z);
+    const k = kinder.filter((v) => (elternSuche || suchTreffer(v)) && artPasst(v));
+    if ((elternSuche && artPasst(z)) || k.length) { out.push(z); out.push(...k); }
+  }
+  return out;
+}
+
+async function artOeffnen(shopId, suche = null) {
+  if (!shopId) { art.fehler = "Kein Shop mit hinterlegtem Zugang."; renderArtikel(); return; }
+  if (art.shopId && art.shopId !== shopId && artAnzahl()) {
+    meldung("Erst sichern oder verwerfen", `In ${shopById(art.shopId)?.name} gibt es ${plural(artAnzahl(), "ungesicherte Änderung", "ungesicherte Änderungen")}.`);
+    renderArtikel(); return;
+  }
+  if (suche != null) { art.suche = suche; art.filter = "alle"; }
+  if (art.shopId !== shopId) { art.auswahl = new Set(); art.liste = []; }
+  art.shopId = shopId; art.laden = true; art.fehler = "";
+  renderArtikel();
+  const erg = await api().artikel_laden(shopId);
+  if (art.shopId !== shopId) return;
+  art.laden = false;
+  if (!erg.ok) { art.fehler = erg.fehler; renderArtikel(); return; }
+  art.liste = erg.artikel; art.andere = erg.andere; art.letzte = erg.letzte; art.marge = erg.marge_warnung;
+  // Entwurf behalten, soweit er noch vom Shop abweicht
+  for (const k of Object.keys(art.entwurf)) {
+    const [id, f] = k.split(":"); const z = artById(+id);
+    const t = art.entwurf[k]; delete art.entwurf[k];
+    if (z) setEntwurf(z, f, t);
+  }
+  const ids = new Set(art.liste.map((z) => z.id));
+  art.auswahl = new Set([...art.auswahl].filter((id) => ids.has(id)));
+  renderArtikel(); renderTabbar(); meldeUngesichert();
+  if (tab === "artikel") setTimeout(() => $("#art-suche")?.focus(), 30);
+}
+
+function artTabGeoeffnet() {
+  if (isAdmin() && !art.liste.length && !art.laden) artOeffnen(art.shopId || artStandardShop());
+}
+
+function artNeuLaden() { if (!art.laden) artOeffnen(art.shopId); }
+
+function artNavbar() {
+  const mitZugang = shops.filter((s) => s.zugang);
+  return `<div class="navbar">
+    <span class="nav-l">${isAdmin() && mitZugang.length ? `<select class="art-select" id="art-shop" aria-label="Shop">
+      ${mitZugang.map((s) => `<option value="${esc(s.id)}" ${s.id === art.shopId ? "selected" : ""}>${esc(s.name)}</option>`).join("")}
+    </select>` : ""}</span>
+    <span class="nav-c"></span>
+    <span class="nav-r">${isAdmin() && art.shopId ? `
+      ${art.letzte ? `<button class="navlink" data-a="art-undo">Zurücknehmen</button>` : ""}
+      <button class="navlink" data-a="art-reload" ${art.laden ? "disabled" : ""}>Neu laden</button>` : ""}</span>
+  </div>`;
+}
+
+function artZeile(z) {
+  const neu = (f) => (`${z.id}:${f}` in art.entwurf ? " neu" : "");
+  const feld = (f, cls, extra = "") => `<input class="${cls}${neu(f)}" data-af="${f}" data-id="${z.id}" value="${esc(artWert(z, f))}" title="${esc(`${ART_NAMEN[f]} im Shop: ${artOriginal(z, f) || "leer"}`)}" aria-label="${ART_NAMEN[f]}" autocomplete="off" spellcheck="false" ${extra}>`;
+  const on = art.auswahl.has(z.id);
+  const status = z.status && z.status !== "publish" ? `<span class="tag">${esc({ draft: "Entwurf", private: "Privat", pending: "Ausstehend" }[z.status] || z.status)}</span>` : "";
+  const name = z.parent
+    ? `${esc(z.variante || "Variante")}${status}`
+    : `<div style="display:flex;align-items:center">${feld("name", "")}${z.typ === "variable" ? `<span class="tag">${artVarianten(z.id).length} Var.</span>` : ""}${status}</div>`;
+  const zahl = (f) => (z.typ === "variable" && f === "preis") ? `<td class="leer">–</td>` : `<td class="z">${feld(f, "z", 'inputmode="decimal"')}</td>`;
+  return `<tr data-id="${z.id}" class="${z.parent ? "var" : ""}">
+    <td class="c"><button data-a="art-sel" data-id="${z.id}" role="checkbox" aria-checked="${on}" aria-label="Auswählen"><span class="selc">${I.tick}</span></button></td>
+    <td class="sku">${feld("sku", "")}</td>
+    <td class="name">${name}</td>
+    ${zahl("preis")}${zahl("vk")}${zahl("ek")}
+    <td class="m" data-marge="${z.id}">${artMargeText(z)}</td>
+  </tr>`;
+}
+
+function artMargeText(z) {
+  const m = artMarge(z);
+  if (m == null) return "";
+  const t = `${m.toFixed(0)} %`;
+  return m < 0 ? `<span class="fehl-text">${t}</span>` : m < art.marge ? `<span class="warn-text">${t}</span>` : t;
+}
+
+function renderArtikel() {
+  const p = $("#artikelPane");
+  if (!isAdmin()) {
+    p.innerHTML = `${artNavbar()}<div class="content">
+      <h1 class="large-title" style="margin-top:10px">Artikel</h1>
+      <div class="group"><div class="card hero">
+        <span class="icon" style="background:var(--orange)">${I.tag24}</span>
+        <h2>Artikel pflegen</h2>
+        <p>Preise, Artikelnummern und Namen eines Shops in einer Tabelle ändern — mit Vorschau vor dem Sichern.</p>
+        <button class="big-btn" data-a="art-unlock">Mit Admin-Passwort öffnen</button>
+      </div></div></div>`;
+    return;
+  }
+  const s = shopById(art.shopId);
+  let body;
+  if (art.laden && !art.liste.length) body = `<div class="group"><div class="card"><div class="row"><span class="spin"></span><span class="row-body"><span class="row-main"><span class="row-title">Artikel werden gelesen …</span></span></span></div></div></div>`;
+  else if (art.fehler) body = `<div class="group"><div class="card"><div class="row"><span class="row-body"><span class="row-main"><span class="row-title warn-text">${esc(art.fehler)}</span></span></span></div></div></div>`;
+  else if (!art.liste.length) body = `<div class="group-foot">In diesem Shop gibt es keine Artikel.</div>`;
+  else {
+    const zeilen = artSichtbar();
+    const alleAn = zeilen.length && zeilen.every((z) => art.auswahl.has(z.id));
+    body = `<div class="art-werkzeug">
+        <input class="art-suche" id="art-suche" type="search" placeholder="Suchen: Artikelnummer, Name, Variante" value="${esc(art.suche)}" aria-label="Suchen" autocomplete="off">
+        ${ART_FILTER.map(([v, l]) => `<button class="chip" data-a="art-filter" data-v="${v}" aria-pressed="${art.filter === v}">${v === "marge" ? `Marge &lt; ${art.marge} %` : l}</button>`).join("")}
+      </div>
+      <div class="art-wrap"><table class="art">
+        <thead><tr>
+          <th class="c" style="padding-left:12px"><button data-a="art-alle" role="checkbox" aria-checked="${!!alleAn}" aria-label="Alle sichtbaren auswählen" style="display:grid;place-items:center;width:28px"><span class="selc">${I.tick}</span></button></th>
+          <th>Artikelnummer</th><th>Artikel</th><th class="r">Verkaufspreis</th><th class="r">VK</th><th class="r">EK</th><th class="r">Marge</th>
+        </tr></thead>
+        <tbody>${zeilen.map(artZeile).join("") || `<tr><td colspan="7" style="padding:16px;color:var(--label-2)">Keine Treffer.</td></tr>`}</tbody>
+      </table></div>
+      <div class="group-foot">${plural(art.liste.filter((z) => z.typ !== "variable").length, "Artikel", "Artikel")} und Varianten${zeilen.length !== art.liste.length ? `, ${zeilen.length} Zeilen sichtbar` : ""}. Verkaufspreis ist der Preis im Shop, VK und EK gehen an CDH. Enter springt eine Zeile weiter.</div>`;
+  }
+  const n = artAnzahl();
+  p.innerHTML = `${artNavbar()}<div class="content wide">
+      <h1 class="large-title" style="margin-top:10px">Artikel${s ? ` <span style="color:var(--label-2);font-weight:600">${esc(s.name)}</span>` : ""}</h1>
+      ${body}
+    </div>
+    ${art.liste.length ? `<div class="toolbar">
+      <span><button class="navlink" data-a="art-aktion" ${art.auswahl.size ? "" : "disabled"}>Sammelaktion${art.auswahl.size ? ` (${art.auswahl.size})` : ""}</button></span>
+      <span class="mid" id="art-zaehler">${n ? plural(n, "Änderung", "Änderungen") : "Keine Änderungen"}</span>
+      <span class="r" style="display:flex;gap:18px;align-items:center">
+        <button class="navlink" data-a="art-verwerfen" ${n ? "" : "disabled"}>Verwerfen</button>
+        <button class="navlink bold" data-a="art-vorschau" ${n ? "" : "disabled"}>Vorschau</button>
+      </span>
+    </div>` : ""}`;
+}
+
+// Nach einer Eingabe nur Zelle, Marge und Zähler anpassen — ein Neuzeichnen
+// würde den Cursor aus dem Feld nehmen.
+function artNachEingabe(el) {
+  const z = artById(+el.dataset.id); if (!z) return;
+  setEntwurf(z, el.dataset.af, el.value);
+  el.classList.toggle("neu", `${z.id}:${el.dataset.af}` in art.entwurf);
+  const m = document.querySelector(`[data-marge="${z.id}"]`); if (m) m.innerHTML = artMargeText(z);
+  const n = artAnzahl();
+  const zt = $("#art-zaehler"); if (zt) zt.textContent = n ? plural(n, "Änderung", "Änderungen") : "Keine Änderungen";
+  document.querySelectorAll("#artikelPane [data-a=art-vorschau], #artikelPane [data-a=art-verwerfen]").forEach((b) => (b.disabled = !n));
+  renderTabbar(); meldeUngesichert();
+}
+
+function artAuswahl(id) {
+  const z = artById(id); if (!z) return;
+  const ids = [id, ...artVarianten(id).map((v) => v.id)];
+  const an = !art.auswahl.has(id);
+  ids.forEach((i) => (an ? art.auswahl.add(i) : art.auswahl.delete(i)));
+  renderArtikel();
+}
+
+function artAlleWaehlen() {
+  const zeilen = artSichtbar();
+  const alleAn = zeilen.every((z) => art.auswahl.has(z.id));
+  zeilen.forEach((z) => (alleAn ? art.auswahl.delete(z.id) : art.auswahl.add(z.id)));
+  renderArtikel();
+}
+
+// --- Sammelaktion
+function openArtAktion() {
+  overlay = { kind: "art-aktion", feld: "vk", art: "prozent", wert: "", stufe: 0.1 };
+  drawArtAktion();
+}
+
+function artAktionErfassen() { const i = $("#aa-wert"); if (i) overlay.wert = i.value; }
+
+function drawArtAktion() {
+  const o = overlay;
+  const seg = (a, liste, wert) => `<div class="seg" role="radiogroup" style="grid-template-columns:repeat(${liste.length},1fr);margin:12px">
+    ${liste.map(([v, l]) => `<button role="radio" data-a="${a}" data-v="${v}" aria-checked="${String(v) === String(wert)}">${l}</button>`).join("")}</div>`;
+  const ziele = [...art.auswahl].map(artById).filter((z) => z && z.typ !== "variable");
+  const eingabe = o.art === "runden"
+    ? seg("art-stufe", [[0.05, "auf 0,05"], [0.1, "auf 0,10"], [1, "auf ganze €"]], o.stufe)
+    : `<div class="form-row"><span class="row-body"><label for="aa-wert">${{ setzen: "Neuer Wert €", betrag: "Betrag € (±)", prozent: "Prozent (±)" }[o.art]}</label>
+        <input id="aa-wert" inputmode="decimal" value="${esc(o.wert)}" placeholder="${o.art === "setzen" ? "z. B. 24,90" : o.art === "betrag" ? "z. B. 1,50 oder -1" : "z. B. 5 oder -10"}" autocomplete="off"></span></div>`;
+  zeigeBlatt(sheetShell("Sammelaktion", `<button class="navlink" data-a="close">Abbrechen</button>`,
+    `<button class="navlink bold" data-a="art-anwenden">Anwenden</button>`, `
+    <div class="group"><div class="group-head">Feld</div><div class="card">${seg("art-af", [["preis", "Verkaufspreis"], ["vk", "VK"], ["ek", "EK"]], o.feld)}</div></div>
+    <div class="group"><div class="group-head">Änderung</div><div class="card">
+      ${seg("art-aa", [["setzen", "Setzen"], ["betrag", "± Betrag"], ["prozent", "± Prozent"], ["runden", "Runden"]], o.art)}
+      ${eingabe}
+    </div>
+    <div class="group-foot">Gilt für ${plural(ziele.length, "ausgewählten Artikel", "ausgewählte Artikel und Varianten")}${o.feld === "preis" ? "" : ""}. Ergebnis auf Cent gerundet. Noch nichts im Shop — erst die Vorschau prüft und sichert.</div></div>`));
+  setTimeout(() => $("#aa-wert")?.focus(), 60);
+}
+
+function artAnwenden() {
+  artAktionErfassen();
+  const o = overlay;
+  let wert = null;
+  if (o.art !== "runden") {
+    wert = zahlLesen(o.wert);
+    if (wert == null || Number.isNaN(wert)) { hud("Bitte eine Zahl eingeben."); return; }
+    if (o.art === "setzen" && wert < 0) { hud("Preise nicht negativ."); return; }
+  }
+  let n = 0, ohne = 0, negativ = 0;
+  for (const id of art.auswahl) {
+    const z = artById(id);
+    if (!z || z.typ === "variable") continue;
+    const alt = artZahl(z, o.feld);
+    let neu;
+    if (o.art === "setzen") neu = wert;
+    else {
+      if (alt == null || Number.isNaN(alt)) { ohne++; continue; }
+      neu = o.art === "betrag" ? alt + wert : o.art === "prozent" ? alt * (1 + wert / 100) : Math.round(alt / o.stufe) * o.stufe;
+    }
+    neu = Math.round(neu * 100 + 1e-9) / 100;
+    if (neu < 0) { negativ++; continue; }
+    setEntwurf(z, o.feld, zahlText(neu)); n++;
+  }
+  closeOverlay(); renderArtikel(); renderTabbar(); meldeUngesichert();
+  const rest = [ohne ? `${ohne} ohne Wert` : "", negativ ? `${negativ} wären negativ` : ""].filter(Boolean).join(", ");
+  hud(`${ART_NAMEN[o.feld]}: ${plural(n, "Wert", "Werte")} gesetzt${rest ? ` (${rest}, übersprungen)` : ""}`);
+}
+
+// --- Vorschau und Sichern
+async function artVorschau(andere) {
+  const liste = Object.entries(art.entwurf).map(([k, wert]) => {
+    const [id, feld] = k.split(":"); const z = artById(+id);
+    return { id: +id, feld, wert, alt: z ? z[feld] : null };
+  });
+  if (!liste.length) return;
+  overlay = { kind: "art-vorschau", laden: true, andere, erg: null, _gezeigt: overlay?.kind === "art-vorschau" };
+  drawArtVorschau();
+  const erg = await api().artikel_vorschau(art.shopId, liste, andere);
+  if (overlay?.kind !== "art-vorschau") return;
+  overlay.laden = false; overlay.erg = erg;
+  drawArtVorschau();
+}
+
+function drawArtVorschau() {
+  const o = overlay, e = o.erg;
+  const liste = (titel, farbe, texte) => texte.length ? `<div class="group"><div class="group-head">${titel}</div><div class="card">
+      ${texte.map((t) => `<div class="row"><span class="row-body"><span class="row-main"><span class="row-title" style="font-size:14px;color:var(--${farbe})">${esc(t)}</span></span></span></div>`).join("")}
+    </div></div>` : "";
+  let body;
+  if (o.laden) body = `<div class="group"><div class="card"><div class="row"><span class="spin"></span><span class="row-body"><span class="row-main"><span class="row-title">Wird frisch aus dem Shop gelesen und geprüft …</span></span></span></div></div></div>`;
+  else if (!e.ok) body = liste("Nicht möglich", "red", [e.fehler]);
+  else {
+    const gruppen = e.shops.map((s) => {
+      const je = new Map();
+      s.zeilen.forEach((z) => { if (!je.has(z.bez)) je.set(z.bez, []); je.get(z.bez).push(z); });
+      return `<div class="group"><div class="group-head">${esc(s.name)} · ${plural(s.zeilen.length, "Änderung", "Änderungen")}</div><div class="card">
+        ${[...je].map(([bez, zs]) => `<div class="row"><span class="row-body"><span class="row-main">
+          <span class="row-title" style="font-size:15px">${esc(bez)}</span>
+          ${zs.map((z) => `<div class="aend"><span style="min-width:110px">${esc(z.feldname)}</span><span>${esc(z.alt)}</span><span>→</span><b>${esc(z.neu)}</b></div>`).join("")}
+        </span></span></div>`).join("")}
+      </div></div>`;
+    }).join("");
+    body = liste("Nicht sicherbar — bitte in der Tabelle korrigieren", "red", e.fehler)
+      + liste("Bitte prüfen", "orange", e.warnungen)
+      + (art.andere.length ? `<div class="group"><div class="card">
+          <label class="row"><span class="row-body"><span class="row-main"><span class="row-title">Auch in anderen Shops</span>
+            <div class="row-sub">gleiche Artikelnummer: ${esc(art.andere.join(", "))}</div></span>
+            <span class="switch"><input type="checkbox" data-art-andere ${o.andere ? "checked" : ""}><span class="t"></span></span></span></label>
+        </div><div class="group-foot">Nur EK, VK und Verkaufspreis, mit demselben neuen Wert. Jeder Shop wird mit seinen eigenen Werten geprüft.${e.ohne_treffer?.length ? ` Ohne Treffer: ${esc(e.ohne_treffer.join(", "))}.` : ""}</div></div>` : "")
+      + (gruppen || `<div class="group-foot">Keine Änderung gegenüber dem Stand im Shop.</div>`);
+  }
+  const kannSichern = !o.laden && e?.ok && e.vorschau_id;
+  zeigeBlatt(sheetShell("Vorschau", o.busy ? "" : `<button class="navlink" data-a="close">Zurück</button>`,
+    o.busy ? `<span class="spin"></span>` : `<button class="navlink bold" data-a="art-sichern" ${kannSichern ? "" : "disabled"}>${kannSichern ? `${e.anzahl} sichern` : "Sichern"}</button>`,
+    body));
+}
+
+async function artSichern() {
+  const o = overlay;
+  if (o.busy || !o.erg?.vorschau_id) return;
+  o.busy = true; drawArtVorschau();
+  const erg = await api().artikel_sichern(o.erg.vorschau_id);
+  o.busy = false;
+  if (!erg.ok) { drawArtVorschau(); meldung("Nicht gesichert", erg.fehler); return; }
+  art.entwurf = {}; art.letzte = erg.letzte; LOG = erg.log || LOG;
+  closeOverlay();
+  hud(`${plural(erg.gesichert, "Änderung", "Änderungen")} gesichert`);
+  if (erg.meldungen.length) meldung("Nicht alles gesichert", erg.meldungen.join("\n"));
+  artOeffnen(art.shopId);
+}
+
+// --- Zurücknehmen
+function openArtUndo() {
+  const l = art.letzte; if (!l) return;
+  overlay = { kind: "art-undo" };
+  zeigeBlatt(sheetShell("Zurücknehmen", `<button class="navlink" data-a="close">Abbrechen</button>`, "", `
+    <div class="group"><div class="card">
+      <div class="row"><span class="row-body"><span class="row-main"><span class="row-title">Letzte Sammeländerung</span>
+        <div class="row-sub">${esc(l.zeit)} · ${esc(l.benutzer)} · ${esc(l.shops.map((s) => `${s.name} ${s.anzahl}`).join(", "))}</div></span></span></div>
+      ${l.zeilen.map((t) => `<div class="row"><span class="row-body"><span class="row-main"><div class="row-sub" style="white-space:normal">${esc(t)}</div></span></span></div>`).join("")}
+      ${l.anzahl > l.zeilen.length ? `<div class="row"><span class="row-body"><span class="row-main"><div class="row-sub">… und ${l.anzahl - l.zeilen.length} weitere</div></span></span></div>` : ""}
+    </div></div>
+    <div class="group"><div class="card">
+      <button class="row danger" data-a="art-undo-ok"><span class="row-body"><span class="row-main"><span class="row-title">${plural(l.anzahl, "Änderung", "Änderungen")} zurücknehmen</span></span></span></button>
+    </div><div class="group-foot">Schreibt die vorherigen Werte zurück — nur dort, wo im Shop noch der Wert von damals steht. Was inzwischen jemand anders geändert hat, bleibt.</div></div>`));
+}
+
+async function artZuruecknehmen() {
+  const o = overlay; if (o.busy) return;
+  o.busy = true;
+  const erg = await api().artikel_zuruecknehmen(art.letzte.datei, true);
+  o.busy = false;
+  if (!erg.ok) { meldung("Nicht zurückgenommen", erg.fehler); return; }
+  art.letzte = null; LOG = erg.log || LOG;
+  closeOverlay();
+  hud(`${plural(erg.zurueck, "Änderung", "Änderungen")} zurückgenommen`);
+  const rest = [...erg.ausgelassen, ...erg.meldungen];
+  if (rest.length) meldung("Nicht alles zurückgenommen", rest.join("\n"));
+  artOeffnen(art.shopId);
+}
+
 // ---------------------------------------------------------- Interaktion
 function renderDetail() {
   if (current === "__global") return renderGlobal();
   if (current === "__log") return renderLog();
   return renderSettings();
 }
-function render() { if (!geladen) return; renderTabbar(); renderOrders(); renderList(); renderDetail(); meldeUngesichert(); }
+function render() {
+  if (!geladen) return;
+  renderTabbar(); renderOrders(); renderList(); renderDetail();
+  if (tab === "artikel") renderArtikel();
+  meldeUngesichert();
+}
 
 // oberflaeche.py fragt beim Schließen nach, ohne das Fenster abzufragen
 // (das hing unter Windows). Darum meldet die Seite jede Änderung der Zahl.
 let gemeldet = 0;
 function meldeUngesichert() {
-  const n = changeCount();
+  const n = changeCount() + artAnzahl();
   if (n === gemeldet) return;
   gemeldet = n;
   api().ungesichert_melden?.(n);
@@ -1713,7 +2136,7 @@ document.addEventListener("click", (e) => {
   const s = shopById(current);
 
   switch (a) {
-    case "tab": tab = el.dataset.tab; closeOverlay(); render(); break;
+    case "tab": tab = el.dataset.tab; closeOverlay(); render(); if (tab === "artikel") artTabGeoeffnet(); break;
     case "nav": current = el.dataset.id; $("#split").dataset.view = "detail"; render(); $("#detail").scrollTop = 0; break;
     case "back": $("#split").dataset.view = "list"; break;
     case "close": if (e.target === el || el.tagName === "BUTTON") closeOverlay(); break;
@@ -1731,6 +2154,27 @@ document.addEventListener("click", (e) => {
     case "staffel-neu": staffelErfassen(); overlay.artikel[+el.dataset.i].zeilen.push({ ab: "", vk: "", ek: "" }); drawStaffel(); break;
     case "staffel-weg": staffelErfassen(); overlay.artikel[+el.dataset.i].zeilen.splice(+el.dataset.j, 1); drawStaffel(); break;
     case "staffel-sichern": staffelSichern(+el.dataset.i); break;
+    case "art-unlock": requireAdmin("Artikel pflegen", "Änderungen gehen direkt in den Shop.", () => artOeffnen(art.shopId || artStandardShop())); break;
+    case "art-reload": artNeuLaden(); break;
+    case "art-filter": art.filter = el.dataset.v; renderArtikel(); break;
+    case "art-sel": artAuswahl(+el.dataset.id); break;
+    case "art-alle": artAlleWaehlen(); break;
+    case "art-aktion": openArtAktion(); break;
+    case "art-af": overlay.feld = el.dataset.v; drawArtAktion(); break;
+    case "art-aa": artAktionErfassen(); overlay.art = el.dataset.v; drawArtAktion(); break;
+    case "art-stufe": overlay.stufe = +el.dataset.v; drawArtAktion(); break;
+    case "art-anwenden": artAnwenden(); break;
+    case "art-verwerfen": art.entwurf = {}; renderArtikel(); renderTabbar(); meldeUngesichert(); hud("Änderungen verworfen."); break;
+    case "art-vorschau": artVorschau(false); break;
+    case "art-sichern": artSichern(); break;
+    case "art-undo": openArtUndo(); break;
+    case "art-undo-ok": artZuruecknehmen(); break;
+    case "art-sku": {
+      const sid = el.dataset.shop, sku = el.dataset.sku;
+      closeOverlay(); tab = "artikel"; render();
+      requireAdmin("Artikel pflegen", "Änderungen gehen direkt in den Shop.", () => artOeffnen(sid, sku));
+      break;
+    }
     case "todo": hud(el.dataset.msg || "Im Entwurf ohne Funktion."); break;
     case "fetch": doFetch(); break;
     case "override": overrides.add(el.dataset.id); doFetch(); break;
@@ -1789,6 +2233,8 @@ document.addEventListener("click", (e) => {
 });
 
 document.addEventListener("change", (e) => {
+  if (e.target.id === "art-shop") { artOeffnen(e.target.value); return; }
+  if (e.target.matches?.("[data-art-andere]")) { artVorschau(e.target.checked); return; }
   const c = e.target.dataset?.c; if (!c) return;
   // Debitornummer wird schon beim Tippen übernommen ("input"). Hier nicht neu
   // zeichnen: Das change-Ereignis kommt beim Verlassen des Feldes — genau
@@ -1805,6 +2251,11 @@ document.addEventListener("change", (e) => {
 });
 
 document.addEventListener("input", (e) => {
+  if (e.target.dataset?.af) { artNachEingabe(e.target); return; }
+  if (e.target.id === "art-suche") {
+    art.suche = e.target.value; const pos = e.target.selectionStart;
+    renderArtikel(); const f = $("#art-suche"); f.focus(); f.setSelectionRange(pos, pos); return;
+  }
   if (e.target.dataset?.c !== "debitor") return;
   const s = shop();
   s.debitor = e.target.value.replace(/\D/g, "");
@@ -1816,7 +2267,16 @@ document.addEventListener("input", (e) => {
 });
 
 document.addEventListener("keydown", (e) => {
+  // Artikel-Tabelle: Enter springt ins gleiche Feld der nächsten Zeile
+  if (!overlay && e.key === "Enter" && e.target.dataset?.af) {
+    e.preventDefault();
+    const alle = [...document.querySelectorAll(`#artikelPane input[data-af="${e.target.dataset.af}"]`)];
+    const n = alle[alle.indexOf(e.target) + (e.shiftKey ? -1 : 1)];
+    if (n) { n.focus(); n.select(); }
+    return;
+  }
   if (!overlay) return;
+  if (e.key === "Enter" && overlay.kind === "art-aktion" && e.target.id === "aa-wert") { artAnwenden(); return; }
   if (e.key === "Escape") closeOverlay();
   if (e.key === "Enter" && overlay.kind === "form" && e.target.tagName === "INPUT") sheetDone();
   if (e.key === "Enter" && overlay.kind === "wizard" && e.target.tagName === "INPUT") wizNext();

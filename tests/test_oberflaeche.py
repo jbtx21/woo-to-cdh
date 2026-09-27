@@ -959,3 +959,34 @@ def test_artikel_bilder_zuordnen(artikelseite):
     # Nach außen ging nur die Vorschau des Bilds per Adresse (im Test gesperrt)
     assert set(p.extern) == {"https://cdn.example/cap-seite.webp"}
     assert set(p.fehler) <= {"Failed to load resource: net::ERR_FAILED"}
+
+
+def test_artikel_bild_je_farbe(artikelseite):
+    p = artikelseite
+    k = p.katalog["https://shop.example/caf-shop/"]
+    for vid, farbe in ((11, "Rot"), (12, "Blau")):
+        k["varianten"][10][vid]["attributes"].append({"name": "Farbe", "option": farbe})
+    k["varianten"][10][13] = {**k["varianten"][10][11], "id": 13, "sku": "042/POLO-L-ROT",
+                              "attributes": [{"name": "Größe", "option": "L"}, {"name": "Farbe", "option": "Rot"}]}
+    p.click("[data-a=art-reload]")
+    p.wait_for_selector("#artikelPane tr[data-id='13']")
+    p.click("#artikelPane [data-a=art-bilder][data-id='10']")
+    p.wait_for_selector("text=Bilder der Varianten — je Farbe")
+    zeilen = p.locator("#overlay .var-knoepfe")
+    assert zeilen.count() == 2                                  # Rot, Blau
+    # Rot (2 Varianten) → polo-rot, Blau → polo-blau
+    p.click("#overlay [data-a=art-var-bild][data-g='0'][data-r='503']")
+    p.wait_for_selector("#hud.show:has-text('2 Varianten: polo-rot')")
+    p.click("#overlay [data-a=art-var-bild][data-g='1'][data-r='504']")
+    assert p.locator("#overlay [data-a=art-var-bild][data-g='0'][data-r='503']").get_attribute("aria-pressed") == "true"
+    # Nach Größe gruppiert: L ist jetzt gemischt (Rot + Blau)
+    p.click("#overlay [data-a=art-var-merkmal][data-v='Größe']")
+    assert "gemischt" in p.locator("#overlay").inner_text()
+    p.click("#overlay .nav-r [data-a=close]")
+    p.click("#artikelPane [data-a=art-vorschau]")
+    p.wait_for_selector("#overlay button[data-a=art-sichern]:has-text('3 sichern')")
+    p.click("[data-a=art-sichern]")
+    p.wait_for_selector("#hud.show:has-text('3 Änderungen gesichert')")
+    v = k["varianten"][10]
+    assert (v[11]["image"]["id"], v[13]["image"]["id"], v[12]["image"]["id"]) == (503, 503, 504)
+    assert p.fehler == []

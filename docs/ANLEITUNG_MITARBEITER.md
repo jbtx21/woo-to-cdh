@@ -108,6 +108,9 @@ den Shop.
   Bild hinzu.
 - Oder die Adresse eines Bilds im Internet eintragen.
 - Bei einer Variante wählst du ein Bild aus, meist eines vom Hauptartikel.
+- Schneller bei vielen Varianten: Im Bilderfenster des Hauptartikels
+  stehen unter **Bilder der Varianten** alle Farben. Ein Klick auf das
+  passende Bild setzt es für alle Größen dieser Farbe.
 - Neue Bilder vom eigenen Rechner lädst du weiter im Shop hoch. Danach
   stehen sie hier zur Auswahl.
 

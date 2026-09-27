@@ -130,6 +130,7 @@ def test_laden_varianten_unter_dem_artikel(api):
     m = erg["artikel"][3]
     assert m == {"id": 11, "parent": 10, "typ": "variation", "status": "publish",
                  "sku": "042/POLO-M", "name": "Poloshirt", "variante": "M",
+                 "merkmale": [{"name": "Größe", "option": "M"}],
                  "ek": 12.1, "vk": 24.9, "preis": 29.9, "kurz": "", "text": "", "bilder": []}
     assert erg["artikel"][0]["ek"] is None and erg["letzte"] is None
     assert ArtikelWoo.posts == []

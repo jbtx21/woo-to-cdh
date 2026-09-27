@@ -443,6 +443,11 @@ table.art { width: 100%; border-collapse: collapse; font-size: 14px; font-featur
 .bild .knoepfe button { flex: 1; color: #fff; padding: 5px 0; text-align: center; font-size: 13px; }
 .bild .knoepfe button:disabled { opacity: .35; cursor: default; }
 .bild-wahl:hover { outline: 2px solid var(--blue); outline-offset: -2px; }
+.var-knoepfe { display: flex; flex-wrap: wrap; gap: 6px; }
+.var-wahl { border-radius: 8px; padding: 2px; border: 2px solid transparent; }
+.var-wahl.an { border-color: var(--blue); }
+.var-wahl .mini { width: 38px; height: 38px; border-radius: 6px; object-fit: cover; display: block; }
+.var-wahl .mini.bild-leer { display: grid; background: var(--fill); }
 .bild-name { font-size: 11px; color: var(--label-2); margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .textdiff.alt { color: var(--label-2); text-decoration: line-through; text-decoration-color: var(--label-3); }
 
@@ -2233,6 +2238,7 @@ function drawArtBilder() {
       ${jetzt.length ? `<div class="bild-grid">${jetzt.map(kachel).join("")}</div>`
         : `<div class="row"><span class="row-body"><span class="row-main"><span class="row-title" style="color:var(--label-2)">${variante ? "Kein eigenes Bild — im Shop erscheint das Bild des Hauptartikels." : "Kein Bild"}</span></span></span></div>`}
     </div>${variante ? "" : `<div class="group-foot">Das erste Bild ist das Hauptbild im Shop, die weiteren bilden die Galerie.</div>`}</div>
+    ${z.typ === "variable" ? artVarBilderHtml(z) : ""}
     <div class="group"><div class="group-head">${variante ? "Bild wählen" : "Hinzufügen"} — Bilder aus diesem Shop</div><div class="card">
       <div style="padding:12px 16px 0"><input class="art-suche" id="art-bild-such" type="search" placeholder="Bildname suchen" value="${esc(o.such)}" style="width:100%" autocomplete="off"></div>
       ${zeigen.length ? `<div class="bild-grid">${zeigen.map(wahl).join("")}</div>` : `<div class="group-foot" style="margin:12px 16px">Keine weiteren Bilder${q ? " zu dieser Suche" : ""}.</div>`}
@@ -2242,6 +2248,53 @@ function drawArtBilder() {
         <input id="art-bild-url" placeholder="https://…/bild.jpg" autocomplete="off" spellcheck="false">
         <button class="navlink" data-a="art-bild-url" style="font-size:15px;padding-right:4px">Hinzufügen</button></span></div>
     </div><div class="group-foot">Öffentlich erreichbares Bild (.jpg, .png, .webp, .gif). Der Shop holt es beim Sichern in seine Mediathek.</div></div>`, true));
+}
+
+// Bild je Merkmal: alle Varianten mit derselben Farbe (oder Größe …) auf
+// einmal. Zur Wahl stehen die Bilder am Hauptartikel.
+function artVarMerkmal(z) {
+  const namen = [...new Set(artVarianten(z.id).flatMap((v) => (v.merkmale || []).map((m) => m.name)))];
+  if (!namen.includes(overlay.merkmal)) overlay.merkmal = namen.find((n) => /farbe|colou?r/i.test(n)) || namen[0];
+  return namen;
+}
+
+function artVarGruppen(z) {
+  const g = new Map();
+  for (const v of artVarianten(z.id)) {
+    const opt = (v.merkmale || []).find((m) => m.name === overlay.merkmal)?.option ?? "";
+    if (!g.has(opt)) g.set(opt, []);
+    g.get(opt).push(v);
+  }
+  return g;
+}
+
+function artVarBilderHtml(z) {
+  const kinder = artVarianten(z.id);
+  if (!kinder.length) return "";
+  const namen = artVarMerkmal(z);
+  const auswahl = artWert(z, "bilder").filter((r) => typeof r === "number");
+  const zeilen = [...artVarGruppen(z)].map(([opt, vs], gi) => {
+    const erste = vs.map((v) => artWert(v, "bilder")[0] ?? 0);
+    const gleich = erste.every((r) => r === erste[0]) ? erste[0] : null;   // null = gemischt
+    const neu = vs.some((v) => `${v.id}:bilder` in art.entwurf);
+    const knopf = (r) => `<button class="var-wahl${gleich === r ? " an" : ""}" data-a="art-var-bild" data-g="${gi}" data-r="${r}" aria-pressed="${gleich === r}" aria-label="${r ? esc(bildName(r)) : "Kein eigenes Bild"}">${r ? bildImg(r, "mini") : `<span class="mini bild-leer">–</span>`}</button>`;
+    return `<div class="row"><span class="row-body" style="flex-wrap:wrap">
+      <span class="row-main" style="min-width:140px"><span class="row-title"${neu ? ' style="font-weight:600"' : ""}>${esc(opt || "ohne Angabe")}</span>
+        <div class="row-sub">${plural(vs.length, "Variante", "Varianten")}${gleich === null ? " · gemischt" : ""}</div></span>
+      <span class="var-knoepfe">${[0, ...auswahl].map(knopf).join("")}</span></span></div>`;
+  }).join("");
+  return `<div class="group"><div class="group-head">Bilder der Varianten${namen.length ? ` — je ${esc(overlay.merkmal)}` : ""}</div>
+    ${namen.length > 1 ? `<div class="card">${seg("art-var-merkmal", namen.map((n) => [n, n]), overlay.merkmal)}</div><div style="height:8px"></div>` : ""}
+    <div class="card">${zeilen}</div>
+    <div class="group-foot">Ein Klick setzt das Bild für alle Varianten der Zeile. „–“ = kein eigenes Bild, dann zeigt der Shop das Hauptbild. Zur Wahl stehen die Bilder am Artikel — fehlt eins, oben erst hinzufügen. Einzelne Varianten: in der Tabelle auf ihr Bild klicken.</div></div>`;
+}
+
+function artVarBildSetzen(gi, r) {
+  const z = artById(overlay.id);
+  const vs = [...artVarGruppen(z).values()][gi] || [];
+  vs.forEach((v) => setEntwurf(v, "bilder", r ? [r] : []));
+  drawArtBilder(); renderTabbar(); meldeUngesichert();
+  hud(`${plural(vs.length, "Variante", "Varianten")}: ${r ? bildName(r) : "kein eigenes Bild"}`);
 }
 
 const _bezJs = (z) => [z.sku, z.name].filter(Boolean).join(" ") + (z.variante ? ` (${z.variante})` : "");
@@ -2426,6 +2479,8 @@ document.addEventListener("click", (e) => {
     }
     case "art-ersetzen": openArtErsetzen(); break;
     case "art-bilder": openArtBilder(+el.dataset.id); break;
+    case "art-var-merkmal": overlay.merkmal = el.dataset.v; drawArtBilder(); break;
+    case "art-var-bild": artVarBildSetzen(+el.dataset.g, +el.dataset.r); break;
     case "art-bild-links": case "art-bild-rechts": case "art-bild-haupt": case "art-bild-weg":
     case "art-bild-dazu": case "art-bild-url": artBildAktion(a, el); break;
     case "art-bilder-reset": delete art.entwurf[`${overlay.id}:bilder`]; drawArtBilder(); renderTabbar(); meldeUngesichert(); break;

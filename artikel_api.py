@@ -75,6 +75,9 @@ def _zeile(p: dict, eltern: dict | None = None) -> dict:
             "name": str((eltern or p).get("name") or ""),
             "variante": " / ".join(str(a.get("option") or "")
                                    for a in p.get("attributes") or []) if eltern else "",
+            # Merkmale der Variante (Farbe, Größe …) — für „Bild je Farbe“
+            "merkmale": [{"name": str(a.get("name") or ""), "option": str(a.get("option") or "")}
+                         for a in p.get("attributes") or []] if eltern else [],
             "ek": w._zahl_oder_none(dims.get(w.EK_FIELD)),
             "vk": w._zahl_oder_none(dims.get(w.VK_FIELD)),
             "preis": w._zahl_oder_none(p.get("regular_price")),

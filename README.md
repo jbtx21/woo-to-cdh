@@ -699,6 +699,11 @@ die Anzahl.
 - Varianten haben höchstens ein Bild; zur Auswahl stehen die Bilder des
   Hauptartikels zuerst. Ohne eigenes Bild zeigt der Shop das des
   Hauptartikels.
+- **Bild je Farbe:** Im Bilderfenster eines variablen Artikels stehen die
+  Varianten gruppiert nach einem Merkmal (Standard: Farbe, umschaltbar auf
+  Größe usw.). Ein Klick auf ein Bild des Artikels setzt es für alle
+  Varianten der Gruppe. „–" entfernt das eigene Bild. „gemischt" heißt, die
+  Varianten der Gruppe haben unterschiedliche Bilder.
 - Kein Hochladen vom Rechner (Entscheidung 27.09.2026), daher keine
   WordPress-Anwendungspasswörter nötig.
 - Prüfungen: unbekannte Bild-id, ungültige Adresse, mehr als 20 Bilder,

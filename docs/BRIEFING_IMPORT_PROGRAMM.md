@@ -393,6 +393,8 @@ Etappen:
   - Nach dem Sichern steht in der Rücknahme-Datei die id, die der Shop
     vergeben hat.
   - Nicht in andere Shops übertragen.
+  - Bild je Merkmal (Wunsch 27.09.2026): Varianten nach Farbe oder anderem
+    Merkmal gruppieren, ein Bild des Artikels für die ganze Gruppe setzen.
   - **Am echten Shop prüfen:** Übernimmt der Batch `image: {"id": 0}`
     wirklich als „kein Bild" an der Variante?
 - **10d Zubehörartikel (nur am Hauptartikel, entschieden 27.09.2026):** Plugin „CDH Required Accessories" 2.4.0 (liegt

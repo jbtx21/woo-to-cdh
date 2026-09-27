@@ -535,7 +535,11 @@ def zubehoer_uebersicht(abruf: Callable[..., tuple[int, Any]]) -> dict:
                 zeilen.append((z.get("sku") or "?", per,
                                "kein einfaches, veröffentlichtes Produkt"))
             else:
-                zeilen.append((z.get("sku") or "?", per, "" if z.get("sku") else "ohne Artikelnummer"))
+                st = w.staffel_lesen(z)
+                hinweis = "" if z.get("sku") else "ohne Artikelnummer"
+                if st and not hinweis:
+                    hinweis = "Staffel ab " + "/".join(str(s["ab"]) for s in st)
+                zeilen.append((z.get("sku") or "?", per, hinweis))
         regeln.append({"sku": p.get("sku") or "", "name": p.get("name") or "", "zubehoer": zeilen})
     sichtbar = sorted(nach_id[i].get("sku") or str(i) for i in zubehoer_ids
                       if i in nach_id and nach_id[i].get("catalog_visibility", "visible") != "hidden")
@@ -558,7 +562,7 @@ def zubehoer_ausgeben(shop_cfg: dict) -> None:
     for r in erg["regeln"]:
         teile = [f"{menge:g} × {sku}" + (f" ({hinweis})" if hinweis else "")
                  for sku, menge, hinweis in r["zubehoer"]]
-        symbol = WARN if any(h for _s, _m, h in r["zubehoer"]) else OK
+        symbol = WARN if any(h and not h.startswith("Staffel") for _s, _m, h in r["zubehoer"]) else OK
         bullet(symbol, f"{r['sku'] or '?'} {r['name']}: " + ", ".join(teile))
     if erg["sichtbar"]:
         bullet(WARN, "Im Katalog noch sichtbar (Katalogsichtbarkeit auf „Versteckt“ "

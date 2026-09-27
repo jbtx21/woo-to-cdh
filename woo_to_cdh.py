@@ -394,6 +394,7 @@ class OrderBuildError(Exception):
 # bekommt Textil und Veredelung trotzdem getrennt, mit EK/VK des Zubehörs.
 
 ZUBEHOER_META = "_cdh_required_accessories"
+STAFFEL_META = "_cdh_staffelpreise"      # am Zubehör-Artikel: [{ab, vk, ek}]
 
 
 def _menge(x) -> int | float:
@@ -424,6 +425,47 @@ def _zubehoer_regeln(daten: dict) -> list[tuple[int, float]]:
                 regeln.append((acc, per))
         return regeln
     return []
+
+
+def _zahl_oder_none(x) -> float | None:
+    if x in (None, ""):
+        return None
+    try:
+        return float(str(x).replace(",", "."))
+    except ValueError:
+        return None
+
+
+def staffel_lesen(daten: dict) -> list[dict]:
+    """Staffelpreise eines Zubehör-Artikels: [{ab, vk, ek}] aufsteigend nach
+    „ab". Gepflegt im Produkt-Editor (Plugin ab 2.6) oder im Tool."""
+    for m in (daten or {}).get("meta_data") or []:
+        if m.get("key") != STAFFEL_META:
+            continue
+        wert = m.get("value")
+        zeilen = list(wert.values()) if isinstance(wert, dict) else (wert or [])
+        staffel = {}
+        for z in zeilen:
+            if not isinstance(z, dict):
+                continue
+            try:
+                ab = int(float(str(z.get("ab")).replace(",", ".")))
+            except (TypeError, ValueError):
+                continue
+            if ab >= 1:
+                staffel[ab] = {"ab": ab, "vk": _zahl_oder_none(z.get("vk")),
+                               "ek": _zahl_oder_none(z.get("ek"))}
+        return [staffel[k] for k in sorted(staffel)]
+    return []
+
+
+def staffel_preis(staffel: list[dict], menge) -> dict | None:
+    """Die Stufe mit dem größten „ab" ≤ Menge, sonst None."""
+    treffer = None
+    for stufe in staffel:
+        if float(menge or 0) >= stufe["ab"]:
+            treffer = stufe
+    return treffer
 
 
 def zubehoer_ergaenzen(order: dict, client: "WooClient", cache: dict) -> list[dict]:
@@ -468,13 +510,16 @@ def zubehoer_ergaenzen(order: dict, client: "WooClient", cache: dict) -> list[di
 
     ergaenzt = []
     for acc, menge in bedarf.items():
+        prod = holen(("zubehoer-prod", acc), lambda: client.get_product(acc))
+        sku = str(prod.get("sku") or "").strip()
+        staffel = staffel_lesen(prod)
+        if sku and staffel:
+            cache.setdefault("staffeln", {})[sku] = staffel
         vorhanden = sum(float(it.get("quantity") or 0) for it in items
                         if it.get("product_id") == acc and not it.get("variation_id"))
         rest = _menge(menge - vorhanden)
         if rest <= 0:
             continue
-        prod = holen(("zubehoer-prod", acc), lambda: client.get_product(acc))
-        sku = str(prod.get("sku") or "").strip()
         if not sku:
             raise OrderBuildError(
                 f"Bestellung {order_no}: Zubehör {acc} ({prod.get('name') or '?'}) "
@@ -486,6 +531,42 @@ def zubehoer_ergaenzen(order: dict, client: "WooClient", cache: dict) -> list[di
     order["line_items"] = items + ergaenzt
     order["_zubehoer_ergaenzt"] = True
     return ergaenzt
+
+
+def staffelpreise_anwenden(wex_data: dict, orders: list, cache: dict,
+                           shop: str = "") -> None:
+    """Staffelpreise des Zubehörs auf einen fertigen CDH-Auftrag anwenden.
+
+    Maßgeblich ist die Menge je Auftrag (Entscheidung 27.09.2026): Summe aller
+    Positionen dieser Artikelnummer — bei Sammel-Shops also alle Bestellungen
+    des Lieferorts zusammen. VK und EK kommen aus der Stufe; ist dort ein
+    Wert leer, bleibt der aus Länge/Breite. Die Positionen der Bestellungen
+    bekommen den Preis ebenfalls (Excel-Kontrollliste, Anzeige).
+    """
+    staffeln = cache.get("staffeln") or {}
+    if not staffeln:
+        return
+    positionen = wex_data.get("positions") or []
+    for sku, staffel in staffeln.items():
+        treffer = [p for p in positionen if (p.get("article_no") or "") == sku]
+        if not treffer:
+            continue
+        menge = sum(float(p.get("quantity") or 0) for p in treffer)
+        stufe = staffel_preis(staffel, menge)
+        if not stufe:
+            continue
+        for p in treffer:
+            if stufe["vk"] is not None:
+                p["selling_price"] = stufe["vk"]
+            if stufe["ek"] is not None:
+                p["buying_price"] = stufe["ek"]
+        preis = (treffer[0].get("buying_price"), treffer[0].get("selling_price"))
+        for o in orders:
+            for it in o.get("line_items") or []:
+                if (it.get("sku") or "").strip() == sku:
+                    it["_staffel_preis"] = preis
+        logging.info("[%s] Staffelpreis %s: %s Stk. im Auftrag → ab %s, VK %s, EK %s",
+                     shop, sku, _menge(menge), stufe["ab"], preis[1], preis[0])
 
 
 def build_wex_data(order: dict, shop_cfg: dict, client: WooClient,
@@ -1351,7 +1432,7 @@ def _row_from_order_position(order: dict, item: dict, shop_cfg: dict,
         lieferort = (shipping_lines[0].get("method_title") or "").strip()
 
     # Preise über den bekannten Weg
-    ek, vk = extract_ek_vk(client, item, price_cache)
+    ek, vk = item.get("_staffel_preis") or extract_ek_vk(client, item, price_cache)
     quantity = _menge(item.get("quantity"))
     total = item.get("total")
     try:
@@ -1958,6 +2039,7 @@ def _shop_abrufen(shop_cfg: dict, global_cfg: dict, exported_locally: set,
                                       delivery_table):
                 logging.info("[%s] Bestellung %s: feste Lieferadresse "
                              "'%s' angewendet.", shop_name, order_no, lieferort)
+            staffelpreise_anwenden(wex_data, [order], erg.price_cache, shop_name)
             erg.einheiten.append(Einheit(
                 shop=shop_name, art="bestellung", titel=order_no,
                 orders=[order], wex_data=wex_data, shop_ergebnis=erg))
@@ -2008,6 +2090,7 @@ def _shop_abrufen(shop_cfg: dict, global_cfg: dict, exported_locally: set,
         else:
             _regel_lieferort_ohne_adresse(einheit, [d for _, d in entries],
                                           shop_cfg, bool(delivery_table.get(shop_name)))
+        staffelpreise_anwenden(combined, einheit.orders, erg.price_cache, shop_name)
         erg.einheiten.append(einheit)
     _pruefregeln(erg)
     return erg

@@ -204,3 +204,166 @@ def test_diagnose_zeigt_regeln():
     assert polo["sku"] == "042/POLO" and polo["zubehoer"] == [("004/STICK-LOGO", 1.0, "")]
     assert erg["regeln"][1]["zubehoer"] == [("?", 1.0, "Zubehör 99 nicht im Shop gefunden")]
     assert erg["sichtbar"] == ["004/STICK-LOGO"]            # im Katalog noch sichtbar
+
+
+# --- Staffelpreise des Zubehörs (27.09.2026) ------------------------------------
+
+STAFFEL = {"key": "_cdh_staffelpreise", "value": [
+    {"ab": 1, "vk": "5,00", "ek": "2.00"}, {"ab": 10, "vk": "4.00", "ek": "1.80"},
+    {"ab": 50, "vk": "3.50", "ek": ""}]}
+
+
+def test_staffel_lesen_und_stufe():
+    st = w.staffel_lesen({"meta_data": [STAFFEL]})
+    assert [s["ab"] for s in st] == [1, 10, 50] and st[0]["vk"] == 5.0 and st[2]["ek"] is None
+    assert w.staffel_preis(st, 9)["ab"] == 1
+    assert w.staffel_preis(st, 10)["ab"] == 10
+    assert w.staffel_preis(st, 120)["ab"] == 50
+    assert w.staffel_preis(st, 0) is None
+    assert w.staffel_lesen({"meta_data": []}) == []
+
+
+class StaffelClient(Client):
+    def get_product(self, pid):
+        d = super().get_product(pid)
+        if pid == 20:
+            d["meta_data"] = [STAFFEL]
+        return d
+
+
+def test_staffel_je_auftrag_einzeln(orders):
+    o = _ohne_stick(orders["einzeln"])
+    o["line_items"][0]["quantity"] = 12                  # 12 Polos → 12 Sticks
+    c, cache = StaffelClient(), {}
+    w.zubehoer_ergaenzen(o, c, cache)
+    d = w.build_wex_data(o, {"datev_no": 1}, c, cache)
+    w.staffelpreise_anwenden(d, [o], cache)
+    stick = [p for p in d["positions"] if p["article_no"] == "004/STICK-LOGO"][0]
+    assert (stick["quantity"], stick["selling_price"], stick["buying_price"]) == (12, 4.0, 1.8)
+    assert o["line_items"][-1]["_staffel_preis"] == (1.8, 4.0)
+    # Excel-Kontrollliste zeigt denselben Preis
+    zeile = w._row_from_order_position(o, o["line_items"][-1], {"datev_no": 1}, c, cache)
+    assert 4.0 in zeile and 1.8 in zeile
+
+
+def test_staffel_leerer_ek_behaelt_grundpreis(orders):
+    o = _ohne_stick(orders["einzeln"])
+    o["line_items"][0]["quantity"] = 60
+    c, cache = StaffelClient(), {}
+    w.zubehoer_ergaenzen(o, c, cache)
+    d = w.build_wex_data(o, {"datev_no": 1}, c, cache)
+    grund_ek = [p for p in d["positions"] if p["article_no"] == "004/STICK-LOGO"][0]["buying_price"]
+    w.staffelpreise_anwenden(d, [o], cache)
+    stick = [p for p in d["positions"] if p["article_no"] == "004/STICK-LOGO"][0]
+    assert stick["selling_price"] == 3.5 and stick["buying_price"] == grund_ek
+
+
+def test_staffel_zaehlt_den_ganzen_sammelauftrag(orders):
+    """Zwei Bestellungen mit je 6 Sticks: einzeln Stufe 1, im Sammelauftrag
+    zusammen 12 → Stufe 10, für beide Bestellungen."""
+    b = []
+    for nr in (1, 2):
+        o = _ohne_stick(orders["einzeln"])
+        o["id"], o["number"], o["line_items"][0]["quantity"] = nr, str(nr), 6
+        b.append(o)
+    c, cache = StaffelClient(), {}
+    daten = []
+    for o in b:
+        w.zubehoer_ergaenzen(o, c, cache)
+        daten.append(w.build_wex_data(o, {"datev_no": 1}, c, cache))
+    sammel = w.build_combined_wex_data(daten, {"datev_no": 1}, "Bondorf")
+    w.staffelpreise_anwenden(sammel, b, cache)
+    sticks = [p for p in sammel["positions"] if p.get("article_no") == "004/STICK-LOGO"]
+    assert sum(p["quantity"] for p in sticks) == 12
+    assert {p["selling_price"] for p in sticks} == {4.0}
+    assert all(o["line_items"][-1]["_staffel_preis"] == (1.8, 4.0) for o in b)
+
+
+def test_ohne_staffel_bleibt_alles(orders):
+    o = _ohne_stick(orders["einzeln"])
+    c, cache = Client(), {}
+    w.zubehoer_ergaenzen(o, c, cache)
+    d = w.build_wex_data(o, {"datev_no": 1}, c, cache)
+    vorher = copy.deepcopy(d)
+    w.staffelpreise_anwenden(d, [o], cache)
+    assert d == vorher
+
+
+# --- Staffelpreise im Tool pflegen ---------------------------------------------
+
+@pytest.fixture
+def shopapi(tmp_path):
+    import yaml
+    import migrate_config as m
+    import shop_api as sa
+    (tmp_path / "einstellungen.yaml").write_text(yaml.safe_dump({"shops": [
+        {"id": "caf", "name": "CAF-Shop", "url": "https://shop.example/caf/", "datev_no": 1}]}),
+        encoding="utf-8")
+    (tmp_path / "zugang.yaml").write_text(yaml.safe_dump({
+        "admin": {"password": m.hash_admin_password("pw", iterations=1000)},
+        "shops": {"caf": {"consumer_key": "ck_T", "consumer_secret": "cs_T"}}}), encoding="utf-8")
+
+    class Shop(w.WooClient):
+        produkte = {
+            10: {"id": 10, "sku": "042/POLO", "name": "Poloshirt", "meta_data": [REGEL],
+                 "dimensions": {"length": "10", "width": "20"}},
+            20: {"id": 20, "sku": "004/STICK-LOGO", "name": "Stick Logo", "meta_data": [],
+                 "dimensions": {"length": "2,10", "width": "5.50"}},
+        }
+        puts = []
+
+        def _get(self, path, params=None):
+            if path == "/products":
+                return list(Shop.produkte.values()) if params["page"] == 1 else []
+            return copy.deepcopy(Shop.produkte[int(path.split("/")[2])])
+
+        def _put(self, path, data):
+            Shop.puts.append((path, data))
+            pid = int(path.split("/")[2])
+            Shop.produkte[pid]["meta_data"] = data["meta_data"]
+            return {}
+    Shop.puts = []
+    api = sa.ShopApi(tmp_path, benutzer="t", client_factory=Shop)
+    api.Shop = Shop
+    return api
+
+
+def test_zubehoer_artikel_liste(shopapi):
+    erg = shopapi.zubehoer_artikel("caf")
+    assert erg["ok"] and [a["sku"] for a in erg["artikel"]] == ["004/STICK-LOGO"]
+    assert erg["artikel"][0]["grund"] == {"ek": 2.1, "vk": 5.5} and erg["artikel"][0]["staffel"] == []
+
+
+def test_staffel_sichern_nur_admin(shopapi):
+    erg = shopapi.staffel_sichern("caf", 20, [{"ab": "1", "vk": "5", "ek": "2"}])
+    assert erg["ok"] is False and "Admin" in erg["fehler"] and shopapi.Shop.puts == []
+
+
+def test_staffel_sichern(shopapi):
+    shopapi.admin_anmelden("pw")
+    erg = shopapi.staffel_sichern("caf", 20, [
+        {"ab": "10", "vk": "4,00", "ek": "1,80"}, {"ab": "1", "vk": "5", "ek": "2"},
+        {"ab": "", "vk": "", "ek": ""}])
+    assert erg["ok"] and [s["ab"] for s in erg["staffel"]] == [1, 10]
+    pfad, daten = shopapi.Shop.puts[0]
+    assert pfad == "/products/20"
+    assert daten["meta_data"][0]["key"] == "_cdh_staffelpreise"
+    assert daten["meta_data"][0]["value"][1] == {"ab": 10, "vk": 4.0, "ek": 1.8}
+    assert "Staffelpreise 004/STICK-LOGO" in erg["log"][0]["what"]
+    # Der Import liest genau das wieder
+    assert w.staffel_lesen(shopapi.Shop.produkte[20])[1]["vk"] == 4.0
+    assert shopapi.zubehoer_artikel("caf")["artikel"][0]["staffel"][0]["ab"] == 1
+
+
+@pytest.mark.parametrize("zeilen, text", [
+    ([{"ab": "x", "vk": "5"}], "ganze Zahl"),
+    ([{"ab": "0", "vk": "5"}], "mindestens 1"),
+    ([{"ab": "1", "vk": ""}], "VK fehlt"),
+    ([{"ab": "1", "vk": "5", "ek": "abc"}], "EK ist keine Zahl"),
+    ([{"ab": "1", "vk": "2", "ek": "3"}], "EK (3.00) größer als VK"),
+    ([{"ab": "1", "vk": "5"}, {"ab": "1", "vk": "4"}], "doppelt"),
+])
+def test_staffel_pruefungen(shopapi, zeilen, text):
+    shopapi.admin_anmelden("pw")
+    erg = shopapi.staffel_sichern("caf", 20, zeilen)
+    assert erg["ok"] is False and text in erg["fehler"] and shopapi.Shop.puts == []

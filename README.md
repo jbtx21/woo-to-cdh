@@ -636,6 +636,17 @@ Kunde sieht nur seinen Artikel.
 
 Umstellen Schritt für Schritt: Briefing, Welle 9.
 
+**Staffelpreise des Zubehörs:** Am Zubehör-Artikel können Stufen „ab Menge →
+VK/EK" hinterlegt werden (Feld `_cdh_staffelpreise`). Pflege an zwei
+Stellen, dieselben Daten: im Shop im Produkt-Editor („Staffelpreise für
+CDH", ab Plugin 2.6) und im Tool (Einstellungen → Shop → Pflicht-Zubehör →
+Staffelpreise, Admin). Maßgeblich ist die **Menge dieses Zubehörs im
+CDH-Auftrag**, bei Sammel-Shops also alle Bestellungen eines Lieferorts
+zusammen. Leeres EK in einer Stufe: EK aus „Länge". Ohne Staffel gelten
+Länge (EK) und Breite (VK) wie bisher. WEX, Excel-Kontrollliste und „So geht
+es an CDH" zeigen den Staffelpreis. Das Tool lehnt ungültige Stufen ab (EK
+größer als VK, doppelte Menge); der Produkt-Editor verwirft dann nur das EK.
+
 ### Zusätzliche Meta-Spalten
 
 Über `extra_excel_meta` lassen sich pro Shop weitere Meta-Felder anhängen.

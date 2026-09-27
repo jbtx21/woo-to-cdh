@@ -74,7 +74,8 @@ def _bestellung_json(o: dict, s: w.ShopErgebnis) -> dict:
     pos = []
     for item in o.get("line_items") or []:
         try:
-            ek, vk = w.extract_ek_vk(s.client, item, s.price_cache)   # aus dem Cache
+            ek, vk = item.get("_staffel_preis") or \
+                w.extract_ek_vk(s.client, item, s.price_cache)       # aus dem Cache
         except Exception:  # noqa: BLE001 — Anzeige, kein Abbruch
             ek, vk = None, None
         name = (item.get("name") or "").strip()

@@ -305,6 +305,14 @@ Umstellen je Shop, in dieser Reihenfolge:
 
 **STOPP — erste Umstellung nur in einem Shop, mit Testbestellung.**
 
+**Nachtrag 27.09.2026 — Staffelpreise des Zubehörs** (Branch
+`welle-09b-staffelpreise`): Entscheidungen: Menge je CDH-Auftrag (Sammel-Shop:
+Lieferort gesamt), Staffel für VK und EK, Pflege im Shop **und** im Tool —
+beides schreibt dasselbe Feld `_cdh_staffelpreise` am Zubehör-Artikel, es
+gibt nichts abzugleichen. Plugin 2.6.0 (Tabelle im Produkt-Editor),
+`staffelpreise_anwenden()` nach dem Bilden jedes Auftrags, Fenster
+„Staffelpreise" im Tool (Admin, Änderungsverlauf mit alt/neu).
+
 Stand 26.09.2026: Das Plugin ist in **allen** Shops aktiv. Vorschlag: zuerst
 CAF (Einzel-Shop, überschaubar), Ensinger erst nach dem Stichtag 01.10.
 Den Schalter im Tool einzuschalten ist gefahrlos, solange die

@@ -1,9 +1,9 @@
 <?php
 /**
  * Plugin Name: CDH Required Accessories
- * Description: Pflicht-Zubehör pro Produkt (Aggregation je SKU, nicht entfernbar, Zubehör am Warenkorb-Ende). Stand 2.4 + 2. feste Metaboxen (A & B). Ab 2.5: Warenkorb-Automatik abschaltbar (WooCommerce → Einstellungen → Produkte) — dann ergänzt der TEXMA-WEX-Import das Zubehör für CDH und der Kunde sieht es nirgends.
+ * Description: Pflicht-Zubehör pro Produkt (Aggregation je SKU, nicht entfernbar, Zubehör am Warenkorb-Ende). Stand 2.4 + 2. feste Metaboxen (A & B). Ab 2.5: Warenkorb-Automatik abschaltbar (WooCommerce → Einstellungen → Produkte) — dann ergänzt der TEXMA-WEX-Import das Zubehör für CDH und der Kunde sieht es nirgends. Ab 2.6: Staffelpreise für CDH am Zubehör-Artikel (VK/EK je Menge im CDH-Auftrag), auch im TEXMA-Tool pflegbar.
  * Author: TEXMA
- * Version: 2.5.0
+ * Version: 2.6.0
  * Requires at least: 6.1
  * Requires PHP: 7.4
  * WC requires at least: 8.0
@@ -18,11 +18,14 @@ class CDH_Required_Accessories_24 {
     const CART_GROUP_KEY = '_cdh_group_key';
     const OPTION_CART    = 'cdh_ra_warenkorb';           // 'yes' (Standard) | 'no'
     const ORDER_ITEM_FLAG = '_cdh_is_accessory';          // an Bestellpositionen (ab 2.5)
+    const STAFFEL_KEY    = '_cdh_staffelpreise';         // am Zubehör-Artikel (ab 2.6): [{ab, vk, ek}]
+    const STAFFEL_MAX    = 10;
 
     public function __construct() {
         // Admin UI (2 feste Slots)
         add_action('add_meta_boxes',           [$this, 'add_metaboxes']);
         add_action('save_post_product',        [$this, 'save_metaboxes']);
+        add_action('save_post_product',        [$this, 'save_staffel']);
         add_action('admin_enqueue_scripts',    [$this, 'enqueue_admin_assets']);
         add_action('wp_ajax_cdh_ra_search',    [$this, 'ajax_search_products']); // Produktsuche
 
@@ -149,6 +152,54 @@ class CDH_Required_Accessories_24 {
     public function add_metaboxes() {
         add_meta_box('cdh_ra_slot_a', __('Pflicht-Zubehör A', 'cdh-ra'), function($post){ $this->render_metabox_slot($post, 0); }, 'product', 'side', 'default');
         add_meta_box('cdh_ra_slot_b', __('Pflicht-Zubehör B', 'cdh-ra'), function($post){ $this->render_metabox_slot($post, 1); }, 'product', 'side', 'default');
+        add_meta_box('cdh_ra_staffel', __('Staffelpreise für CDH (Zubehör)', 'cdh-ra'), [$this, 'render_staffel'], 'product', 'normal', 'default');
+    }
+
+    /* ================= Staffelpreise (ab 2.6) ================= */
+
+    private static function zahl($x) {
+        $x = trim(str_replace(',', '.', (string) $x));
+        return ($x === '' || !is_numeric($x)) ? null : round((float) $x, 4);
+    }
+
+    public function render_staffel($post) {
+        wp_nonce_field('cdh_ra_staffel', 'cdh_ra_staffel_nonce');
+        $rows = get_post_meta($post->ID, self::STAFFEL_KEY, true);
+        if (!is_array($rows)) $rows = [];
+        $rows = array_values($rows);
+        $anzahl = max(count($rows) + 2, 3);
+        echo '<p>'.esc_html__('Nur für Zubehör-Artikel (z. B. Stick). Maßgeblich ist die Menge dieses Zubehörs im CDH-Auftrag – bei Sammel-Shops alle Bestellungen eines Lieferorts zusammen. Leeres EK: EK aus „Länge“. Ohne Staffel gelten Länge (EK) und Breite (VK). Dieselben Werte lassen sich im TEXMA-Tool pflegen.', 'cdh-ra').'</p>';
+        echo '<table class="widefat striped" style="max-width:520px"><thead><tr><th>'.esc_html__('ab Menge', 'cdh-ra').'</th><th>'.esc_html__('VK', 'cdh-ra').'</th><th>'.esc_html__('EK', 'cdh-ra').'</th></tr></thead><tbody>';
+        for ($i = 0; $i < min($anzahl, self::STAFFEL_MAX); $i++) {
+            $r = $rows[$i] ?? ['ab' => '', 'vk' => '', 'ek' => ''];
+            $fmt = function($v) { return ($v === null || $v === '') ? '' : str_replace('.', ',', (string) $v); };
+            printf('<tr><td><input type="number" min="1" step="1" name="cdh_ra_staffel[%1$d][ab]" value="%2$s" style="width:90px"></td>'
+                 . '<td><input type="text" inputmode="decimal" name="cdh_ra_staffel[%1$d][vk]" value="%3$s" style="width:110px"></td>'
+                 . '<td><input type="text" inputmode="decimal" name="cdh_ra_staffel[%1$d][ek]" value="%4$s" style="width:110px"></td></tr>',
+                $i, esc_attr($r['ab'] ?? ''), esc_attr($fmt($r['vk'] ?? '')), esc_attr($fmt($r['ek'] ?? '')));
+        }
+        echo '</tbody></table>';
+    }
+
+    public function save_staffel($post_id) {
+        if (!isset($_POST['cdh_ra_staffel_nonce']) || !wp_verify_nonce($_POST['cdh_ra_staffel_nonce'], 'cdh_ra_staffel')) return;
+        if (!current_user_can('manage_options')) return;
+        if (defined('DOING_AUTOSAVE') && DOING_AUTOSAVE) return;
+
+        $staffel = [];
+        foreach ((array) ($_POST['cdh_ra_staffel'] ?? []) as $row) {
+            $row = (array) $row;
+            $ab = isset($row['ab']) ? intval($row['ab']) : 0;
+            $vk = self::zahl($row['vk'] ?? '');
+            $ek = self::zahl($row['ek'] ?? '');
+            if ($ab < 1 || $vk === null || $vk < 0) continue;      // unvollständige Zeile
+            if ($ek !== null && ($ek < 0 || $ek > $vk)) $ek = null; // wie im Tool: EK ≤ VK
+            $staffel[$ab] = ['ab' => $ab, 'vk' => $vk, 'ek' => $ek];
+        }
+        ksort($staffel);
+        $staffel = array_slice(array_values($staffel), 0, self::STAFFEL_MAX);
+        if ($staffel) update_post_meta($post_id, self::STAFFEL_KEY, $staffel);
+        else delete_post_meta($post_id, self::STAFFEL_KEY);
     }
 
     private function render_metabox_slot($post, $slot = 0) {

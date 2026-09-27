@@ -338,6 +338,11 @@ button.row:active, .row.tap:active { background: var(--fill); }
 @keyframes shake { 20%, 60% { transform: translateX(-8px); } 40%, 80% { transform: translateX(8px); } }
 .alert-box.shake { animation: shake .35s; }
 .backdrop.still, .backdrop.still .sheet { animation: none; }
+.staffel-kopf, .staffel-zeile { display: grid; grid-template-columns: 1fr 1fr 1fr 28px; gap: 10px; padding: 8px 16px; align-items: center; }
+.staffel-kopf { color: var(--label-2); font-size: 13px; padding-bottom: 0; }
+.staffel-zeile input { width: 100%; min-width: 0; text-align: right; font: inherit; font-feature-settings: "tnum" 1;
+  padding: 7px 10px; border: .5px solid var(--sep); border-radius: 8px; background: var(--bg); color: inherit; }
+.staffel-zeile + .row, .staffel-zeile + .staffel-zeile { border-top: 0; }
 .admin-row .icon { background: var(--orange); }
 
 /* --------------------------------------------------------- Assistent ---- */
@@ -1103,6 +1108,10 @@ function renderSettings() {
               <div class="row-sub">z. B. Stick zum Poloshirt</div></span>
             <span class="switch"><input type="checkbox" data-c="zubehoer" ${s.zubehoer ? "checked" : ""}><span class="t"></span></span>
           </span></label>
+          <button class="row" data-a="staffel"><span class="row-body">
+            <span class="row-main"><span class="row-title">Staffelpreise der Zubehör-Artikel</span>
+              <div class="row-sub">VK/EK je Menge im CDH-Auftrag</div></span>${isAdmin() ? I.chev : I.lock}
+          </span></button>
         </div>
         <div class="group-foot">${s.zubehoer
           ? "Der Import legt das Pflicht-Zubehör selbst an, mit EK/VK des Zubehör-Artikels. Im Shop dafür die Warenkorb-Automatik des Plugins ausschalten, dann sieht der Kunde nur seinen Artikel. Steht das Zubehör schon in der Bestellung, wird nichts doppelt ergänzt."
@@ -1403,7 +1412,7 @@ async function pwSubmit() {
 function adminEnd() {
   adminUntil = 0; unlocked = {};
   api().admin_abmelden();
-  if (overlay && ["wizard", "access"].includes(overlay.kind)) closeOverlay();
+  if (overlay && ["wizard", "access", "staffel"].includes(overlay.kind)) closeOverlay();
   render(); hud("Admin-Modus beendet");
 }
 
@@ -1581,6 +1590,68 @@ async function wizFinish() {
   } catch (err) { o.busy = false; drawWizard(); meldung("Nicht angelegt", String(err)); }
 }
 
+// ------------------------------------------------------------ Staffelpreise (Welle 9)
+// Gleiches Feld wie im Produkt-Editor des Shops (Plugin ab 2.6): Änderungen
+// hier sieht man dort und umgekehrt. Maßgeblich ist die Menge je CDH-Auftrag.
+async function openStaffel() {
+  const s = shop();
+  overlay = { kind: "staffel", shopId: s.id, laden: true, artikel: [], fehler: "" };
+  drawStaffel();
+  const erg = await api().zubehoer_artikel(s.id);
+  if (overlay?.kind !== "staffel") return;
+  overlay.laden = false;
+  if (!erg.ok) overlay.fehler = erg.fehler;
+  else overlay.artikel = erg.artikel.map((a) => ({ ...a, zeilen: a.staffel.length ? a.staffel.map((z) => ({ ...z })) : [{ ab: "", vk: "", ek: "" }] }));
+  drawStaffel();
+}
+
+const preisText = (x) => (x == null || x === "" ? "" : typeof x === "number" ? x.toFixed(2).replace(".", ",") : String(x));
+
+function drawStaffel() {
+  const o = overlay, s = shopById(o.shopId);
+  let body;
+  if (o.laden) body = `<div class="group"><div class="card"><div class="row"><span class="spin"></span><span class="row-body"><span class="row-main"><span class="row-title">Artikel werden gelesen …</span></span></span></div></div></div>`;
+  else if (o.fehler) body = `<div class="group"><div class="card"><div class="row"><span class="row-body"><span class="row-main"><span class="row-title warn-text">${esc(o.fehler)}</span></span></span></div></div></div>`;
+  else if (!o.artikel.length) body = `<div class="group-foot">In diesem Shop ist an keinem Artikel Pflicht-Zubehör hinterlegt.</div>`;
+  else body = o.artikel.map((a, i) => `
+    <div class="group" data-staffel-art="${i}">
+      <div class="group-head">${esc(a.sku)} · ${esc(a.name)}</div>
+      <div class="card">
+        <div class="staffel-kopf"><span>ab Menge</span><span>VK €</span><span>EK €</span><span></span></div>
+        ${a.zeilen.map((z, j) => `
+          <div class="staffel-zeile">
+            <input data-sf="ab" data-i="${i}" data-j="${j}" value="${esc(z.ab)}" inputmode="numeric" placeholder="1" aria-label="ab Menge">
+            <input data-sf="vk" data-i="${i}" data-j="${j}" value="${esc(preisText(z.vk))}" inputmode="decimal" placeholder="0,00" aria-label="VK">
+            <input data-sf="ek" data-i="${i}" data-j="${j}" value="${esc(preisText(z.ek))}" inputmode="decimal" placeholder="Grundpreis" aria-label="EK">
+            <button class="navlink" data-a="staffel-weg" data-i="${i}" data-j="${j}" aria-label="Stufe entfernen">✕</button>
+          </div>`).join("")}
+        <button class="row action" data-a="staffel-neu" data-i="${i}"><span class="row-body"><span class="row-main"><span class="row-title">Stufe hinzufügen</span></span></span></button>
+        <button class="row action" data-a="staffel-sichern" data-i="${i}"><span class="row-body"><span class="row-main"><span class="row-title" style="font-weight:600">Sichern</span></span></span></button>
+      </div>
+      <div class="group-foot">Grundpreis ohne Staffel: VK ${esc(preisText(a.grund.vk) || "–")} € · EK ${esc(preisText(a.grund.ek) || "–")} €. Leeres EK: Grundpreis bleibt.</div>
+    </div>`).join("");
+  zeigeBlatt(sheetShell(`Staffelpreise ${s.name}`, "", `<button class="navlink bold" data-a="close">Fertig</button>`,
+    body + `<div class="group-foot">Maßgeblich ist die Menge dieses Zubehörs im CDH-Auftrag — bei Sammel-Shops alle Bestellungen eines Lieferorts zusammen. Dieselben Staffeln stehen im Shop im Produkt-Editor.</div>`));
+}
+
+function staffelErfassen() {
+  document.querySelectorAll("#overlay input[data-sf]").forEach((el) => {
+    overlay.artikel[+el.dataset.i].zeilen[+el.dataset.j][el.dataset.sf] = el.value.trim();
+  });
+}
+
+async function staffelSichern(i) {
+  staffelErfassen();
+  const o = overlay, a = o.artikel[i];
+  const erg = await api().staffel_sichern(o.shopId, a.id, a.zeilen);
+  if (!erg.ok) { meldung("Nicht gesichert", erg.fehler); return; }
+  if (overlay !== o) return;
+  a.staffel = erg.staffel;
+  a.zeilen = erg.staffel.length ? erg.staffel.map((z) => ({ ...z })) : [{ ab: "", vk: "", ek: "" }];
+  LOG = erg.log || LOG;
+  drawStaffel(); hud(`Staffelpreise ${a.sku} gesichert`);
+}
+
 // ------------------------------------------------------------ Zugang erneuern
 function openAccess() {
   const s = shop();
@@ -1656,6 +1727,10 @@ document.addEventListener("click", (e) => {
     case "wiz-open": { const id = overlay.neuId; closeOverlay(); tab = "settings"; current = id; $("#split").dataset.view = "detail"; render(); break; }
     case "access": requireAdmin("Zugang erneuern", "Ersetzt die Schlüssel, mit denen der Shop abgefragt wird.", openAccess); break;
     case "access-save": accessSave(); break;
+    case "staffel": requireAdmin("Staffelpreise ändern", "Ändert Preise im Shop, die an CDH gehen.", openStaffel); break;
+    case "staffel-neu": staffelErfassen(); overlay.artikel[+el.dataset.i].zeilen.push({ ab: "", vk: "", ek: "" }); drawStaffel(); break;
+    case "staffel-weg": staffelErfassen(); overlay.artikel[+el.dataset.i].zeilen.splice(+el.dataset.j, 1); drawStaffel(); break;
+    case "staffel-sichern": staffelSichern(+el.dataset.i); break;
     case "todo": hud(el.dataset.msg || "Im Entwurf ohne Funktion."); break;
     case "fetch": doFetch(); break;
     case "override": overrides.add(el.dataset.id); doFetch(); break;

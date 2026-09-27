@@ -647,3 +647,54 @@ def test_pflicht_zubehoer_schalter(seite):
     seite.wait_for_selector("#hud.show:has-text('Gesichert')")
     assert _cfg(seite.ordner)["shops"][0]["pflicht_zubehoer"] is True
     assert seite.fehler == []
+
+
+class StaffelWoo(FakeWoo):
+    produkte = {}
+    puts = []
+
+    def _get(self, path, params=None):
+        if path == "/products":
+            return list(StaffelWoo.produkte.values()) if params.get("page") == 1 else []
+        if path.startswith("/products/"):
+            return dict(StaffelWoo.produkte[int(path.split("/")[2])])
+        return super()._get(path, params)
+
+    def _put(self, path, data):
+        StaffelWoo.puts.append((path, data))
+        StaffelWoo.produkte[int(path.split("/")[2])]["meta_data"] = data["meta_data"]
+        return {}
+
+
+def test_staffelpreise_pflegen(seite):
+    StaffelWoo.puts = []
+    StaffelWoo.produkte = {
+        10: {"id": 10, "sku": "042/POLO", "name": "Poloshirt", "dimensions": {},
+             "meta_data": [{"key": "_cdh_required_accessories",
+                            "value": [{"accessory_id": 20, "qty_per_unit": 1}]}]},
+        20: {"id": 20, "sku": "004/STICK-LOGO", "name": "Stick Logo",
+             "dimensions": {"length": "2.10", "width": "5.50"}, "meta_data": []}}
+    seite.api._client_factory = StaffelWoo
+    _nav(seite, "caf")
+    seite.click("#detail [data-a=staffel]")
+    _admin(seite)
+    seite.wait_for_selector("text=004/STICK-LOGO · Stick Logo")
+    assert "Grundpreis ohne Staffel: VK 5,50 €" in seite.locator("#overlay").inner_text()
+    seite.fill("input[data-sf=ab][data-j='0']", "1")
+    seite.fill("input[data-sf=vk][data-j='0']", "5,00")
+    seite.fill("input[data-sf=ek][data-j='0']", "2,00")
+    seite.click("[data-a=staffel-neu]")
+    seite.fill("input[data-sf=ab][data-j='1']", "10")
+    seite.fill("input[data-sf=vk][data-j='1']", "4,00")
+    seite.click("[data-a=staffel-sichern]")
+    seite.wait_for_selector("#hud.show:has-text('Staffelpreise 004/STICK-LOGO gesichert')")
+    pfad, daten = StaffelWoo.puts[0]
+    assert pfad == "/products/20"
+    assert daten["meta_data"][0]["value"] == [{"ab": 1, "vk": 5.0, "ek": 2.0},
+                                              {"ab": 10, "vk": 4.0, "ek": None}]
+    # Ungültig → Meldung, nichts geschrieben
+    seite.fill("input[data-sf=ek][data-j='1']", "9")
+    seite.click("[data-a=staffel-sichern]")
+    seite.wait_for_selector(".alert-box:has-text('größer als VK')")
+    assert len(StaffelWoo.puts) == 1
+    assert seite.fehler == []

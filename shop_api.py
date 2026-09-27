@@ -263,6 +263,109 @@ class ShopApi(EinstellungenApi):
         except _Fehler as e:
             return {"ok": False, "fehler": str(e)}
 
+    # --- Staffelpreise des Pflicht-Zubehörs (Welle 9) -----------------------
+    def _alle_produkte(self, client) -> list[dict]:
+        out, seite = [], 1
+        while True:
+            teil = client._get("/products", {"per_page": 100, "page": seite})
+            out += teil or []
+            if not teil or len(teil) < 100:
+                return out
+            seite += 1
+
+    def zubehoer_artikel(self, shop_id: str) -> dict:
+        """Alle Zubehör-Artikel des Shops (aus den Regeln der Produkte) mit
+        Grundpreis (Länge/Breite) und Staffelpreisen. Nur lesend."""
+        try:
+            shop = self._shop_cfg(shop_id)
+            if w.fehlende_zugangsdaten(shop):
+                raise _Fehler("Kein Zugang hinterlegt.")
+            client = self._client(shop["url"], shop["consumer_key"], shop["consumer_secret"])
+            produkte = self._alle_produkte(client)
+        except _Fehler as e:
+            return {"ok": False, "fehler": str(e)}
+        except Exception as e:  # noqa: BLE001
+            return {"ok": False, "fehler": f"Artikel nicht abrufbar ({type(e).__name__})."}
+        nach_id = {p.get("id"): p for p in produkte}
+        ids = {acc for p in produkte for acc, _per in w._zubehoer_regeln(p)}
+        artikel = []
+        for acc in ids:
+            p = nach_id.get(acc)
+            if p is None:
+                continue
+            dims = p.get("dimensions") or {}
+            artikel.append({"id": acc, "sku": p.get("sku") or "", "name": p.get("name") or "",
+                            "grund": {"ek": w._zahl_oder_none(dims.get(w.EK_FIELD)),
+                                      "vk": w._zahl_oder_none(dims.get(w.VK_FIELD))},
+                            "staffel": w.staffel_lesen(p)})
+        artikel.sort(key=lambda a: (a["sku"], a["id"]))
+        return {"ok": True, "artikel": artikel,
+                "fehlt": sorted(i for i in ids if i not in nach_id)}
+
+    @staticmethod
+    def _staffel_pruefen(zeilen) -> list[dict]:
+        sauber, fehler = {}, []
+        for i, z in enumerate(zeilen or [], 1):
+            z = z or {}
+            if all(str(z.get(k) or "").strip() == "" for k in ("ab", "vk", "ek")):
+                continue                                   # leere Zeile
+            try:
+                ab = int(str(z.get("ab")).strip())
+            except ValueError:
+                fehler.append(f"Zeile {i}: „ab Menge“ muss eine ganze Zahl sein.")
+                continue
+            vk, ek = w._zahl_oder_none(z.get("vk")), w._zahl_oder_none(z.get("ek"))
+            if ab < 1:
+                fehler.append(f"Zeile {i}: „ab Menge“ mindestens 1.")
+            if vk is None:
+                fehler.append(f"Zeile {i}: VK fehlt oder ist keine Zahl.")
+            if str(z.get("ek") or "").strip() and ek is None:
+                fehler.append(f"Zeile {i}: EK ist keine Zahl.")
+            if (vk is not None and vk < 0) or (ek is not None and ek < 0):
+                fehler.append(f"Zeile {i}: Preise nicht negativ.")
+            if vk is not None and ek is not None and ek > vk:
+                fehler.append(f"Zeile {i}: EK ({ek:.2f}) größer als VK ({vk:.2f}).")
+            if ab in sauber:
+                fehler.append(f"Zeile {i}: ab {ab} doppelt.")
+            sauber[ab] = {"ab": ab, "vk": vk, "ek": ek}
+        if len(sauber) > 10:
+            fehler.append("Höchstens 10 Stufen.")
+        if fehler:
+            raise _Fehler("Nicht gesichert:\n" + "\n".join(fehler))
+        return [sauber[k] for k in sorted(sauber)]
+
+    def staffel_sichern(self, shop_id: str, produkt_id, zeilen) -> dict:
+        """Staffelpreise eines Zubehör-Artikels in den Shop schreiben (dasselbe
+        Feld, das der Produkt-Editor ab Plugin 2.6 zeigt). Nur im Admin-Modus."""
+        try:
+            self._admin_noetig("Staffelpreise ändern")
+            neu = self._staffel_pruefen(zeilen)
+            shop = self._shop_cfg(shop_id)
+            if w.fehlende_zugangsdaten(shop):
+                raise _Fehler("Kein Zugang hinterlegt.")
+            client = self._client(shop["url"], shop["consumer_key"], shop["consumer_secret"])
+            pid = int(produkt_id)
+            try:
+                alt_prod = client.get_product(pid)
+                client._put(f"/products/{pid}", {"meta_data": [
+                    {"key": w.STAFFEL_META,
+                     "value": [{k: s[k] for k in ("ab", "vk", "ek")} for s in neu]}]})
+            except Exception as e:  # noqa: BLE001
+                raise _Fehler(f"Nicht gesichert ({w.ohne_schluessel(e)}).") from None
+            alt = w.staffel_lesen(alt_prod)
+            if alt != neu:
+                def txt(s):
+                    return ", ".join(f"ab {x['ab']}: VK {x['vk']:.2f}"
+                                     + (f"/EK {x['ek']:.2f}" if x["ek"] is not None else "")
+                                     for x in s) or "keine"
+                text = (f"{shop.get('name')}: Staffelpreise {alt_prod.get('sku') or pid} "
+                        f"— vorher {txt(alt)}; jetzt {txt(neu)}")
+                self._verlauf_schreiben([text])
+                logging.info("%s (%s)", text, self._benutzer)
+            return {"ok": True, "staffel": neu, "log": self._verlauf_lesen()}
+        except _Fehler as e:
+            return {"ok": False, "fehler": str(e)}
+
     def altbestellungen(self, shop_id: str) -> dict:
         """Offene Bestellungen eines ausgeschalteten Shops — nur lesend."""
         try:

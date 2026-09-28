@@ -428,6 +428,9 @@ Etappen:
       Ebenen, Kreisläufe übersprungen. Import rechnet genauso; Tool prüft
       Kreisläufe und erlaubt mehr als 2 Plätze nur bei Plugin ≥ 2.7
       (Systemstatus).
+  - **Am echten Shop bestätigt am 28.09.2026 (Jannik):** Artikel-Tab
+    (Preise, Texte, Bilder, Zubehör, Staffel), Zubehör am Zubehör, Plätze
+    A–D, Warenkorb-Automatik aus (Allgaier). „Funktioniert alles.“
 
 ---
 

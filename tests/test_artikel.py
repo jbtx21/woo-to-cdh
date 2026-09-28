@@ -132,7 +132,7 @@ def test_laden_varianten_unter_dem_artikel(api):
                  "sku": "042/POLO-M", "name": "Poloshirt", "variante": "M",
                  "merkmale": [{"name": "Größe", "option": "M"}],
                  "ek": 12.1, "vk": 24.9, "preis": 29.9, "kurz": "", "text": "", "bilder": [],
-                 "zubehoer": [], "zubehoer_eigen": False}
+                 "zubehoer": [], "zubehoer_eigen": False, "staffel": []}
     assert erg["artikel"][0]["ek"] is None and erg["letzte"] is None
     assert ArtikelWoo.posts == []
 
@@ -605,3 +605,71 @@ def test_zubehoer_ohne_hinweis_wenn_im_tool_an(mit_zubehoer, tmp_path):
     mit_zubehoer.artikel_laden("caf")
     erg = _aendern(mit_zubehoer, (20, "zubehoer", [{"id": 40, "menge": 1}]))
     assert erg["warnungen"] == [] and erg["vorschau_id"]
+
+
+# --- Staffelpreise im Artikel-Tab (28.09.2026) ----------------------------------
+
+STAFFEL = "_cdh_staffelpreise"
+
+
+def test_staffel_laden_und_zubehoer_markiert(mit_zubehoer):
+    _shop(CAF)["produkte"][40]["meta_data"] = [{"key": STAFFEL, "value": [{"ab": 10, "vk": "4,00", "ek": ""}]}]
+    z = {r["id"]: r for r in mit_zubehoer.artikel_laden("caf")["artikel"]}
+    assert z[40]["staffel"] == [{"ab": 10, "vk": 4.0, "ek": None}]
+    assert z[40]["ist_zubehoer"] is True          # nur über die Regel einer Variante genutzt
+    assert z[20]["ist_zubehoer"] is False and z[11]["staffel"] == []
+
+
+def test_staffel_sichern_und_zurueck(mit_zubehoer):
+    api = mit_zubehoer
+    api.artikel_laden("caf")
+    erg = _aendern(api, (40, "staffel", [{"ab": "10", "vk": "4,00", "ek": ""},
+                                         {"ab": "1", "vk": "5", "ek": "2,10"},
+                                         {"ab": "", "vk": "", "ek": ""}]))
+    assert erg["fehler"] == [] and erg["vorschau_id"]
+    z = erg["shops"][0]["zeilen"][0]
+    assert (z["feldname"], z["alt"], z["neu"]) == (
+        "Staffelpreise", "keine", "ab 1: VK 5,00, EK 2,10; ab 10: VK 4,00")
+    api.artikel_sichern(erg["vorschau_id"])
+    assert ArtikelWoo.posts[0][1] == {"update": [{"id": 40, "meta_data": [{"key": STAFFEL, "value": [
+        {"ab": 1, "vk": 5.0, "ek": 2.1}, {"ab": 10, "vk": 4.0, "ek": None}]}]}]}
+    # Der Import liest dieselbe Staffel
+    assert w.staffel_lesen(_shop(CAF)["produkte"][40]) == [
+        {"ab": 1, "vk": 5.0, "ek": 2.1}, {"ab": 10, "vk": 4.0, "ek": None}]
+    api.artikel_zuruecknehmen(api._letzte_info()["datei"], True)
+    assert w.staffel_lesen(_shop(CAF)["produkte"][40]) == []
+
+
+@pytest.mark.parametrize("aenderung, text", [
+    ((40, "staffel", [{"ab": 1, "vk": 5, "ek": 6}]), "Staffel — Zeile 1: EK (6.00) größer als VK (5.00)."),
+    ((40, "staffel", [{"ab": 1, "vk": "", "ek": 1}]), "Staffel — Zeile 1: VK fehlt"),
+    ((40, "staffel", [{"ab": 1, "vk": 5}, {"ab": 1, "vk": 4}]), "Staffel — Zeile 2: ab 1 doppelt."),
+    ((10, "staffel", [{"ab": 1, "vk": 5}]), "Staffelpreise nur an einfachen Artikeln"),
+    ((11, "staffel", [{"ab": 1, "vk": 5}]), "Staffelpreise nur an einfachen Artikeln"),
+])
+def test_staffel_pruefungen(mit_zubehoer, aenderung, text):
+    mit_zubehoer.artikel_laden("caf")
+    erg = _aendern(mit_zubehoer, aenderung)
+    assert erg["vorschau_id"] is None and any(text in f for f in erg["fehler"]), erg["fehler"]
+
+
+def test_staffel_fenster_findet_regeln_an_varianten(mit_zubehoer):
+    """Einstellungen → Pflicht-Zubehör → Staffelpreise: der Stick hängt nur an
+    einer Variante des Polos — er muss trotzdem in der Liste stehen."""
+    erg = mit_zubehoer.zubehoer_artikel("caf")
+    assert erg["ok"] and [a["sku"] for a in erg["artikel"]] == ["004/STICK"]
+
+
+def test_staffel_standardstufen_ohne_preis_zaehlen_nicht(mit_zubehoer):
+    """Tool und Plugin 2.6.1 belegen 1/10/25/50/100/250/500 vor — nur Stufen
+    mit Preis werden gespeichert."""
+    mit_zubehoer.artikel_laden("caf")
+    zeilen = [{"ab": str(ab), "vk": "", "ek": ""} for ab in (1, 10, 25, 50, 100, 250, 500)]
+    zeilen[0]["vk"], zeilen[3]["vk"] = "5,00", "3,50"
+    erg = _aendern(mit_zubehoer, (40, "staffel", zeilen))
+    assert erg["fehler"] == [] and erg["shops"][0]["zeilen"][0]["neu"] == "ab 1: VK 5,00; ab 50: VK 3,50"
+    # Sieben Stufen mit Preis gehen auch
+    for z, vk in zip(zeilen, ("5", "4.8", "4.5", "4.2", "4", "3.8", "3.5")):
+        z["vk"] = vk
+    erg = _aendern(mit_zubehoer, (40, "staffel", zeilen))
+    assert erg["fehler"] == [] and erg["shops"][0]["zeilen"][0]["neu"].count("ab ") == 7

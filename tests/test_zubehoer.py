@@ -358,7 +358,7 @@ def test_staffel_sichern(shopapi):
 @pytest.mark.parametrize("zeilen, text", [
     ([{"ab": "x", "vk": "5"}], "ganze Zahl"),
     ([{"ab": "0", "vk": "5"}], "mindestens 1"),
-    ([{"ab": "1", "vk": ""}], "VK fehlt"),
+    ([{"ab": "1", "vk": "", "ek": "2"}], "VK fehlt"),
     ([{"ab": "1", "vk": "5", "ek": "abc"}], "EK ist keine Zahl"),
     ([{"ab": "1", "vk": "2", "ek": "3"}], "EK (3.00) größer als VK"),
     ([{"ab": "1", "vk": "5"}, {"ab": "1", "vk": "4"}], "doppelt"),

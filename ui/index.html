@@ -445,6 +445,8 @@ table.art { width: 100%; border-collapse: collapse; font-size: 14px; font-featur
 .bild .knoepfe button:disabled { opacity: .35; cursor: default; }
 .bild-wahl:hover { outline: 2px solid var(--blue); outline-offset: -2px; }
 .art td.zu { font-size: 14px; max-width: 200px; }
+.art td.st { white-space: nowrap; }
+.art td.st .navlink.neu { font-weight: 600; }
 .art td.zu .navlink { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; text-align: left; }
 .art td.zu .navlink.neu { font-weight: 600; }
 .var-knoepfe { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -1414,7 +1416,7 @@ function closeOverlay() {
   if (overlay?.busy) return;                 // Assistent/Zugang wartet auf Python
   const war = overlay?.kind;
   overlay = null; $("#overlay").innerHTML = "";
-  if (["art-text", "art-bilder", "art-zub"].includes(war)) renderArtikel();   // Markierung „geändert“ in der Tabelle
+  if (["art-text", "art-bilder", "art-zub", "art-staffel"].includes(war)) renderArtikel();   // Markierung „geändert“ in der Tabelle
 }
 
 function sheetDone() {
@@ -1498,7 +1500,7 @@ async function pwSubmit() {
 function adminEnd() {
   adminUntil = 0; unlocked = {};
   api().admin_abmelden();
-  if (overlay && ["wizard", "access", "staffel", "art-aktion", "art-vorschau", "art-undo", "art-text", "art-ersetzen", "art-bilder", "art-zub"].includes(overlay.kind)) closeOverlay();
+  if (overlay && ["wizard", "access", "staffel", "art-aktion", "art-vorschau", "art-undo", "art-text", "art-ersetzen", "art-bilder", "art-zub", "art-staffel"].includes(overlay.kind)) closeOverlay();
   render(); hud("Admin-Modus beendet");
 }
 
@@ -1687,7 +1689,7 @@ async function openStaffel() {
   if (overlay?.kind !== "staffel") return;
   overlay.laden = false;
   if (!erg.ok) overlay.fehler = erg.fehler;
-  else overlay.artikel = erg.artikel.map((a) => ({ ...a, zeilen: a.staffel.length ? a.staffel.map((z) => ({ ...z })) : [{ ab: "", vk: "", ek: "" }] }));
+  else overlay.artikel = erg.artikel.map((a) => ({ ...a, zeilen: a.staffel.length ? a.staffel.map((z) => ({ ...z })) : STAFFEL_STANDARD.map((ab) => ({ ab: String(ab), vk: "", ek: "" })) }));
   drawStaffel();
 }
 
@@ -1714,7 +1716,7 @@ function drawStaffel() {
         <button class="row action" data-a="staffel-neu" data-i="${i}"><span class="row-body"><span class="row-main"><span class="row-title">Stufe hinzufügen</span></span></span></button>
         <button class="row action" data-a="staffel-sichern" data-i="${i}"><span class="row-body"><span class="row-main"><span class="row-title" style="font-weight:600">Sichern</span></span></span></button>
       </div>
-      <div class="group-foot">Grundpreis ohne Staffel: VK ${esc(preisText(a.grund.vk) || "–")} € · EK ${esc(preisText(a.grund.ek) || "–")} €. Leeres EK: Grundpreis bleibt.</div>
+      <div class="group-foot">Stufen ohne Preis zählen nicht. Grundpreis ohne Staffel: VK ${esc(preisText(a.grund.vk) || "–")} € · EK ${esc(preisText(a.grund.ek) || "–")} €. Leeres EK: Grundpreis bleibt.</div>
     </div>`).join("");
   zeigeBlatt(sheetShell(`Staffelpreise ${s.name}`, "", `<button class="navlink bold" data-a="close">Fertig</button>`,
     body + `<div class="group-foot">Maßgeblich ist die Menge dieses Zubehörs im CDH-Auftrag — bei Sammel-Shops alle Bestellungen eines Lieferorts zusammen. Dieselben Staffeln stehen im Shop im Produkt-Editor.</div>`));
@@ -1781,8 +1783,8 @@ async function accessSave() {
 let art = { shopId: null, laden: false, fehler: "", liste: [], andere: [], letzte: null, marge: 10, bilder: {},
   entwurf: {}, auswahl: new Set(), suche: "", filter: "alle" };
 const ART_ZAHLEN = ["preis", "vk", "ek"];
-const ART_NAMEN = { preis: "Verkaufspreis", vk: "VK", ek: "EK", sku: "Artikelnummer", name: "Artikelname", kurz: "Kurzbeschreibung", text: "Beschreibung", bilder: "Bilder", zubehoer: "Pflicht-Zubehör" };
-const ART_FILTER = [["alle", "Alle"], ["ek", "EK fehlt"], ["vk", "VK fehlt"], ["ekvk", "EK > VK"], ["marge", "Marge niedrig"], ["text", "Text fehlt"], ["bild", "Ohne Bild"], ["zub", "Mit Zubehör"], ["neu", "Geändert"]];
+const ART_NAMEN = { preis: "Verkaufspreis", vk: "VK", ek: "EK", sku: "Artikelnummer", name: "Artikelname", kurz: "Kurzbeschreibung", text: "Beschreibung", bilder: "Bilder", zubehoer: "Pflicht-Zubehör", staffel: "Staffelpreise" };
+const ART_FILTER = [["alle", "Alle"], ["ek", "EK fehlt"], ["vk", "VK fehlt"], ["ekvk", "EK > VK"], ["marge", "Marge niedrig"], ["text", "Text fehlt"], ["bild", "Ohne Bild"], ["zub", "Mit Zubehör"], ["istzub", "Zubehörartikel"], ["neu", "Geändert"]];
 const ART_TEXTE = ["kurz", "text"];
 
 const artAnzahl = () => Object.keys(art.entwurf).length;
@@ -1807,7 +1809,7 @@ function setEntwurf(z, f, text) {
   const k = `${z.id}:${f}`;
   const gleich = ART_ZAHLEN.includes(f)
     ? (() => { const a = zahlLesen(text), b = z[f]; return (a == null && b == null) || (a != null && b != null && Math.abs(a - b) < 0.00005); })()
-    : f === "bilder" || f === "zubehoer" ? JSON.stringify(text) === JSON.stringify(z[f] || [])
+    : ["bilder", "zubehoer", "staffel"].includes(f) ? JSON.stringify(text) === JSON.stringify(z[f] || [])
     : ART_TEXTE.includes(f) ? String(text) === String(z[f] ?? "")
     : String(text).trim() === String(z[f] ?? "");
   if (gleich) delete art.entwurf[k]; else art.entwurf[k] = text;
@@ -1825,6 +1827,7 @@ function artPasst(z) {
   if (f === "vk") return z.typ !== "variable" && artZahl(z, "vk") == null;
   if (f === "ekvk") { const m = artMarge(z); return m != null && m < 0; }
   if (f === "marge") { const m = artMarge(z); return m != null && m < art.marge; }
+  if (f === "istzub") return !!z.ist_zubehoer || artWert(z, "staffel").length > 0;
   if (f === "zub") return !z.parent && artWert(z, "zubehoer").length > 0;
   if (f === "bild") return !z.parent && !artWert(z, "bilder").length;
   if (f === "text") return !z.parent && ART_TEXTE.some((t) => !String(artWert(z, t)).trim());
@@ -1918,6 +1921,7 @@ function artZeile(z) {
     ${artBildZelle(z)}
     ${z.parent ? `<td></td>` : artTextZelle(z)}
     ${artZubZelle(z)}
+    ${artStaffelZelle(z)}
     ${zahl("preis")}${zahl("vk")}${zahl("ek")}
     <td class="m" data-marge="${z.id}">${artMargeText(z)}</td>
   </tr>`;
@@ -1964,9 +1968,9 @@ function renderArtikel() {
       <div class="art-wrap"><table class="art">
         <thead><tr>
           <th class="c" style="padding-left:12px"><button data-a="art-alle" role="checkbox" aria-checked="${!!alleAn}" aria-label="Alle sichtbaren auswählen" style="display:grid;place-items:center;width:28px"><span class="selc">${I.tick}</span></button></th>
-          <th>Artikelnummer</th><th>Artikel</th><th>Bild</th><th>Texte</th><th>Zubehör</th><th class="r">Verkaufspreis</th><th class="r">VK</th><th class="r">EK</th><th class="r">Marge</th>
+          <th>Artikelnummer</th><th>Artikel</th><th>Bild</th><th>Texte</th><th>Zubehör</th><th>Staffel</th><th class="r">Verkaufspreis</th><th class="r">VK</th><th class="r">EK</th><th class="r">Marge</th>
         </tr></thead>
-        <tbody>${zeilen.map(artZeile).join("") || `<tr><td colspan="10" style="padding:16px;color:var(--label-2)">Keine Treffer.</td></tr>`}</tbody>
+        <tbody>${zeilen.map(artZeile).join("") || `<tr><td colspan="11" style="padding:16px;color:var(--label-2)">Keine Treffer.</td></tr>`}</tbody>
       </table></div>
       <div class="group-foot">${plural(art.liste.filter((z) => z.typ !== "variable").length, "Artikel", "Artikel")} und Varianten${zeilen.length !== art.liste.length ? `, ${zeilen.length} Zeilen sichtbar` : ""}. Verkaufspreis ist der Preis im Shop, VK und EK gehen an CDH. Enter springt eine Zeile weiter.</div>`;
   }
@@ -2393,6 +2397,63 @@ function artZubAlle() {
   hud(`Zubehör auf ${plural(ziele.length, "Artikel", "Artikel")} übertragen`);
 }
 
+// --- Staffelpreise des Zubehörs im Artikel-Tab (28.09.2026): dasselbe Feld
+// wie im Produkt-Editor (Plugin 2.6) und unter Einstellungen → Pflicht-Zubehör.
+// Maßgeblich ist die Menge des Zubehörs je CDH-Auftrag.
+// Übliche Stufen bei TEXMA (28.09.2026); Zeilen ohne Preis zählen nicht.
+const STAFFEL_STANDARD = [1, 10, 25, 50, 100, 250, 500];
+
+function staffelNorm(zeilen) {
+  const zahl = (x) => { const n = zahlLesen(x); return Number.isNaN(n) ? String(x) : n; };
+  return zeilen.filter((r) => [r.vk, r.ek].some((x) => String(x ?? "").trim() !== ""))
+    .map((r) => ({ ab: /^\s*\d+\s*$/.test(String(r.ab)) ? +r.ab : String(r.ab), vk: zahl(r.vk), ek: zahl(r.ek) }))
+    .sort((a, b) => (typeof a.ab === "number" && typeof b.ab === "number" ? a.ab - b.ab : 0));
+}
+
+function artStaffelZelle(z) {
+  if (z.typ !== "simple") return `<td></td>`;
+  const st = artWert(z, "staffel");
+  if (!z.ist_zubehoer && !st.length) return `<td></td>`;
+  const neu = `${z.id}:staffel` in art.entwurf;
+  return `<td class="st"><button class="navlink${neu ? " neu" : ""}" style="font-size:14px${st.length ? "" : ";color:var(--label-3)"}" data-a="art-staffel" data-id="${z.id}">${st.length ? plural(st.length, "Stufe", "Stufen") : "+"}</button></td>`;
+}
+
+function openArtStaffel(id) {
+  const z = artById(id);
+  const zeilen = artWert(z, "staffel").map((s) => ({ ab: String(s.ab), vk: typeof s.vk === "number" ? zahlText(s.vk) : s.vk ?? "", ek: typeof s.ek === "number" ? zahlText(s.ek) : s.ek ?? "" }));
+  if (!zeilen.length) STAFFEL_STANDARD.forEach((ab) => zeilen.push({ ab: String(ab), vk: "", ek: "" }));
+  overlay = { kind: "art-staffel", id, zeilen };
+  drawArtStaffel();
+}
+
+function artStaffelUebernehmen() {
+  const z = artById(overlay.id);
+  setEntwurf(z, "staffel", staffelNorm(overlay.zeilen));
+  renderTabbar(); meldeUngesichert();
+  const r = $("#overlay [data-a=art-staffel-reset]"); if (r) r.disabled = !(`${z.id}:staffel` in art.entwurf);
+}
+
+function drawArtStaffel() {
+  const o = overlay, z = artById(o.id);
+  zeigeBlatt(sheetShell("Staffelpreise",
+    `<button class="navlink" data-a="art-staffel-reset" ${`${z.id}:staffel` in art.entwurf ? "" : "disabled"}>Zurücksetzen</button>`,
+    `<button class="navlink bold" data-a="close">Fertig</button>`, `
+    <div class="group"><div class="group-head">${esc(_bezJs(z))}</div><div class="card">
+      <div class="staffel-kopf"><span>ab Menge</span><span>VK €</span><span>EK €</span><span></span></div>
+      ${o.zeilen.map((r, j) => `
+        <div class="staffel-zeile">
+          <input data-sz="ab" data-j="${j}" value="${esc(r.ab)}" inputmode="numeric" placeholder="1" aria-label="ab Menge">
+          <input data-sz="vk" data-j="${j}" value="${esc(r.vk)}" inputmode="decimal" placeholder="0,00" aria-label="VK">
+          <input data-sz="ek" data-j="${j}" value="${esc(r.ek)}" inputmode="decimal" placeholder="Grundpreis" aria-label="EK">
+          <button class="navlink" data-a="art-staffel-weg" data-j="${j}" aria-label="Stufe entfernen">✕</button>
+        </div>`).join("")}
+      <button class="row action" data-a="art-staffel-neu"><span class="row-body"><span class="row-main"><span class="row-title">Stufe hinzufügen</span></span></span></button>
+      ${STAFFEL_STANDARD.some((ab) => !o.zeilen.some((r) => String(r.ab).trim() === String(ab))) ? `<button class="row action" data-a="art-staffel-standard"><span class="row-body"><span class="row-main"><span class="row-title">Standardstufen ergänzen</span><div class="row-sub">${STAFFEL_STANDARD.join(" · ")}</div></span></span></button>` : ""}
+    </div>
+    <div class="group-foot">Stufen ohne Preis zählen nicht. Höchstens 10 Stufen. Ohne Staffel gilt der Grundpreis: VK ${esc(zahlText(artZahl(z, "vk")) || "–")} € · EK ${esc(zahlText(artZahl(z, "ek")) || "–")} €. Leeres EK in einer Stufe: EK vom Grundpreis. Maßgeblich ist die Menge dieses Zubehörs im CDH-Auftrag — bei Sammel-Shops alle Bestellungen eines Lieferorts zusammen.</div></div>
+    ${z.ist_zubehoer ? "" : `<div class="group-foot">Dieser Artikel ist in keiner Zubehör-Regel eingetragen — die Staffel wirkt erst, wenn er als Zubehör verwendet wird.</div>`}`));
+}
+
 // --- Vorschau und Sichern
 async function artVorschau(andere) {
   const liste = Object.entries(art.entwurf).map(([k, wert]) => {
@@ -2559,6 +2620,15 @@ document.addEventListener("click", (e) => {
     case "art-ersetzen": openArtErsetzen(); break;
     case "art-bilder": openArtBilder(+el.dataset.id); break;
     case "art-zub": openArtZub(+el.dataset.id); break;
+    case "art-staffel": openArtStaffel(+el.dataset.id); break;
+    case "art-staffel-neu": overlay.zeilen.push({ ab: "", vk: "", ek: "" }); drawArtStaffel(); break;
+    case "art-staffel-standard": {
+      const da = new Set(overlay.zeilen.map((r) => String(r.ab).trim()));
+      STAFFEL_STANDARD.filter((ab) => !da.has(String(ab))).forEach((ab) => overlay.zeilen.push({ ab: String(ab), vk: "", ek: "" }));
+      overlay.zeilen.sort((a, b) => (+a.ab || 1e9) - (+b.ab || 1e9)); drawArtStaffel(); break;
+    }
+    case "art-staffel-weg": overlay.zeilen.splice(+el.dataset.j, 1); artStaffelUebernehmen(); drawArtStaffel(); break;
+    case "art-staffel-reset": delete art.entwurf[`${overlay.id}:staffel`]; openArtStaffel(overlay.id); renderTabbar(); meldeUngesichert(); break;
     case "art-zub-alle": artZubAlle(); break;
     case "art-zub-reset": delete art.entwurf[`${overlay.id}:zubehoer`]; openArtZub(overlay.id); renderTabbar(); meldeUngesichert(); break;
     case "art-var-merkmal": overlay.merkmal = el.dataset.v; drawArtBilder(); break;
@@ -2661,6 +2731,7 @@ document.addEventListener("change", (e) => {
 document.addEventListener("input", (e) => {
   if (e.target.dataset?.af) { artNachEingabe(e.target); return; }
   if (e.target.id === "art-ta") { artTextEingabe(e.target); return; }
+  if (e.target.dataset?.sz) { overlay.zeilen[+e.target.dataset.j][e.target.dataset.sz] = e.target.value; artStaffelUebernehmen(); return; }
   if (e.target.dataset?.zm != null) { overlay.plaetze[+e.target.dataset.zm].menge = e.target.value; artZubUebernehmen(); return; }
   if (e.target.id === "art-bild-such") {
     overlay.such = e.target.value; const pos = e.target.selectionStart;

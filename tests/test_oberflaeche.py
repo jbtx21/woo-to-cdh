@@ -1053,3 +1053,44 @@ def test_artikel_abgelehntes_bleibt_im_entwurf(artikelseite):
     assert _zelle(p, 30, "vk").input_value() == "2,10" and "neu" not in _zelle(p, 30, "vk").get_attribute("class")
     assert p.locator("#art-zaehler").inner_text() == "1 Änderung"
     assert p.fehler == []
+
+
+def test_artikel_staffelpreise(artikelseite):
+    p = artikelseite
+    k = p.katalog["https://shop.example/caf-shop/"]
+    k["produkte"][40] = {"id": 40, "type": "simple", "status": "publish", "name": "Stick Logo",
+                         "sku": "004/STICK", "regular_price": "0",
+                         "dimensions": {"length": "2.10", "width": "5.50", "height": ""}}
+    # Regel nur an einer Variante — der Stick zählt trotzdem als Zubehörartikel
+    k["varianten"][10][12]["meta_data"] = [{"key": "_cdh_required_accessories",
+                                            "value": [{"accessory_id": 40, "qty_per_unit": 1}]}]
+    p.click("[data-a=art-reload]")
+    p.wait_for_selector("#artikelPane tr[data-id='40']")
+    p.click("[data-a=art-filter][data-v=istzub]")
+    assert [r.get_attribute("data-id") for r in p.locator("#artikelPane tbody tr").all()] == ["40"]
+    p.click("#artikelPane [data-a=art-staffel][data-id='40']")
+    p.wait_for_selector("text=Ohne Staffel gilt der Grundpreis: VK 5,50 €")
+    # Leere Staffel: Standardstufen vorbelegt, ohne Preis zählen sie nicht
+    assert [p.locator(f"input[data-sz=ab][data-j='{j}']").input_value() for j in range(7)] == \
+        ["1", "10", "25", "50", "100", "250", "500"]
+    p.fill("input[data-sz=vk][data-j='0']", "5,00")
+    p.fill("input[data-sz=ek][data-j='0']", "2,00")
+    p.fill("input[data-sz=vk][data-j='1']", "4,00")
+    p.click("#overlay .nav-r [data-a=close]")
+    assert p.locator("#artikelPane [data-a=art-staffel][data-id='40']").inner_text() == "2 Stufen"
+    p.click("#artikelPane [data-a=art-vorschau]")
+    p.wait_for_selector("#overlay button[data-a=art-sichern]:has-text('1 sichern')")
+    assert "ab 1: VK 5,00, EK 2,00; ab 10: VK 4,00" in p.locator("#overlay").inner_text()
+    p.click("[data-a=art-sichern]")
+    p.wait_for_selector("#hud.show:has-text('1 Änderung gesichert')")
+    assert w.staffel_lesen(k["produkte"][40]) == [{"ab": 1, "vk": 5.0, "ek": 2.0},
+                                                  {"ab": 10, "vk": 4.0, "ek": None}]
+    # Ungültig: EK über VK → Vorschau blockiert
+    p.wait_for_function("!art.laden")
+    p.click("#artikelPane [data-a=art-staffel][data-id='40']")
+    p.fill("input[data-sz=ek][data-j='1']", "9")
+    p.click("#overlay .nav-r [data-a=close]")
+    p.click("#artikelPane [data-a=art-vorschau]")
+    p.wait_for_selector("text=Nicht sicherbar")
+    assert "EK (9.00) größer als VK (4.00)" in p.locator("#overlay").inner_text()
+    assert p.fehler == []

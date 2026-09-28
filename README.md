@@ -720,6 +720,19 @@ Import liest.
   angehakten Artikeln. Filter „Mit Zubehör".
 - Hinweis in der Vorschau, wenn „Pflicht-Zubehör ergänzen" beim Shop aus
   ist. Nicht in andere Shops übertragen (Artikel-ids je Shop verschieden).
+
+**Staffelpreise im Artikel-Tab (28.09.2026):**
+- Spalte „Staffel" bei Zubehörartikeln, also allen einfachen Artikeln, die
+  in einer Regel stehen, auch nur in einer Varianten-Regel. Filter
+  „Zubehörartikel".
+- Eine leere Staffel ist mit den üblichen Stufen 1 · 10 · 25 · 50 · 100 ·
+  250 · 500 vorbelegt. Nur Stufen mit Preis zählen, höchstens 10. Dazu gibt
+  es „Standardstufen ergänzen".
+- Vorschau, Sichern und Zurücknehmen wie bei den anderen Feldern.
+- Dasselbe Feld wie im Produkt-Editor: Plugin 2.6.1 zeigt dort ebenfalls
+  mindestens 7 Zeilen, vorbelegt. 2.6.0 zeigte bei leerer Staffel nur 3.
+- Einstellungen → Pflicht-Zubehör → Staffelpreise findet jetzt auch Zubehör,
+  das nur in Regeln an Varianten steht.
 - Kein Hochladen vom Rechner (Entscheidung 27.09.2026), daher keine
   WordPress-Anwendungspasswörter nötig.
 - Prüfungen: unbekannte Bild-id, ungültige Adresse, mehr als 20 Bilder,

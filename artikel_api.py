@@ -48,7 +48,7 @@ from shop_api import ShopApi
 FELDER = {"ek": "EK", "vk": "VK", "preis": "Verkaufspreis",
           "sku": "Artikelnummer", "name": "Artikelname",
           "kurz": "Kurzbeschreibung", "text": "Beschreibung", "bilder": "Bilder",
-          "zubehoer": "Pflicht-Zubehör"}
+          "zubehoer": "Pflicht-Zubehör", "staffel": "Staffelpreise"}
 PREISFELDER = ("ek", "vk", "preis")
 TEXTFELDER = ("kurz", "text")      # HTML, nur am Hauptartikel
 WOO_FELD = {"preis": "regular_price", "kurz": "short_description", "text": "description"}
@@ -91,7 +91,9 @@ def _zeile(p: dict, eltern: dict | None = None) -> dict:
             # Hauptartikel; bei Varianten nur, ob sie eine eigene Regel haben
             "zubehoer": [] if eltern else [{"id": a, "menge": round(m, 4)}
                                            for a, m in w._zubehoer_regeln(p)],
-            "zubehoer_eigen": bool(eltern) and bool(w._zubehoer_regeln(p))}
+            "zubehoer_eigen": bool(eltern) and bool(w._zubehoer_regeln(p)),
+            # Staffelpreise des Zubehörs (_cdh_staffelpreise), nur einfache Artikel
+            "staffel": [] if eltern else w.staffel_lesen(p)}
 
 
 def _bilder_roh(p: dict, eltern: dict | None) -> list[dict]:
@@ -140,6 +142,10 @@ def _wert(feld: str, roh):
         return round(float(t.replace(",", ".")), 4)
     if feld in TEXTFELDER:
         return str(roh if roh is not None else "")
+    if feld == "staffel":
+        if not isinstance(roh, list) or not all(isinstance(r, dict) for r in roh):
+            raise ValueError
+        return roh                     # geprüft und geordnet in _pruefen
     if feld == "zubehoer":
         regeln = []
         for r in roh or []:
@@ -283,9 +289,13 @@ def katalog_lesen(client, vorrat: dict | None = None) -> list[dict]:
             [p["id"] for p in variabel],
             ex.map(lambda p: _seiten(client, f"/products/{p['id']}/variations",
                                      VARIANTEN_FELDER), variabel)))
-    zeilen = []
+    zeilen, genutzt = [], set()
+    for p in produkte:
+        genutzt |= {a for a, _ in w._zubehoer_regeln(p)}
+        for v in varianten.get(p["id"], []):
+            genutzt |= {a for a, _ in w._zubehoer_regeln(v)}
     for p in sorted(produkte, key=lambda p: (str(p.get("name") or "").lower(), p.get("id"))):
-        zeilen.append(_zeile(p))
+        zeilen.append({**_zeile(p), "ist_zubehoer": int(p["id"]) in genutzt})
         _vorrat_merken(p, None, vorrat)
         for v in varianten.get(p["id"], []):
             zeilen.append(_zeile(v, p))
@@ -316,6 +326,14 @@ def _frisch(client, eintraege: dict[int, tuple[int, str]],
                 out[int(v["id"])] = _zeile(v, {"id": parent, "name": name})
                 _vorrat_merken(v, {"id": parent}, vorrat)
     return out
+
+
+def _staffeltext(staffel) -> str:
+    if not staffel:
+        return "keine"
+    return "; ".join(f"ab {s['ab']}: VK {_text('vk', s['vk'])}"
+                     + (f", EK {_text('ek', s['ek'])}" if s.get("ek") is not None else "")
+                     for s in staffel)
 
 
 def _zubehoertext(regeln, namen: dict) -> str:
@@ -350,6 +368,10 @@ def _schreiben(client, zeilen: list[dict], antworten: dict | None = None) -> tup
             d["image"] = _bild_ref(z["neu"][0]) if z["neu"] else {"id": 0}
         elif z["feld"] == "bilder":
             d["images"] = [_bild_ref(r) for r in z["neu"]]
+        elif z["feld"] == "staffel":
+            d.setdefault("meta_data", []).append(
+                {"key": w.STAFFEL_META,
+                 "value": [{k: s[k] for k in ("ab", "vk", "ek")} for s in z["neu"]]})
         elif z["feld"] == "zubehoer":
             d.setdefault("meta_data", []).append(
                 {"key": w.ZUBEHOER_META,
@@ -430,6 +452,12 @@ class ArtikelApi(ShopApi):
                 continue
             bez = vor + _bez(z)
             echt = {}
+            if "staffel" in felder and z["typ"] == "simple":
+                try:
+                    felder["staffel"] = self._staffel_pruefen(felder["staffel"])
+                except _Fehler as e:
+                    fehler += [f"{bez}: Staffel — {t}" for t in str(e).splitlines()[1:]]
+                    del felder["staffel"]
             for feld, neu in felder.items():
                 if feld == "name" and z["typ"] == "variation":
                     fehler.append(f"{bez}: Varianten haben keinen eigenen Namen.")
@@ -445,12 +473,17 @@ class ArtikelApi(ShopApi):
                     pass
                 elif feld == "zubehoer" and not self._zubehoer_ok(bez, z, neu, katalog, fehler):
                     pass
+                elif feld == "staffel" and z["typ"] != "simple":
+                    fehler.append(f"{bez}: Staffelpreise nur an einfachen Artikeln (Zubehör).")
                 elif not _gleich(neu, z[feld]):
                     echt[feld] = neu
             for feld, neu in echt.items():
                 zeilen.append({"id": iid, "parent": z["parent"], "sku": z["sku"],
                                "name": z["name"], "variante": z["variante"], "bez": bez,
                                "feld": feld, "alt": z[feld], "neu": neu})
+                if feld == "staffel":
+                    zeilen[-1]["alt_text"] = _staffeltext(z[feld])
+                    zeilen[-1]["neu_text"] = _staffeltext(neu)
                 if feld == "zubehoer":
                     namen = {k["id"]: _bez(k) for k in katalog}
                     zeilen[-1]["alt_text"] = _zubehoertext(z[feld], namen)

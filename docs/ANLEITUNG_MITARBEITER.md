@@ -119,6 +119,9 @@ Stick zum Poloshirt ein.
 - Es gibt Platz A und B, dazu die Menge je Stück.
 - Sind mehrere Artikel angehakt, überträgt **Auf ausgewählte Artikel
   übertragen** die Regel auf alle.
+- **Staffelpreise** des Zubehörs (zum Beispiel Stick ab 1, 10, 25 … Stück)
+  stehen in der Spalte **Staffel**. Die üblichen Mengen sind schon
+  eingetragen, nur die Preise ausfüllen. Stufen ohne Preis zählen nicht.
 - „eigene Regel" bei einer Variante heißt: Dort gilt eine eigene Einstellung
   aus dem Shop.
 

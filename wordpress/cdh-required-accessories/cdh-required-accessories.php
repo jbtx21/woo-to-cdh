@@ -3,7 +3,7 @@
  * Plugin Name: CDH Required Accessories
  * Description: Pflicht-Zubehör pro Produkt (Aggregation je SKU, nicht entfernbar, Zubehör am Warenkorb-Ende). Stand 2.4 + 2. feste Metaboxen (A & B). Ab 2.5: Warenkorb-Automatik abschaltbar (WooCommerce → Einstellungen → Produkte) — dann ergänzt der TEXMA-WEX-Import das Zubehör für CDH und der Kunde sieht es nirgends. Ab 2.6: Staffelpreise für CDH am Zubehör-Artikel (VK/EK je Menge im CDH-Auftrag), auch im TEXMA-Tool pflegbar.
  * Author: TEXMA
- * Version: 2.6.0
+ * Version: 2.6.1
  * Requires at least: 6.1
  * Requires PHP: 7.4
  * WC requires at least: 8.0
@@ -20,6 +20,7 @@ class CDH_Required_Accessories_24 {
     const ORDER_ITEM_FLAG = '_cdh_is_accessory';          // an Bestellpositionen (ab 2.5)
     const STAFFEL_KEY    = '_cdh_staffelpreise';         // am Zubehör-Artikel (ab 2.6): [{ab, vk, ek}]
     const STAFFEL_MAX    = 10;
+    const STAFFEL_STANDARD = [1, 10, 25, 50, 100, 250, 500];  // übliche Stufen (2.6.1), vorbelegt
 
     public function __construct() {
         // Admin UI (2 feste Slots)
@@ -167,8 +168,13 @@ class CDH_Required_Accessories_24 {
         $rows = get_post_meta($post->ID, self::STAFFEL_KEY, true);
         if (!is_array($rows)) $rows = [];
         $rows = array_values($rows);
-        $anzahl = max(count($rows) + 2, 3);
-        echo '<p>'.esc_html__('Nur für Zubehör-Artikel (z. B. Stick). Maßgeblich ist die Menge dieses Zubehörs im CDH-Auftrag – bei Sammel-Shops alle Bestellungen eines Lieferorts zusammen. Leeres EK: EK aus „Länge“. Ohne Staffel gelten Länge (EK) und Breite (VK). Dieselben Werte lassen sich im TEXMA-Tool pflegen.', 'cdh-ra').'</p>';
+        // 2.6.1: mindestens so viele Zeilen wie Standardstufen; eine leere
+        // Staffel mit den Standardmengen vorbelegen (ohne Preis = zählt nicht)
+        if (!$rows) {
+            foreach (self::STAFFEL_STANDARD as $ab) $rows[] = ['ab' => $ab, 'vk' => '', 'ek' => ''];
+        }
+        $anzahl = max(count($rows) + 2, count(self::STAFFEL_STANDARD));
+        echo '<p>'.esc_html__('Nur für Zubehör-Artikel (z. B. Stick). Maßgeblich ist die Menge dieses Zubehörs im CDH-Auftrag – bei Sammel-Shops alle Bestellungen eines Lieferorts zusammen. Leeres EK: EK aus „Länge“. Zeilen ohne VK zählen nicht. Ohne Staffel gelten Länge (EK) und Breite (VK). Dieselben Werte lassen sich im TEXMA-Tool pflegen.', 'cdh-ra').'</p>';
         echo '<table class="widefat striped" style="max-width:520px"><thead><tr><th>'.esc_html__('ab Menge', 'cdh-ra').'</th><th>'.esc_html__('VK', 'cdh-ra').'</th><th>'.esc_html__('EK', 'cdh-ra').'</th></tr></thead><tbody>';
         for ($i = 0; $i < min($anzahl, self::STAFFEL_MAX); $i++) {
             $r = $rows[$i] ?? ['ab' => '', 'vk' => '', 'ek' => ''];

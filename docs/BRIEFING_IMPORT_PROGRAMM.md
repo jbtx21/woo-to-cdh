@@ -419,6 +419,11 @@ Etappen:
   - Batch mit `meta_data` (nur dieser Schlüssel, andere Meta bleiben).
   - „Auf ausgewählte übertragen“.
   - Kein Übertragen in andere Shops.
+  - 28.09.2026:
+    - Staffelpreise auch im Artikel-Tab.
+    - Standardstufen 1/10/25/50/100/250/500 im Tool und im Plugin 2.6.1
+      vorbelegt; 2.6.0 zeigte nur 3 Zeilen.
+    - Die Staffel-Liste in den Einstellungen berücksichtigt Varianten-Regeln.
 
 ---
 

@@ -26,6 +26,7 @@ import hashlib
 import logging
 import re
 import shutil
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 
 import requests
@@ -264,14 +265,27 @@ class ShopApi(EinstellungenApi):
             return {"ok": False, "fehler": str(e)}
 
     # --- Staffelpreise des Pflicht-Zubehörs (Welle 9) -----------------------
-    def _alle_produkte(self, client) -> list[dict]:
+    def _alle_produkte(self, client, pfad: str = "/products") -> list[dict]:
         out, seite = [], 1
         while True:
-            teil = client._get("/products", {"per_page": 100, "page": seite})
+            teil = client._get(pfad, {"per_page": 100, "page": seite})
             out += teil or []
             if not teil or len(teil) < 100:
                 return out
             seite += 1
+
+    def _alle_regeln(self, client, produkte: list[dict]) -> set[int]:
+        """Zubehör-ids aus allen Regeln — auch aus Regeln an Varianten, die im
+        Shop Vorrang haben (bis 28.09.2026 übersehen: Stick nur an den
+        Größen des Polos → fehlte in der Staffel-Liste)."""
+        ids = {acc for p in produkte for acc, _per in w._zubehoer_regeln(p)}
+        variabel = [p for p in produkte if p.get("type") == "variable"]
+        with ThreadPoolExecutor(max_workers=w.ABRUF_PARALLEL) as ex:
+            for varianten in ex.map(
+                    lambda p: self._alle_produkte(client, f"/products/{p['id']}/variations"),
+                    variabel):
+                ids |= {acc for v in varianten for acc, _per in w._zubehoer_regeln(v)}
+        return ids
 
     def zubehoer_artikel(self, shop_id: str) -> dict:
         """Alle Zubehör-Artikel des Shops (aus den Regeln der Produkte) mit
@@ -287,7 +301,10 @@ class ShopApi(EinstellungenApi):
         except Exception as e:  # noqa: BLE001
             return {"ok": False, "fehler": f"Artikel nicht abrufbar ({type(e).__name__})."}
         nach_id = {p.get("id"): p for p in produkte}
-        ids = {acc for p in produkte for acc, _per in w._zubehoer_regeln(p)}
+        try:
+            ids = self._alle_regeln(client, produkte)
+        except Exception as e:  # noqa: BLE001
+            return {"ok": False, "fehler": f"Varianten nicht abrufbar ({type(e).__name__})."}
         artikel = []
         for acc in ids:
             p = nach_id.get(acc)
@@ -307,8 +324,8 @@ class ShopApi(EinstellungenApi):
         sauber, fehler = {}, []
         for i, z in enumerate(zeilen or [], 1):
             z = z or {}
-            if all(str(z.get(k) or "").strip() == "" for k in ("ab", "vk", "ek")):
-                continue                                   # leere Zeile
+            if all(str(z.get(k) or "").strip() == "" for k in ("vk", "ek")):
+                continue            # leere Zeile oder vorbelegte Standardstufe ohne Preis
             try:
                 ab = int(str(z.get("ab")).strip())
             except ValueError:

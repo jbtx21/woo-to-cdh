@@ -436,7 +436,10 @@ Etappen:
 
 ## Welle 11 — Wählbare Veredelungen aus PPOM (28.09.2026)
 
-Anlass: neuer Shop Weeber (weeber.texma-gmbh.de, eigene Domain).
+Anlass: neuer Shop Weeber. Bisher läuft er als eigene Seite
+(weeber.texma-gmbh.de, noch nicht WooCommerce). Er zieht in die Multisite
+unter `https://shop.texma-gmbh.de/weeber-shop/` und wird auf WooCommerce
+umgestellt; danach legt man ihn im Tool mit dem Shop-Assistenten an.
 Kostenpflichtige Zusatzveredelungen sind optional und werden über PPOM
 gewählt: Checkboxen „Zusatzoptionen" (Stick Audi, Stick Logo Weeber Rücken)
 und das Textfeld „Stick Name".
@@ -458,7 +461,9 @@ Umgesetzt:
   unter dem Feldnamen, `display_key` ist der Feldtitel. Bei Checkboxen
   sind die Labels mit ", " verbunden. `_ppom_fields` ist ein Array und
   fehlt deshalb in der REST-Antwort.
-- Shop-Assistent: Adressen ohne Unterordner sind erlaubt.
+- Shop-Assistent bleibt bei „mit Unterordner“, weil Weeber in die Multisite
+  kommt (Entscheidung 28.09.2026). Die kurz eingebaute Lockerung für eigene
+  Domains ist zurückgenommen.
 - Tests gehen nie ins Netz (autouse-Sperre in conftest).
 
 **Offen, am echten Shop prüfen:**

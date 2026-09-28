@@ -785,9 +785,6 @@ Einrichten je Shop: Einstellungen → Shop → **Wählbare Veredelungen (PPOM)**
 - Im Artikel-Tab gelten diese Artikel als Zubehörartikel (Staffel-Spalte,
   Filter).
 
-Shop-Adressen ohne Unterordner (eigene Domain wie
-`https://weeber.texma-gmbh.de/`) nimmt der Shop-Assistent seit Welle 11 an.
-
 ### Zusätzliche Meta-Spalten
 
 Über `extra_excel_meta` lassen sich pro Shop weitere Meta-Felder anhängen.

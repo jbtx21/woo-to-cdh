@@ -1647,7 +1647,7 @@ async function wizNext() {
   if (o.step === 0) {
     const miss = [];
     if (!d.name) miss.push("Name");
-    if (!/^https:\/\/[^\s/]+\/(\S*\/)?$/.test(d.url)) miss.push("Shop-Adresse mit / am Ende");
+    if (!/^https:\/\/[^\s/]+\/.*\/$/.test(d.url)) miss.push("Shop-Adresse mit / am Ende");
     if (!/^\d{4,6}$/.test(d.debitor)) miss.push("Debitornummer");
     else if (shops.some((s) => s.debitor === d.debitor)) { hud(`Debitor ${d.debitor} gehört schon zu ${shops.find((s) => s.debitor === d.debitor).name}.`); return; }
     if (miss.length) { hud(`Bitte prüfen: ${miss.join(", ")}`); return; }

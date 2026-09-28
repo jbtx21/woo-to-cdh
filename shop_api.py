@@ -118,7 +118,9 @@ class ShopApi(EinstellungenApi):
         fehlt = []
         if not name:
             fehlt.append("Name")
-        if not re.fullmatch(r"https://[^\s/]+/(?:\S*/)?", url):
+        # Mit Unterordner (Multisite: shop.texma-gmbh.de/<shop>/) — die
+        # Hauptseite der Multisite selbst ist kein Shop.
+        if not re.fullmatch(r"https://[^\s/]+/.*/", url):
             fehlt.append("Shop-Adresse (https://…/ mit / am Ende)")
         if not re.fullmatch(r"\d{4,6}", debitor):
             fehlt.append("Debitornummer (4–6 Ziffern)")

@@ -52,7 +52,10 @@ FELDER = {"ek": "EK", "vk": "VK", "preis": "Verkaufspreis",
 PREISFELDER = ("ek", "vk", "preis")
 TEXTFELDER = ("kurz", "text")      # HTML, nur am Hauptartikel
 WOO_FELD = {"preis": "regular_price", "kurz": "short_description", "text": "description"}
-MAX_ZUBEHOER = 2                  # Plugin: Plätze A und B, mehr löscht der Produkt-Editor
+MAX_ZUBEHOER = 4                  # Plugin ab 2.7: Plätze A–D
+ALT_ZUBEHOER = 2                  # Plugin bis 2.6: nur A und B — mehr löscht dessen Produkt-Editor
+PLUGIN_VIER_PLAETZE = (2, 7, 0)
+PLUGIN_DATEI = "cdh-required-accessories"
 MAX_BILDER = 20                   # je Artikel; Varianten haben genau 0 oder 1
 _BILD_ADRESSE = re.compile(r"^https://[^\s]+\.(?:jpe?g|png|webp|gif)(?:\?[^\s]*)?$", re.I)
 UEBERTRAGBAR = PREISFELDER        # in andere Shops mit derselben Artikelnummer
@@ -471,7 +474,8 @@ class ArtikelApi(ShopApi):
                     fehler.append(f"{bez}: {FELDER[feld]} darf nicht leer sein.")
                 elif feld == "bilder" and not self._bilder_ok(bez, z, neu, vorrat or {}, fehler):
                     pass
-                elif feld == "zubehoer" and not self._zubehoer_ok(bez, z, neu, katalog, fehler):
+                elif feld == "zubehoer" and not self._zubehoer_ok(bez, z, neu, katalog, fehler,
+                                                                   warnungen):
                     pass
                 elif feld == "staffel" and z["typ"] != "simple":
                     fehler.append(f"{bez}: Staffelpreise nur an einfachen Artikeln (Zubehör).")
@@ -536,16 +540,39 @@ class ArtikelApi(ShopApi):
         return zeilen
 
     @staticmethod
-    def _zubehoer_ok(bez: str, z: dict, neu: list, katalog: list[dict], fehler: list) -> bool:
+    def _zubehoer_ok(bez: str, z: dict, neu: list, katalog: list[dict], fehler: list,
+                     warnungen: list | None = None) -> bool:
         """Die Prüfungen des Plugins nachgebaut — über die Schnittstelle greifen sie nicht."""
         vorher = len(fehler)
+        warnungen = warnungen if warnungen is not None else []
         if z["typ"] == "variation":
             fehler.append(f"{bez}: Pflicht-Zubehör wird am Hauptartikel gepflegt.")
             return False
         if len(neu) > MAX_ZUBEHOER:
-            fehler.append(f"{bez}: Höchstens {MAX_ZUBEHOER} Zubehörartikel (Plätze A und B im "
-                          "Plugin) — mehr würde der Produkt-Editor beim nächsten Speichern löschen.")
+            fehler.append(f"{bez}: Höchstens {MAX_ZUBEHOER} Zubehörartikel (Plätze A–D im Plugin).")
         nach_id = {k["id"]: k for k in katalog}
+        # Zubehör am Zubehör (Druck → Transfer) rechnen Import und Plugin 2.7 mit —
+        # aber kein Kreislauf, und höchstens w.ZUBEHOER_TIEFE Ebenen
+        regeln = {k["id"]: [r["id"] for r in k.get("zubehoer") or []] for k in katalog}
+        regeln[z["id"]] = [r["id"] for r in neu]
+        stapel = [(z["id"], (z["id"],))]
+        while stapel:
+            knoten, pfad = stapel.pop()
+            for sub in regeln.get(knoten, []):
+                if sub == z["id"]:
+                    kette = " → ".join(_bez(nach_id[i]) if i in nach_id else f"#{i}"
+                                       for i in pfad + (sub,))
+                    fehler.append(f"{bez}: Kreislauf beim Zubehör ({kette}).")
+                    stapel = []
+                    break
+                if sub in pfad:
+                    continue
+                if len(pfad) >= w.ZUBEHOER_TIEFE + 1:
+                    warnungen.append(f"{bez}: Zubehör tiefer als {w.ZUBEHOER_TIEFE} Ebenen — "
+                                     f"{_bez(nach_id[sub]) if sub in nach_id else sub} wird nicht "
+                                     "mehr ergänzt.")
+                    continue
+                stapel.append((sub, pfad + (sub,)))
         gesehen = set()
         for r in neu:
             acc = nach_id.get(r["id"])
@@ -649,6 +676,26 @@ class ArtikelApi(ShopApi):
         ohne = sorted({z["sku"] for z in preise} - gefunden)
         return ergebnis, ohne
 
+    def _plugin_version(self, shop_id: str, client) -> tuple | None:
+        """Version des Zubehör-Plugins im Shop (WooCommerce-Systemstatus), None
+        wenn nicht aktiv oder nicht lesbar. Je Sitzung gemerkt."""
+        gemerkt = getattr(self, "_plugin_versionen", None)
+        if gemerkt is None:
+            gemerkt = self._plugin_versionen = {}
+        if shop_id not in gemerkt:
+            version = None
+            try:
+                status = client._get("/system_status", {"_fields": "active_plugins"}) or {}
+                for p in status.get("active_plugins") or []:
+                    if PLUGIN_DATEI in str(p.get("plugin") or ""):
+                        teile = re.findall(r"\d+", str(p.get("version") or ""))[:3]
+                        version = tuple(int(t) for t in teile) + (0,) * (3 - len(teile))
+                        break
+            except Exception as e:  # noqa: BLE001
+                logging.warning("Plugin-Version nicht lesbar: %s", w.ohne_schluessel(e))
+            gemerkt[shop_id] = version
+        return gemerkt[shop_id]
+
     def _letzte_datei(self):
         if not self._p_artikel.exists():
             return None
@@ -699,6 +746,7 @@ class ArtikelApi(ShopApi):
             except Exception as e:  # noqa: BLE001
                 raise _Fehler(f"Artikel nicht abrufbar ({w.ohne_schluessel(e)}).") from None
             self._vorschau = None
+            getattr(self, "_plugin_versionen", {}).pop(shop_id, None)   # nach Plugin-Update neu lesen
             cfg, _ = w.load_config(self._base)
             andere = [s.get("name") for s in cfg.get("shops") or []
                       if (s.get("id") or w.shop_id_aus_name(s.get("name"))) != shop_id
@@ -761,6 +809,19 @@ class ArtikelApi(ShopApi):
                     fehler.append(f"{_bez(z)}: {FELDER[feld]} wurde inzwischen im Shop "
                                   f"geändert (jetzt {jetzt}). Bitte neu laden.")
             zeilen = self._pruefen(katalog, frisch, wuensche, fehler, warnungen, vorrat=vorrat)
+            viele = [z for z in zeilen if z["feld"] == "zubehoer" and len(z["neu"]) > ALT_ZUBEHOER]
+            if viele:
+                version = self._plugin_version(shop_id, client)
+                if version is None:
+                    fehler.append(
+                        f"Mehr als {ALT_ZUBEHOER} Zubehörartikel ({', '.join(z['bez'] for z in viele)}) "
+                        "nur mit Plugin „CDH Required Accessories“ ab 2.7 — die Version im Shop ist "
+                        "nicht lesbar. Bitte im Shop unter Plugins prüfen.")
+                elif version < PLUGIN_VIER_PLAETZE:
+                    fehler.append(
+                        f"Mehr als {ALT_ZUBEHOER} Zubehörartikel ({', '.join(z['bez'] for z in viele)}) "
+                        f"erst mit Plugin 2.7 — im Shop läuft {'.'.join(map(str, version))}. Dessen "
+                        "Produkt-Editor würde Platz C und D beim nächsten Speichern löschen.")
             if any(z["feld"] == "zubehoer" for z in zeilen) and not shop.get("pflicht_zubehoer"):
                 warnungen.append(f"Im Tool ist „Pflicht-Zubehör ergänzen“ für {shop.get('name')} "
                                  "aus — der Import ergänzt das Zubehör erst, wenn es an ist "

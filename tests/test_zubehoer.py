@@ -367,3 +367,39 @@ def test_staffel_pruefungen(shopapi, zeilen, text):
     shopapi.admin_anmelden("pw")
     erg = shopapi.staffel_sichern("caf", 20, zeilen)
     assert erg["ok"] is False and text in erg["fehler"] and shopapi.Shop.puts == []
+
+
+# --- Zubehör am Zubehör (28.09.2026, Plugin 2.7) ------------------------------------
+
+def _regel(acc, per=1):
+    return [{"key": "_cdh_required_accessories", "value": [{"accessory_id": acc, "qty_per_unit": per}]}]
+
+
+def test_zubehoer_am_zubehoer(orders):
+    """Poloshirt → Druck (20), Druck → 2 × Transfer (30): einmal am Druck
+    gepflegt, gilt für jeden Artikel mit Druck."""
+    o = _ohne_stick(orders["einzeln"])                   # 2× Poloshirt
+    c = Client(regeln={10: _regel(20), 20: _regel(30, 2)})
+    neu = w.zubehoer_ergaenzen(o, c, {})
+    assert [(z["product_id"], z["quantity"]) for z in neu] == [(20, 2), (30, 4)]
+
+
+def test_zubehoer_am_zubehoer_nichts_doppelt_mit_warenkorb_zeile(orders):
+    """Altes Plugin hat den Druck schon als Zeile eingefügt: die Druck-Zeile
+    zählt nicht als Hauptartikel, der Transfer kommt nur einmal."""
+    o = copy.deepcopy(orders["einzeln"])                # Polos + 2 Sticks (id 20)
+    c = Client(regeln={10: _regel(20), 20: _regel(30, 2)})
+    neu = w.zubehoer_ergaenzen(o, c, {})
+    assert [(z["product_id"], z["quantity"]) for z in neu] == [(30, 4)]
+
+
+def test_zubehoer_kreislauf_und_tiefe(orders, caplog):
+    o = _ohne_stick(orders["einzeln"])
+    c = Client(regeln={10: _regel(20), 20: _regel(30), 30: _regel(20)})     # 20 ↔ 30
+    neu = w.zubehoer_ergaenzen(o, c, {})
+    assert [(z["product_id"], z["quantity"]) for z in neu] == [(20, 2), (30, 2)]
+    assert "Kreislauf" in caplog.text
+    o = _ohne_stick(orders["einzeln"])
+    c = Client(regeln={10: _regel(20), 20: _regel(30), 30: _regel(40), 40: _regel(50)})
+    neu = w.zubehoer_ergaenzen(o, c, {})
+    assert [z["product_id"] for z in neu] == [20, 30, 40]                 # höchstens 3 Ebenen

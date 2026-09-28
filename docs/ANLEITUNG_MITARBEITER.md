@@ -116,7 +116,10 @@ den Shop.
 
 **Pflicht-Zubehör:** In der Spalte **Zubehör** stellst du zum Beispiel den
 Stick zum Poloshirt ein.
-- Es gibt Platz A und B, dazu die Menge je Stück.
+- Es gibt Platz A bis D, dazu die Menge je Stück.
+- Kommt zu einem Zubehör immer etwas dazu (zum Beispiel pro Druck ein
+  Transfer), trägst du das **einmal am Druck-Artikel** ein. Es kommt dann
+  bei jedem Artikel mit Druck automatisch mit.
 - Sind mehrere Artikel angehakt, überträgt **Auf ausgewählte Artikel
   übertragen** die Regel auf alle.
 - **Staffelpreise** des Zubehörs (zum Beispiel Stick ab 1, 10, 25 … Stück)

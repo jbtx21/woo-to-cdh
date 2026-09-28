@@ -168,6 +168,7 @@ class ArtikelWoo(FakeWoo):
     katalog: dict = {}
     posts: list = []
     abgelehnt: set = set()
+    plugin_version: str | None = "2.7.0"      # CDH Required Accessories im Systemstatus
 
     def _shop(self):
         return ArtikelWoo.katalog[self.base.replace("/wp-json/wc/v3", "/")]
@@ -194,6 +195,12 @@ class ArtikelWoo(FakeWoo):
 
     def _get(self, path, params=None):
         teile = path.strip("/").split("/")
+        if path == "/system_status":
+            plugins = [{"plugin": "woocommerce/woocommerce.php", "version": "9.3.0"}]
+            if ArtikelWoo.plugin_version:
+                plugins.append({"plugin": "cdh-required-accessories/cdh-required-accessories.php",
+                                "version": ArtikelWoo.plugin_version})
+            return {"active_plugins": plugins}
         if teile[0] == "products" and len(teile) == 1:
             return self._auswahl(self._shop()["produkte"], params)
         if teile[0] == "products" and len(teile) == 3 and teile[2] == "variations":

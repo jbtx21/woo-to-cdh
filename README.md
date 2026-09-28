@@ -706,12 +706,19 @@ die Anzahl.
   Varianten der Gruppe haben unterschiedliche Bilder.
 
 **Pflicht-Zubehör (Welle 10d), nur am Hauptartikel:** Spalte „Zubehör" öffnet
-Platz A und B wie im Produkt-Editor des Plugins: Zubehörartikel und Menge je
-Stück. Geschrieben wird dasselbe Feld `_cdh_required_accessories`, das der
+Platz A–D wie im Produkt-Editor des Plugins (ab 2.7; bis 2.6 A und B):
+Zubehörartikel und Menge je Stück. Geschrieben wird dasselbe Feld `_cdh_required_accessories`, das der
 Import liest.
+- **Zubehör am Zubehör** (28.09.2026, Plugin 2.7): Hat ein Zubehör-Artikel
+  selbst Zubehör, zum Beispiel Druck → Transfer, rechnen Import und Warenkorb
+  es mit, die Mengen multipliziert. Höchstens 3 Ebenen; ein Kreislauf ist
+  ein Fehler in der Vorschau. Im Import zählen Zeilen, die selbst Zubehör
+  einer anderen Zeile sind (Warenkorb-Automatik an), nicht als Hauptartikel.
+  So kommt nichts doppelt.
 - Die Plugin-Prüfungen, die über die Schnittstelle nicht greifen, prüft das
-  Tool selbst: höchstens 2 Einträge (mehr löscht der Produkt-Editor beim
-  nächsten Speichern), nur veröffentlichte einfache Artikel mit
+  Tool selbst: höchstens 4 Einträge. Mehr als 2 nur, wenn der Systemstatus
+  des Shops Plugin ≥ 2.7 meldet, denn ältere Produkt-Editoren löschen C/D
+  beim Speichern. Außerdem: nur veröffentlichte einfache Artikel mit
   Artikelnummer, nicht der Artikel selbst, Menge > 0, nichts doppelt.
 - Varianten mit eigener Regel zeigt die Tabelle mit „eigene Regel"; diese
   Regel hat Vorrang und wird im Tool nicht geändert (Hinweis in der

@@ -75,6 +75,7 @@ def api(tmp_path, monkeypatch):
         for sid in ("caf", "agrar", "ens")}}), encoding="utf-8")
     monkeypatch.setattr(w, "DELIVERY_ADDRESSES_PATH", tmp_path / "lieferadressen.yaml")
     ArtikelWoo.katalog, ArtikelWoo.posts, ArtikelWoo.abgelehnt = _katalog(), [], set()
+    ArtikelWoo.plugin_version = "2.7.0"
     a = aa.ArtikelApi(tmp_path, benutzer="m.mueller", uhr=Uhr(), client_factory=ArtikelWoo)
     a._admin_bis = float("inf")
     return a
@@ -581,8 +582,8 @@ def test_zubehoer_setzen_sichern_zurueck(mit_zubehoer):
 
 @pytest.mark.parametrize("aenderung, text", [
     ((11, "zubehoer", [{"id": 40, "menge": 1}]), "wird am Hauptartikel gepflegt"),
-    ((20, "zubehoer", [{"id": 40, "menge": 1}, {"id": 30, "menge": 1}, {"id": 42, "menge": 1}]),
-     "Höchstens 2 Zubehörartikel"),
+    ((20, "zubehoer", [{"id": i, "menge": 1} for i in (40, 30, 43, 44, 45)]),
+     "Höchstens 4 Zubehörartikel"),
     ((20, "zubehoer", [{"id": 20, "menge": 1}]), "nicht sein eigenes Zubehör"),
     ((20, "zubehoer", [{"id": 10, "menge": 1}]), "muss ein einfacher Artikel sein"),
     ((20, "zubehoer", [{"id": 41, "menge": 1}]), "ist nicht veröffentlicht"),
@@ -673,3 +674,50 @@ def test_staffel_standardstufen_ohne_preis_zaehlen_nicht(mit_zubehoer):
         z["vk"] = vk
     erg = _aendern(mit_zubehoer, (40, "staffel", zeilen))
     assert erg["fehler"] == [] and erg["shops"][0]["zeilen"][0]["neu"].count("ab ") == 7
+
+
+# --- Vier Plätze A–D (Plugin 2.7, 28.09.2026) -------------------------------------
+
+@pytest.fixture
+def vier(mit_zubehoer):
+    k = _shop(CAF)["produkte"]
+    k[43] = _p(43, "Druck Logo", "005/DRUCK", "1.50", "3.00", "0")
+    k[44] = _p(44, "Transfer", "005/TRANSFER", "0.40", "0.80", "0")
+    return mit_zubehoer
+
+
+def test_vier_plaetze_stick_druck_transfer(vier):
+    vier.artikel_laden("caf")
+    regel = [{"id": 40, "menge": 1}, {"id": 43, "menge": 1}, {"id": 44, "menge": 1}]
+    erg = _aendern(vier, (20, "zubehoer", regel))
+    assert erg["fehler"] == [] and erg["vorschau_id"]
+    vier.artikel_sichern(erg["vorschau_id"])
+    assert w._zubehoer_regeln(_shop(CAF)["produkte"][20]) == [(40, 1.0), (43, 1.0), (44, 1.0)]
+
+
+@pytest.mark.parametrize("version, text", [
+    ("2.6.1", "erst mit Plugin 2.7 — im Shop läuft 2.6.1"),
+    (None, "die Version im Shop ist nicht lesbar"),
+])
+def test_mehr_als_zwei_nur_mit_plugin_27(vier, version, text):
+    ArtikelWoo.plugin_version = version
+    vier.artikel_laden("caf")
+    erg = _aendern(vier, (20, "zubehoer", [{"id": 40, "menge": 1}, {"id": 43, "menge": 1},
+                                          {"id": 44, "menge": 1}]))
+    assert erg["vorschau_id"] is None and any(text in f for f in erg["fehler"]), erg["fehler"]
+    # Zwei gehen auch mit altem Plugin
+    erg = _aendern(vier, (20, "zubehoer", [{"id": 40, "menge": 1}, {"id": 43, "menge": 1}]))
+    assert erg["vorschau_id"]
+
+
+def test_zubehoer_am_zubehoer_erlaubt_kreislauf_nicht(vier):
+    _shop(CAF)["produkte"][43]["meta_data"] = [
+        {"key": REGEL, "value": [{"accessory_id": 44, "qty_per_unit": 1}]}]   # Druck → Transfer
+    vier.artikel_laden("caf")
+    erg = _aendern(vier, (20, "zubehoer", [{"id": 43, "menge": 1}]))       # Cap → Druck (→ Transfer)
+    assert erg["fehler"] == [] and erg["vorschau_id"]
+    assert not any("Ebenen" in t or "Kreislauf" in t for t in erg["warnungen"])
+    erg = _aendern(vier, (44, "zubehoer", [{"id": 43, "menge": 1}]))       # Transfer → Druck: Kreis
+    assert erg["vorschau_id"] is None
+    assert erg["fehler"] == ["005/TRANSFER Transfer: Kreislauf beim Zubehör "
+                             "(005/TRANSFER Transfer → 005/DRUCK Druck Logo → 005/TRANSFER Transfer)."]

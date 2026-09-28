@@ -1,9 +1,9 @@
 <?php
 /**
  * Plugin Name: CDH Required Accessories
- * Description: Pflicht-Zubehör pro Produkt (Aggregation je SKU, nicht entfernbar, Zubehör am Warenkorb-Ende). Stand 2.4 + 2. feste Metaboxen (A & B). Ab 2.5: Warenkorb-Automatik abschaltbar (WooCommerce → Einstellungen → Produkte) — dann ergänzt der TEXMA-WEX-Import das Zubehör für CDH und der Kunde sieht es nirgends. Ab 2.6: Staffelpreise für CDH am Zubehör-Artikel (VK/EK je Menge im CDH-Auftrag), auch im TEXMA-Tool pflegbar.
+ * Description: Pflicht-Zubehör pro Produkt (Aggregation je SKU, nicht entfernbar, Zubehör am Warenkorb-Ende). Stand 2.4 + 2. feste Metaboxen (A & B). Ab 2.5: Warenkorb-Automatik abschaltbar (WooCommerce → Einstellungen → Produkte) — dann ergänzt der TEXMA-WEX-Import das Zubehör für CDH und der Kunde sieht es nirgends. Ab 2.6: Staffelpreise für CDH am Zubehör-Artikel (VK/EK je Menge im CDH-Auftrag), auch im TEXMA-Tool pflegbar. Ab 2.7: vier Plätze A–D und Zubehör am Zubehör (z. B. Druck → Transfer).
  * Author: TEXMA
- * Version: 2.6.1
+ * Version: 2.7.0
  * Requires at least: 6.1
  * Requires PHP: 7.4
  * WC requires at least: 8.0
@@ -20,10 +20,12 @@ class CDH_Required_Accessories_24 {
     const ORDER_ITEM_FLAG = '_cdh_is_accessory';          // an Bestellpositionen (ab 2.5)
     const STAFFEL_KEY    = '_cdh_staffelpreise';         // am Zubehör-Artikel (ab 2.6): [{ab, vk, ek}]
     const STAFFEL_MAX    = 10;
+    const SLOTS          = 4;                             // Plätze A–D (ab 2.7; vorher 2)
+    const TIEFE          = 3;                             // Zubehör am Zubehör (ab 2.7), höchstens 3 Ebenen
     const STAFFEL_STANDARD = [1, 10, 25, 50, 100, 250, 500];  // übliche Stufen (2.6.1), vorbelegt
 
     public function __construct() {
-        // Admin UI (2 feste Slots)
+        // Admin UI (feste Plätze A–D)
         add_action('add_meta_boxes',           [$this, 'add_metaboxes']);
         add_action('save_post_product',        [$this, 'save_metaboxes']);
         add_action('save_post_product',        [$this, 'save_staffel']);
@@ -151,8 +153,13 @@ class CDH_Required_Accessories_24 {
     }
 
     public function add_metaboxes() {
-        add_meta_box('cdh_ra_slot_a', __('Pflicht-Zubehör A', 'cdh-ra'), function($post){ $this->render_metabox_slot($post, 0); }, 'product', 'side', 'default');
-        add_meta_box('cdh_ra_slot_b', __('Pflicht-Zubehör B', 'cdh-ra'), function($post){ $this->render_metabox_slot($post, 1); }, 'product', 'side', 'default');
+        // 2.7: vier Plätze (z. B. Stick, Druck, Transfer). Bis 2.6 waren es zwei —
+        // Einträge C/D gingen beim Speichern verloren.
+        for ($i = 0; $i < self::SLOTS; $i++) {
+            $buchstabe = chr(ord('A') + $i);
+            add_meta_box('cdh_ra_slot_' . strtolower($buchstabe), sprintf(__('Pflicht-Zubehör %s', 'cdh-ra'), $buchstabe),
+                function($post) use ($i) { $this->render_metabox_slot($post, $i); }, 'product', 'side', 'default');
+        }
         add_meta_box('cdh_ra_staffel', __('Staffelpreise für CDH (Zubehör)', 'cdh-ra'), [$this, 'render_staffel'], 'product', 'normal', 'default');
     }
 
@@ -236,7 +243,7 @@ class CDH_Required_Accessories_24 {
         if (defined('DOING_AUTOSAVE') && DOING_AUTOSAVE) return;
 
         $slots = [];
-        for ($i=1; $i<=2; $i++) {
+        for ($i=1; $i<=self::SLOTS; $i++) {
             $row = isset($_POST['cdh_ra_slot'.$i]) ? (array) $_POST['cdh_ra_slot'.$i] : [];
             $acc = isset($row['accessory_id']) ? intval($row['accessory_id']) : 0;
             $qty = isset($row['qty_per_unit']) ? floatval($row['qty_per_unit']) : 0;
@@ -298,6 +305,24 @@ class CDH_Required_Accessories_24 {
 
     /* ================= Cart Core ================= */
 
+    /** Zubehör samt dessen eigenem Zubehör (ab 2.7): Druck → Transfer. Mengen
+     *  werden multipliziert; höchstens TIEFE Ebenen, Kreisläufe werden übersprungen.
+     *  Gleiche Rechnung wie im TEXMA-Import (woo_to_cdh.zubehoer_ergaenzen). */
+    private function add_required(array &$map, int $acc_id, float $qty, int $tiefe, array $pfad) {
+        if (!isset($map[$acc_id])) $map[$acc_id] = 0.0;
+        $map[$acc_id] += $qty;
+        if ($tiefe >= self::TIEFE) return;
+        $pfad[] = $acc_id;
+        $unter = get_post_meta($acc_id, self::META_KEY, true);
+        if (!is_array($unter)) return;
+        foreach ($unter as $r) {
+            $sub = intval($r['accessory_id'] ?? 0);
+            $per = floatval($r['qty_per_unit'] ?? 0);
+            if ($sub <= 0 || $per <= 0 || in_array($sub, $pfad, true)) continue;
+            $this->add_required($map, $sub, $qty * $per, $tiefe + 1, $pfad);
+        }
+    }
+
     private function get_required_map_for_cart() : array {
         $map = [];
         if (WC()->cart && !WC()->cart->is_empty()) {
@@ -319,9 +344,8 @@ class CDH_Required_Accessories_24 {
                     foreach ($rules as $r) {
                         $acc_id = intval($r['accessory_id'] ?? 0);
                         $per    = floatval($r['qty_per_unit'] ?? 0);
-                        if ($acc_id <= 0 || $per <= 0) continue;
-                        if (!isset($map[$acc_id])) $map[$acc_id] = 0.0;
-                        $map[$acc_id] += $qty_main * $per;
+                        if ($acc_id <= 0 || $per <= 0 || $acc_id === intval($product_id)) continue;
+                        $this->add_required($map, $acc_id, $qty_main * $per, 1, [intval($product_id)]);
                     }
                 }
             }

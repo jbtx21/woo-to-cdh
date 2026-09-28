@@ -403,6 +403,7 @@ class OrderBuildError(Exception):
 
 ZUBEHOER_META = "_cdh_required_accessories"
 STAFFEL_META = "_cdh_staffelpreise"      # am Zubehör-Artikel: [{ab, vk, ek}]
+ZUBEHOER_TIEFE = 3                       # Zubehör am Zubehör (Druck → Transfer), wie Plugin 2.7
 
 
 def _menge(x) -> int | float:
@@ -502,7 +503,26 @@ def zubehoer_ergaenzen(order: dict, client: "WooClient", cache: dict) -> list[di
         return cache[schluessel]
 
     bedarf: dict[int, float] = {}
+
+    def dazu(acc: int, menge: float, tiefe: int, pfad: tuple) -> None:
+        """Zubehör samt eigenem Zubehör (Druck → Transfer), Mengen multipliziert.
+        Höchstens ZUBEHOER_TIEFE Ebenen, Kreisläufe werden übersprungen —
+        gleiche Rechnung wie im Plugin ab 2.7."""
+        bedarf[acc] = bedarf.get(acc, 0.0) + menge
+        if tiefe >= ZUBEHOER_TIEFE:
+            return
+        unter = _zubehoer_regeln(holen(("zubehoer-prod", acc), lambda: client.get_product(acc)))
+        for sub, per in unter:
+            if sub in pfad or sub == acc:
+                logging.warning("Bestellung %s: Zubehör-Kreislauf bei %s → %s übersprungen.",
+                                order_no, acc, sub)
+                continue
+            dazu(sub, menge * per, tiefe + 1, pfad + (acc,))
+
+    je_zeile = []
     for it in items:
+        if it.get("_zubehoer"):
+            continue
         pid, vid = it.get("product_id"), it.get("variation_id") or 0
         regeln = []
         if vid:
@@ -511,10 +531,17 @@ def zubehoer_ergaenzen(order: dict, client: "WooClient", cache: dict) -> list[di
         if not regeln:
             regeln = _zubehoer_regeln(holen(("zubehoer-prod", pid),
                                             lambda: client.get_product(pid)))
+        je_zeile.append((it, pid, regeln))
+    # Zeilen, die selbst Zubehör einer anderen Zeile sind (Warenkorb-Automatik
+    # an), zählen nicht als Hauptartikel — sonst käme ihr Zubehör doppelt.
+    ist_zubehoer = {acc for _, pid, regeln in je_zeile for acc, _ in regeln if acc != pid}
+    for it, pid, regeln in je_zeile:
+        if pid in ist_zubehoer and not (it.get("variation_id") or 0):
+            continue
         for acc, per in regeln:
             if acc == pid:
                 continue
-            bedarf[acc] = bedarf.get(acc, 0.0) + float(it.get("quantity") or 0) * per
+            dazu(acc, float(it.get("quantity") or 0) * per, 1, (pid,))
 
     ergaenzt = []
     for acc, menge in bedarf.items():

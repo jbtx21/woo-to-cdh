@@ -1014,6 +1014,7 @@ def test_artikel_pflicht_zubehoer(artikelseite):
     p.click("#artikelPane [data-a=art-zub][data-id='10']")
     p.wait_for_selector("text=Varianten mit eigener Regel")
     # nur zulässige Artikel zur Wahl: einfach, veröffentlicht, mit Nummer, nicht er selbst
+    assert p.locator("#overlay select[data-zs]").count() == 4          # Platz A–D
     optionen = p.locator("#zs-0 option").all_inner_texts()
     assert optionen[0] == "— kein Zubehör —" and "004/STICK · Stick Logo" in optionen
     assert not any("042/POLO ·" in o for o in optionen)

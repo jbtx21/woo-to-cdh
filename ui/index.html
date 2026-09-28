@@ -2327,8 +2327,8 @@ function artBildAktion(a, el) {
   artBilderSetzen(b);
 }
 
-// --- Pflicht-Zubehör (Welle 10d): nur am Hauptartikel, höchstens zwei
-// Einträge (Plätze A und B wie im Plugin). Die Regeln des Plugins prüft
+// --- Pflicht-Zubehör (Welle 10d): nur am Hauptartikel, Plätze A–D wie im
+// Plugin ab 2.7 (mehr als zwei prüft Python gegen die Plugin-Version). Die Regeln des Plugins prüft
 // Python in der Vorschau nach.
 const zubName = (id) => { const a = artById(id); return a ? [a.sku, a.name].filter(Boolean).join(" ") : `#${id}`; };
 const mengeText = (m) => zahlText(m).replace(/,?0+$/, "") || "0";
@@ -2344,7 +2344,7 @@ function artZubZelle(z) {
 function openArtZub(id) {
   const z = artById(id);
   const r = artWert(z, "zubehoer").map((x) => ({ id: x.id, menge: mengeText(x.menge) }));
-  while (r.length < 2) r.push({ id: 0, menge: "1" });
+  while (r.length < 4) r.push({ id: 0, menge: "1" });
   overlay = { kind: "art-zub", id, plaetze: r };
   drawArtZub();
 }
@@ -2365,20 +2365,20 @@ function drawArtZub() {
   const andere = [...art.auswahl].map(artById).filter((a) => a && !a.parent && a.id !== z.id);
   const platz = (p, i) => `
     <div class="form-row"><span class="row-body">
-      <label for="zs-${i}">Platz ${"AB"[i]}</label>
+      <label for="zs-${i}">Platz ${"ABCD"[i]}</label>
       <select class="art-select" id="zs-${i}" data-zs="${i}" style="flex:1;max-width:none;color:var(--label)">
         <option value="0">— kein Zubehör —</option>
         ${kandidaten.map((a) => `<option value="${a.id}" ${a.id === p.id ? "selected" : ""}>${esc(a.sku)} · ${esc(a.name)}</option>`).join("")}
         ${p.id && !kandidaten.some((a) => a.id === p.id) ? `<option value="${p.id}" selected>${esc(zubName(p.id))} (nicht zulässig)</option>` : ""}
       </select>
-      <input data-zm="${i}" value="${esc(p.menge)}" inputmode="decimal" aria-label="Menge je Stück Platz ${"AB"[i]}" style="width:70px;flex:none;text-align:right${p.id ? "" : ";visibility:hidden"}" ${p.id ? "" : "disabled"}>
+      <input data-zm="${i}" value="${esc(p.menge)}" inputmode="decimal" aria-label="Menge je Stück Platz ${"ABCD"[i]}" style="width:70px;flex:none;text-align:right${p.id ? "" : ";visibility:hidden"}" ${p.id ? "" : "disabled"}>
       <span style="color:var(--label-2);font-size:13px;flex:none${p.id ? "" : ";visibility:hidden"}">je Stück</span>
     </span></div>`;
   zeigeBlatt(sheetShell("Pflicht-Zubehör",
     `<button class="navlink" data-a="art-zub-reset" ${`${z.id}:zubehoer` in art.entwurf ? "" : "disabled"}>Zurücksetzen</button>`,
     `<button class="navlink bold" data-a="close">Fertig</button>`, `
     <div class="group"><div class="group-head">${esc(_bezJs(z))}</div><div class="card">${o.plaetze.map(platz).join("")}</div>
-      <div class="group-foot">Zum Beispiel der Stick zum Poloshirt: Menge je Stück des Artikels. Nur veröffentlichte einfache Artikel mit Artikelnummer. Höchstens zwei, wie im Produkt-Editor (Platz A und B).</div></div>
+      <div class="group-foot">Zum Beispiel der Stick zum Poloshirt: Menge je Stück des Artikels. Nur veröffentlichte einfache Artikel mit Artikelnummer. Platz C und D brauchen im Shop das Plugin ab 2.7 — ältere Fassungen löschen sie beim Speichern im Produkt-Editor. Zubehör am Zubehör wird mitgerechnet: den Transfer einmal am Druck-Artikel eintragen, dann kommt er mit jedem Druck (höchstens 3 Ebenen).</div></div>
     ${eigene.length ? `<div class="group"><div class="card"><div class="row warn"><span class="icon">${I.warn}</span><span class="row-body"><span class="row-main">
       <span class="row-title">Varianten mit eigener Regel</span><div class="row-sub" style="white-space:normal">${esc(eigene.join(", "))} — dort gilt weiter deren Regel. Ändern im Produkt-Editor des Shops.</div></span></span></div></div></div>` : ""}
     ${andere.length ? `<div class="group"><div class="card">

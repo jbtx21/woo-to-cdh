@@ -424,6 +424,10 @@ Etappen:
     - Standardstufen 1/10/25/50/100/250/500 im Tool und im Plugin 2.6.1
       vorbelegt; 2.6.0 zeigte nur 3 Zeilen.
     - Die Staffel-Liste in den Einstellungen berücksichtigt Varianten-Regeln.
+    - Plugin 2.7.0: Plätze A–D und Zubehör am Zubehör (Druck → Transfer), höchstens 3
+      Ebenen, Kreisläufe übersprungen. Import rechnet genauso; Tool prüft
+      Kreisläufe und erlaubt mehr als 2 Plätze nur bei Plugin ≥ 2.7
+      (Systemstatus).
 
 ---
 

@@ -742,7 +742,7 @@ class ArtikelApi(ShopApi):
             vid = None
             if anzahl and not fehler:
                 vid = secrets.token_hex(8)
-                self._vorschau = {"id": vid, "shops": shops}
+                self._vorschau = {"id": vid, "shop": shop_id, "shops": shops}
             return {"ok": True, "vorschau_id": vid, "anzahl": anzahl,
                     "fehler": fehler, "warnungen": warnungen, "ohne_treffer": ohne,
                     "shops": [{"id": s["id"], "name": s["name"],
@@ -786,7 +786,7 @@ class ArtikelApi(ShopApi):
                                        for s in v["shops"]]}
                 _schreibe_atomar(datei, json.dumps(protokoll, ensure_ascii=False, indent=1))
                 # 3. Schreiben
-                gesichert, meldungen = 0, []
+                gesichert, meldungen, schluessel = 0, [], []
                 for s in protokoll["shops"]:
                     antworten = {}
                     ok, unklar, fehl = _schreiben(clients[s["id"]], s["zeilen"], antworten)
@@ -807,11 +807,16 @@ class ArtikelApi(ShopApi):
                     # zurückgeschrieben, wo noch der neue Wert steht.
                     s["zeilen"] = [z for z in s["zeilen"] if z["id"] not in fehl]
                     geschrieben = [z for z in s["zeilen"] if z["id"] in ok]
+                    if s["id"] == v["shop"]:
+                        schluessel += [f"{z['id']}:{z['feld']}" for z in geschrieben]
                     gesichert += len(geschrieben)
                     if geschrieben:
                         self._verlauf_artikel(s["name"], geschrieben, "Sammeländerung")
                 _schreibe_atomar(datei, json.dumps(protokoll, ensure_ascii=False, indent=1))
+            # gesichert_keys: was die Tabelle aus dem Entwurf nehmen darf —
+            # Abgelehntes bleibt dort als ungesicherte Änderung stehen.
             return {"ok": True, "gesichert": gesichert, "meldungen": meldungen,
+                    "gesichert_keys": schluessel,
                     "log": self._verlauf_lesen(), "letzte": self._letzte_info()}
         except _Fehler as e:
             return {"ok": False, "fehler": str(e)}

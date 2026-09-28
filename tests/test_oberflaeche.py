@@ -797,6 +797,9 @@ def test_artikel_aendern_vorschau_sichern(artikelseite):
     p.click("[data-a=art-sichern]")
     p.wait_for_selector("#hud.show:has-text('3 Änderungen gesichert')")
     p.wait_for_selector("#artikelPane [data-a=art-undo]")
+    # Auch während des Neuladens der neue Wert, nie kurz der alte (28.09.2026)
+    assert _zelle(p, 11, "vk").input_value() == "27,39"
+    p.wait_for_function("!art.laden")
     assert _zelle(p, 11, "vk").input_value() == "27,39"
     assert "neu" not in _zelle(p, 11, "vk").get_attribute("class")
     assert p.katalog["https://shop.example/caf-shop/"]["varianten"][10][12]["dimensions"]["width"] == "27.39"
@@ -1029,4 +1032,24 @@ def test_artikel_pflicht_zubehoer(artikelseite):
     p.wait_for_selector("#hud.show:has-text('2 Änderungen gesichert')")
     assert w._zubehoer_regeln(k["produkte"][10]) == [(40, 1.5)]
     assert w._zubehoer_regeln(k["produkte"][20]) == [(40, 1.5)]
+    assert p.fehler == []
+
+
+def test_artikel_abgelehntes_bleibt_im_entwurf(artikelseite):
+    """Lehnt der Shop einen Artikel ab, bleibt dessen Änderung sichtbar."""
+    from conftest import ArtikelWoo
+    p = artikelseite
+    ArtikelWoo.abgelehnt = {20}
+    _zelle(p, 20, "vk").fill("7,95")
+    _zelle(p, 30, "vk").fill("2,10")
+    p.click("#artikelPane [data-a=art-vorschau]")
+    p.wait_for_selector("#overlay button[data-a=art-sichern]:has-text('2 sichern')")
+    p.click("[data-a=art-sichern]")
+    p.wait_for_selector(".alert-box:has-text('Nicht alles gesichert')")
+    assert "Ungültige oder doppelte Artikelnummer" in p.locator(".alert-box").inner_text()
+    p.click(".alert-box [data-a=close]")
+    p.wait_for_function("!art.laden")
+    assert _zelle(p, 20, "vk").input_value() == "7,95" and "neu" in _zelle(p, 20, "vk").get_attribute("class")
+    assert _zelle(p, 30, "vk").input_value() == "2,10" and "neu" not in _zelle(p, 30, "vk").get_attribute("class")
+    assert p.locator("#art-zaehler").inner_text() == "1 Änderung"
     assert p.fehler == []

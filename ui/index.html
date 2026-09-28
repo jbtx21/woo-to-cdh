@@ -1849,7 +1849,7 @@ function artSichtbar() {
   return out;
 }
 
-async function artOeffnen(shopId, suche = null) {
+async function artOeffnen(shopId, suche = null, gesichert = null) {
   if (!shopId) { art.fehler = "Kein Shop mit hinterlegtem Zugang."; renderArtikel(); return; }
   if (art.shopId && art.shopId !== shopId && artAnzahl()) {
     meldung("Erst sichern oder verwerfen", `In ${shopById(art.shopId)?.name} gibt es ${plural(artAnzahl(), "ungesicherte Änderung", "ungesicherte Änderungen")}.`);
@@ -1865,6 +1865,9 @@ async function artOeffnen(shopId, suche = null) {
   if (!erg.ok) { art.fehler = erg.fehler; renderArtikel(); return; }
   art.liste = erg.artikel; art.andere = erg.andere; art.letzte = erg.letzte; art.marge = erg.marge_warnung;
   art.bilder = erg.bildvorrat || {};
+  // Gesichertes aus dem Entwurf nehmen — erst jetzt, sonst zeigte die Tabelle
+  // während des Neuladens kurz die alten Werte (28.09.2026)
+  for (const k of gesichert || []) delete art.entwurf[k];
   // Entwurf behalten, soweit er noch vom Shop abweicht
   for (const k of Object.keys(art.entwurf)) {
     const [id, f] = k.split(":"); const z = artById(+id);
@@ -1975,10 +1978,10 @@ function renderArtikel() {
     ${art.liste.length ? `<div class="toolbar">
       <span style="display:flex;gap:18px;align-items:center"><button class="navlink" data-a="art-aktion" ${art.auswahl.size ? "" : "disabled"}>Sammelaktion${art.auswahl.size ? ` (${art.auswahl.size})` : ""}</button>
         <button class="navlink" data-a="art-ersetzen">Suchen &amp; Ersetzen</button></span>
-      <span class="mid" id="art-zaehler">${n ? plural(n, "Änderung", "Änderungen") : "Keine Änderungen"}</span>
+      <span class="mid" id="art-zaehler">${art.laden ? "Wird aktualisiert …" : n ? plural(n, "Änderung", "Änderungen") : "Keine Änderungen"}</span>
       <span class="r" style="display:flex;gap:18px;align-items:center">
-        <button class="navlink" data-a="art-verwerfen" ${n ? "" : "disabled"}>Verwerfen</button>
-        <button class="navlink bold" data-a="art-vorschau" ${n ? "" : "disabled"}>Vorschau</button>
+        <button class="navlink" data-a="art-verwerfen" ${n && !art.laden ? "" : "disabled"}>Verwerfen</button>
+        <button class="navlink bold" data-a="art-vorschau" ${n && !art.laden ? "" : "disabled"}>Vorschau</button>
       </span>
     </div>` : ""}`;
 }
@@ -1991,8 +1994,8 @@ function artNachEingabe(el) {
   el.classList.toggle("neu", `${z.id}:${el.dataset.af}` in art.entwurf);
   const m = document.querySelector(`[data-marge="${z.id}"]`); if (m) m.innerHTML = artMargeText(z);
   const n = artAnzahl();
-  const zt = $("#art-zaehler"); if (zt) zt.textContent = n ? plural(n, "Änderung", "Änderungen") : "Keine Änderungen";
-  document.querySelectorAll("#artikelPane [data-a=art-vorschau], #artikelPane [data-a=art-verwerfen]").forEach((b) => (b.disabled = !n));
+  const zt = $("#art-zaehler"); if (zt) zt.textContent = art.laden ? "Wird aktualisiert …" : n ? plural(n, "Änderung", "Änderungen") : "Keine Änderungen";
+  document.querySelectorAll("#artikelPane [data-a=art-vorschau], #artikelPane [data-a=art-verwerfen]").forEach((b) => (b.disabled = !n || art.laden));
   renderTabbar(); meldeUngesichert();
 }
 
@@ -2448,11 +2451,11 @@ async function artSichern() {
   const erg = await api().artikel_sichern(o.erg.vorschau_id);
   o.busy = false;
   if (!erg.ok) { drawArtVorschau(); meldung("Nicht gesichert", erg.fehler); return; }
-  art.entwurf = {}; art.letzte = erg.letzte; LOG = erg.log || LOG;
+  art.letzte = erg.letzte; LOG = erg.log || LOG;
   closeOverlay();
   hud(`${plural(erg.gesichert, "Änderung", "Änderungen")} gesichert`);
   if (erg.meldungen.length) meldung("Nicht alles gesichert", erg.meldungen.join("\n"));
-  artOeffnen(art.shopId);
+  artOeffnen(art.shopId, null, erg.gesichert_keys);
 }
 
 // --- Zurücknehmen

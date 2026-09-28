@@ -243,6 +243,7 @@ def test_sichern_einzelner_artikel_abgelehnt(api):
     s = api.artikel_sichern(erg["vorschau_id"])
     assert s["ok"] and s["gesichert"] == 1
     assert s["meldungen"] == ["042/CAP Cap: Ungültige oder doppelte Artikelnummer."]
+    assert s["gesichert_keys"] == ["30:vk"]              # 20 bleibt im Entwurf der Tabelle
     datei = json.loads(next(api._p_artikel.glob("sammel_*.json")).read_text(encoding="utf-8"))
     assert [z["id"] for z in datei["shops"][0]["zeilen"]] == [30]
 
@@ -273,6 +274,7 @@ def test_andere_shops_nur_preise_ueber_artikelnummer(api):
     assert erg["ohne_treffer"] == ["042/PIN"]
     s = api.artikel_sichern(erg["vorschau_id"])
     assert s["gesichert"] == 4
+    assert sorted(s["gesichert_keys"]) == ["20:name", "20:vk", "30:vk"]   # nur der eigene Shop
     assert _shop(AGRAR)["produkte"][70]["dimensions"]["width"] == "7.95"
     assert _shop(AGRAR)["produkte"][70]["name"] == "Cap (Agrar)"
     assert _shop(ENS)["produkte"][90]["dimensions"]["width"] == "7.65"

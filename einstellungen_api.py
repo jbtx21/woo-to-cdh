@@ -13,7 +13,8 @@ die ganze Logik — die Oberfläche zeigt nur an:
   admin_status()
   versandarten(id)     Versandarten des Shops (nur lesend, für den Abgleich)
 
-Geschützt (nur im Admin-Modus): Debitornummer, Veredelungs-Präfixe, Shop
+Geschützt (nur im Admin-Modus): Debitornummer, Veredelungs-Präfixe,
+wählbare Veredelungen (PPOM), Shop
 hinzufügen/entfernen, Zugang. Die Prüfung passiert hier, nicht in der
 Oberfläche — ein manipuliertes Fenster kommt daran nicht vorbei.
 
@@ -129,6 +130,17 @@ def _excel_ui(eintraege) -> list:
     return out
 
 
+def _ppom_ui(eintraege) -> list:
+    """Wählbare Veredelungen (PPOM, Welle 11): Feld, Option, Artikelnummer."""
+    return [{"feld": str(e.get("feld") or "").strip(), "option": str(e.get("option") or "").strip(),
+             "artikel": str(e.get("artikel") or "").strip()}
+            for e in eintraege or [] if isinstance(e, dict)]
+
+
+def _ppom_text(e: dict) -> str:
+    return f"{e['feld']}{': ' + e['option'] if e['option'] else ' (Text)'} → {e['artikel']}"
+
+
 def _orte_ui(adressen: dict) -> list:
     return [{"ort": str(ort), "name1": str(a.get("name1") or ""),
              "name2": str(a.get("name2") or ""), "street": str(a.get("street") or ""),
@@ -165,6 +177,7 @@ def shop_zu_ui(shop: dict, glob: dict, adressen: dict, index: int,
         "bundling": buendelung,
         "orte": _orte_ui(adressen),
         "excel": _excel_ui(shop.get("extra_excel_meta")),
+        "ppom": _ppom_ui(shop.get("ppom_veredelung")),
         "unknownOrt": str(shop.get("unknown_delivery") or "cdh"),
         "excelSum": bool(shop.get("excel_summary", False)),
         "excelSumBy": str(shop.get("excel_summary_by") or "ort"),
@@ -223,6 +236,12 @@ def _ui_auf_shop(neu: dict, alt_ui: dict, shop: dict, glob: dict) -> None:
                  "key": x["key"], "label": x["label"]} for x in neu["excel"]]
         else:
             shop.pop("extra_excel_meta", None)
+    if geaendert("ppom"):
+        regeln = _ppom_ui(neu.get("ppom"))
+        if regeln:
+            shop["ppom_veredelung"] = regeln
+        else:
+            shop.pop("ppom_veredelung", None)
     if geaendert("unknownOrt"):
         if neu["unknownOrt"] == "cdh":
             shop.pop("unknown_delivery", None)
@@ -279,6 +298,15 @@ def _pruefe_shop(s: dict) -> list[str]:
     for x in s.get("excel") or []:
         if not str(x.get("key") or "").strip() or not str(x.get("label") or "").strip():
             f.append(f"{n}: Zusatzfeld braucht Feld im Shop und Spalte.")
+    gesehen = set()
+    for x in _ppom_ui(s.get("ppom")):
+        if not x["feld"] or not x["artikel"]:
+            f.append(f"{n}: Wählbare Veredelung braucht Feld im Shop und Artikelnummer.")
+        schluessel = (x["feld"].casefold(), x["option"].casefold())
+        if schluessel in gesehen:
+            f.append(f"{n}: Wählbare Veredelung {x['feld']}"
+                     f"{': ' + x['option'] if x['option'] else ''} doppelt.")
+        gesehen.add(schluessel)
     return f
 
 
@@ -319,6 +347,9 @@ def _beschreibe(alt: dict, neu: dict) -> list[str]:
         else:
             t.append(f"{n}: Summenblatt {'je Lieferort' if neu['excelSumBy'] == 'ort' else 'gesamt'}"
                      f", Veredelungen {'mit' if neu['excelSumVed'] else 'ohne'}")
+    if _ppom_ui(alt.get("ppom")) != _ppom_ui(neu.get("ppom")):
+        t.append(f"{n}: Wählbare Veredelungen " +
+                 ("; ".join(_ppom_text(x) for x in _ppom_ui(neu.get("ppom"))) or "keine"))
     if alt["excel"] != neu["excel"]:
         t.append(f"{n}: Zusatzfelder in der Excel " +
                  (", ".join(x["label"] for x in neu["excel"]) or "keine"))
@@ -535,6 +566,8 @@ class EinstellungenApi:
                       if s["debitor"] != alt_ui[s["id"]]["debitor"]]
         if neu_prefixe != alt_stand["global"]["prefixes"]:
             geschuetzt.append("Veredelungen")
+        geschuetzt += [f"{s['name']}: Wählbare Veredelungen" for s in neu_shops
+                       if _ppom_ui(s.get("ppom")) != _ppom_ui(alt_ui[s["id"]].get("ppom"))]
         if geschuetzt and not self._ist_admin():
             raise _Fehler("Admin-Modus nötig für: " + ", ".join(geschuetzt) +
                           ". Nichts gesichert.")

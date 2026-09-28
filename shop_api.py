@@ -118,7 +118,7 @@ class ShopApi(EinstellungenApi):
         fehlt = []
         if not name:
             fehlt.append("Name")
-        if not re.fullmatch(r"https://[^\s/]+/.*/", url):
+        if not re.fullmatch(r"https://[^\s/]+/(?:\S*/)?", url):
             fehlt.append("Shop-Adresse (https://…/ mit / am Ende)")
         if not re.fullmatch(r"\d{4,6}", debitor):
             fehlt.append("Debitornummer (4–6 Ziffern)")

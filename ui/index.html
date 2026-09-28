@@ -1205,6 +1205,19 @@ function renderSettings() {
       </div>
 
       <div class="group">
+        <div class="group-head">Wählbare Veredelungen (PPOM)</div>
+        <div class="card">
+          ${(s.ppom || []).map((x, i) => `
+            <button class="row" data-a="edit-ppom" data-i="${i}"><span class="row-body">
+              <span class="row-main"><span class="row-title">${esc(x.feld)}${x.option ? ` · ${esc(x.option)}` : ` <span class="tag">Text</span>`}</span>
+                <div class="row-sub">→ ${esc(x.artikel)}</div></span>${isAdmin() ? I.chev : I.lock}
+            </span></button>`).join("")}
+          <button class="row action" data-a="add-ppom"><span class="row-body"><span class="row-main"><span class="row-title">Veredelung zuordnen</span></span>${isAdmin() ? "" : I.lock}</span></button>
+        </div>
+        <div class="group-foot">Vom Kunden gewählte Zusatzveredelungen (z. B. „Zusatzoptionen · Stick Audi“) gehen als eigene Position an CDH — mit Artikelnummer, EK/VK und Staffel des Veredelungsartikels im Shop (verborgen anlegen). Option leer = Textfeld wie „Stick Name“: der eingegebene Text steht an der Artikelzeile. Nicht zugeordnete Optionen meldet die Prüfansicht.</div>
+      </div>
+
+      <div class="group">
         <div class="group-head">Kundenadresse</div>
         <div class="card">${senderBlock(s)}</div>
         <div class="group-foot">An CDH geht nur die Debitornummer. CDH setzt die Anschrift aus dem Kundenstamm ein und ändert ihn nie.</div>
@@ -1362,6 +1375,7 @@ const FORMS = {
     ["street", "Straße", "", true], ["plz", "PLZ", "", true], ["city", "Ort", "", true], ["country", "Land", "DE"] ] },
   excel: { title: "Zusatzfeld", fields: [ ["key", "Feld im Shop", "Data Name", true], ["label", "Spalte", "Überschrift", true] ] },
   prefix: { title: "Veredelung", fields: [ ["prefix", "Beginnt mit", "z. B. 004/", true], ["label", "Bedeutung", "z. B. Stick", true] ] },
+  ppom: { title: "Wählbare Veredelung", fields: [ ["feld", "Feld im Shop", "Feldtitel, z. B. Zusatzoptionen", true], ["option", "Option", "z. B. Stick Audi · leer = Textfeld"], ["artikel", "Artikelnummer", "Veredelungsartikel, z. B. 004/AUDI", true] ] },
 };
 
 function sheetShell(title, left, right, body, breit = false) {
@@ -1377,6 +1391,7 @@ function sheetShell(title, left, right, body, breit = false) {
 function openSheet(type, index, shopId = current, prefill = null) {
   const s = shopById(shopId);
   const existing = type === "ort" ? s.orte[index] : type === "excel" ? s.excel[index]
+    : type === "ppom" ? (s.ppom || [])[index]
     : type === "prefix" ? global.prefixes[index] : null;
   const src = existing || prefill;
   overlay = { kind: "form", type, index, shopId, isNew: index == null };
@@ -1429,6 +1444,7 @@ function sheetDone() {
   if ("country" in val && !val.country) val.country = "DE";
   if (type === "ort") isNew ? s.orte.push(val) : (s.orte[index] = val);
   if (type === "excel") isNew ? s.excel.push(val) : (s.excel[index] = val);
+  if (type === "ppom") { s.ppom = s.ppom || []; isNew ? s.ppom.push(val) : (s.ppom[index] = val); }
   if (type === "prefix") isNew ? global.prefixes.push(val) : (global.prefixes[index] = val);
   closeOverlay(); render();
 }
@@ -1437,6 +1453,7 @@ function sheetDelete() {
   const { type, index, shopId } = overlay; const s = shopById(shopId);
   if (type === "ort") s.orte.splice(index, 1);
   if (type === "excel") s.excel.splice(index, 1);
+  if (type === "ppom") s.ppom.splice(index, 1);
   if (type === "prefix") global.prefixes.splice(index, 1);
   closeOverlay(); render();
 }
@@ -1630,7 +1647,7 @@ async function wizNext() {
   if (o.step === 0) {
     const miss = [];
     if (!d.name) miss.push("Name");
-    if (!/^https:\/\/[^\s/]+\/.*\/$/.test(d.url)) miss.push("Shop-Adresse mit / am Ende");
+    if (!/^https:\/\/[^\s/]+\/(\S*\/)?$/.test(d.url)) miss.push("Shop-Adresse mit / am Ende");
     if (!/^\d{4,6}$/.test(d.debitor)) miss.push("Debitornummer");
     else if (shops.some((s) => s.debitor === d.debitor)) { hud(`Debitor ${d.debitor} gehört schon zu ${shops.find((s) => s.debitor === d.debitor).name}.`); return; }
     if (miss.length) { hud(`Bitte prüfen: ${miss.join(", ")}`); return; }
@@ -2695,6 +2712,8 @@ document.addEventListener("click", (e) => {
     case "add-ort": openSheet("ort", null, current, el.dataset.ort ? { ort: el.dataset.ort, country: "DE" } : null); break;
     case "edit-excel": openSheet("excel", +el.dataset.i); break;
     case "add-excel": openSheet("excel", null); break;
+    case "edit-ppom": { const i = +el.dataset.i; requireAdmin("Wählbare Veredelungen", "Bestimmt, was zusätzlich an CDH geht.", () => openSheet("ppom", i)); break; }
+    case "add-ppom": requireAdmin("Wählbare Veredelungen", "Bestimmt, was zusätzlich an CDH geht.", () => openSheet("ppom", null)); break;
     case "edit-prefix": { const i = +el.dataset.i; requireAdmin("Veredelungen ändern", "Gilt für alle Shops.", () => openSheet("prefix", i)); break; }
     case "add-prefix": requireAdmin("Veredelungen ändern", "Gilt für alle Shops.", () => openSheet("prefix", null)); break;
     case "sheet-done": sheetDone(); break;

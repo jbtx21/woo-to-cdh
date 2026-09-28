@@ -121,7 +121,6 @@ def test_alles_nur_im_admin_modus(ordner):
 
 @pytest.mark.parametrize("aenderung, text", [
     ({"name": ""}, "Name"),
-    ({"url": "https://shop.example/"}, "Shop-Adresse"),
     ({"url": "http://shop.example/neu/"}, "Shop-Adresse"),
     ({"url": "https://shop.example/neu"}, "Shop-Adresse"),
     ({"debitor": "12a"}, "Debitornummer"),
@@ -323,3 +322,18 @@ def test_assistent_komplett(api, ordner):
                                            [b["id"] for b in liste["bestellungen"]], True)
     assert erg["abgeschlossen"] == ["402", "1001", "1002"] and erg["fehler_nummern"] == []
     assert [p for p, _ in FakeWoo.puts] == ["/orders/1402", "/orders/501", "/orders/502"]
+
+
+@pytest.mark.parametrize("url, ok", [
+    ("https://weeber.example/", True),                  # eigene Domain ohne Unterordner (Weeber)
+    ("https://shop.example/musterbau/", True),
+    ("https://shop.example/a/b/", True),
+    ("https://weeber.example", False),                  # / am Ende fehlt
+    ("http://weeber.example/", False),
+    ("https://shop.example/mit leer/", False),
+])
+def test_shop_adresse_auch_ohne_unterordner(api, url, ok):
+    """Nur Prüfung der Grunddaten — der Test-Shop (Woo) statt Netz."""
+    FakeWoo.orders_by_url.setdefault(url, [])
+    erg = api.shop_pruefen(_daten(url=url))
+    assert ("Shop-Adresse" in (erg.get("fehler") or "")) is not ok, erg

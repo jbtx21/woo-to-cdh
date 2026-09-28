@@ -568,6 +568,125 @@ def zubehoer_ergaenzen(order: dict, client: "WooClient", cache: dict) -> list[di
     return ergaenzt
 
 
+# ---------------------------------------------------------------------------
+# Wählbare Veredelungen aus PPOM (Welle 11, Weeber)
+# ---------------------------------------------------------------------------
+# Im Shop wählt der Kunde kostenpflichtige Zusatzveredelungen über PPOM
+# (Checkbox „Zusatzoptionen: Stick Audi“, Textfeld „Stick Name“). PPOM legt
+# sie an der Bestellposition unter dem Feldnamen ab (Anzeige: Feldtitel), bei
+# Checkboxen die gewählten Optionen mit Komma getrennt. Je Shop ordnet
+# ppom_veredelung Feld (+ Option) einem verborgenen Veredelungsartikel im Shop
+# zu; der Import hängt ihn als eigene Position mit der Menge der Jacke an.
+# Textfelder (Option leer): der eingegebene Text steht an der Jacke.
+
+def ppom_regeln(shop_cfg: dict) -> list[dict]:
+    regeln = []
+    for r in shop_cfg.get("ppom_veredelung") or []:
+        if not isinstance(r, dict):
+            continue
+        feld, artikel = str(r.get("feld") or "").strip(), str(r.get("artikel") or "").strip()
+        if feld and artikel:
+            regeln.append({"feld": feld, "option": str(r.get("option") or "").strip(),
+                           "artikel": artikel})
+    return regeln
+
+
+def _ppom_werte(item: dict, feld: str) -> list[tuple[str, str]]:
+    """(Titel, Wert) der Metadaten, deren Feldname oder Anzeigename passt."""
+    f = feld.casefold()
+    out = []
+    for m in item.get("meta_data") or []:
+        key = str(m.get("key") or "")
+        anzeige = str(m.get("display_key") or "")
+        if key.startswith("_") or f not in (key.strip().casefold(), anzeige.strip().casefold()):
+            continue
+        wert = m.get("value")
+        if isinstance(wert, (dict, list)):
+            continue
+        out.append((anzeige or key, re.sub(r"<[^>]+>", "", str(wert or "")).strip()))
+    return out
+
+
+def _option_gewaehlt(wert: str, option: str) -> bool:
+    """„Stick Audi“ in „Stick Audi (+5,34 €), Stick Logo Weeber Rücken“ — als
+    ganzer Eintrag, nicht als Teil eines längeren („Stick“ ≠ „Stick Audi“)."""
+    muster = r"(?:^|,\s*)" + re.escape(option) + r"(?=\s*(?:$|,\s|\(|\[|\+))"
+    return re.search(muster, wert, re.I) is not None
+
+
+def ppom_veredelung_ergaenzen(order: dict, client: "WooClient", cache: dict,
+                              regeln: list[dict]) -> list[dict]:
+    """Hängt gewählte PPOM-Veredelungen als eigene Positionen direkt hinter
+    ihre Position (Menge wie dort). Text aus Textfeldern kommt an die
+    Position selbst (_zusatztext). Wirft OrderBuildError, wenn ein
+    Veredelungsartikel im Shop fehlt — dann bleibt die Bestellung offen."""
+    if order.get("_ppom_ergaenzt") or not regeln:
+        return []
+    order_no = order.get("number") or order.get("id")
+
+    def artikel(sku: str) -> dict:
+        schluessel = ("ppom-sku", sku)
+        if schluessel not in cache:
+            try:
+                treffer = client._get("/products", {"sku": sku}) or []
+            except requests.RequestException as e:
+                raise OrderBuildError(f"Bestellung {order_no}: Veredelungsartikel {sku} nicht "
+                                      f"abrufbar ({ohne_schluessel(e)})") from None
+            cache[schluessel] = treffer[0] if treffer else None
+        if cache[schluessel] is None:
+            raise OrderBuildError(f"Bestellung {order_no}: Veredelungsartikel {sku} gibt es im "
+                                  "Shop nicht (Einstellungen → Shop → Wählbare Veredelungen).")
+        return cache[schluessel]
+
+    # Felder mit Optionen: gewählte Einträge ohne Zuordnung melden (sonst ginge
+    # eine bezahlte Veredelung still nicht an CDH)
+    optionen_je_feld: dict[str, list[str]] = {}
+    for r in regeln:
+        if r["option"]:
+            optionen_je_feld.setdefault(r["feld"].casefold(), []).append(r["option"])
+    offen = []
+
+    neu, ergaenzt = [], []
+    for it in order.get("line_items") or []:
+        neu.append(it)
+        if it.get("_zubehoer") or it.get("_veredelung"):
+            continue
+        for feld, optionen in optionen_je_feld.items():
+            for titel, wert in _ppom_werte(it, feld):
+                for eintrag in re.split(r",\s+(?![^()\[\]]*[)\]])", wert):
+                    name = re.sub(r"\s*[(\[+].*$", "", eintrag).strip()
+                    if name and not any(_option_gewaehlt(eintrag, o) for o in optionen):
+                        offen.append(f"{titel} „{name}“")
+        texte = []
+        for r in regeln:
+            werte = _ppom_werte(it, r["feld"])
+            if r["option"]:
+                if not any(_option_gewaehlt(w, r["option"]) for _, w in werte):
+                    continue
+            else:
+                eingabe = [(t, w) for t, w in werte if w]
+                if not eingabe:
+                    continue
+                texte += [f"{t}: {w}" for t, w in eingabe]
+            prod = artikel(r["artikel"])
+            staffel = staffel_lesen(prod)
+            if staffel:
+                cache.setdefault("staffeln", {})[r["artikel"]] = staffel
+            zeile = {"id": None, "product_id": int(prod.get("id") or 0), "variation_id": 0,
+                     "sku": r["artikel"], "name": str(prod.get("name") or "").strip(),
+                     "quantity": _menge(it.get("quantity")), "total": "0.00",
+                     "meta_data": [], "_veredelung": True}
+            neu.append(zeile)
+            ergaenzt.append(zeile)
+        if texte:
+            it["_zusatztext"] = "; ".join(texte)
+    order["line_items"] = neu
+    order["_ppom_ergaenzt"] = True
+    if offen:
+        order["_ppom_offen"] = sorted(set(offen))
+    return ergaenzt
+
+
 def staffelpreise_anwenden(wex_data: dict, orders: list, cache: dict,
                            shop: str = "") -> None:
     """Staffelpreise des Zubehörs auf einen fertigen CDH-Auftrag anwenden.
@@ -697,6 +816,8 @@ def build_wex_data(order: dict, shop_cfg: dict, client: WooClient,
         # Wenn der Variantentext im Produktnamen steckt, abschneiden
         if variant_text and product_name.endswith(f" - {variant_text}"):
             product_name = product_name[: -(len(variant_text) + 3)]
+        if item.get("_zusatztext"):              # PPOM-Text, z. B. „Stick Name: …“
+            variant_text = ", ".join(t for t in (variant_text, item["_zusatztext"]) if t)
 
         ek, vk = extract_ek_vk(client, item, price_cache)
 
@@ -708,6 +829,7 @@ def build_wex_data(order: dict, shop_cfg: dict, client: WooClient,
             "selling_price": vk,
             "buying_price":  ek,
             **({"zubehoer": True} if item.get("_zubehoer") else {}),
+            **({"veredelung": True} if item.get("_veredelung") else {}),
         })
 
     return {
@@ -1485,7 +1607,8 @@ def _row_from_order_position(order: dict, item: dict, shop_cfg: dict,
     # Für die Kurzbeschreibung ist der Wert im line_item nicht immer da —
     # wir lassen ihn leer, wenn nicht vorhanden.
     artikeltext_1 = ""
-    artikeltext_2 = _variant_text_labeled(item)
+    artikeltext_2 = ", ".join(t for t in (_variant_text_labeled(item),
+                                          item.get("_zusatztext") or "") if t)
 
     row = [
         str(shop_cfg.get("datev_no", "")),
@@ -1910,6 +2033,15 @@ def _pruefregeln(erg: "ShopErgebnis") -> None:
                 e.warnungen.append(text)
                 logging.warning("[%s] %s: %s", erg.shop, e.titel, text)
 
+        for o in e.orders:
+            if o.get("_ppom_offen"):
+                text = (f"Bestellung {o.get('number') or o.get('id')}: "
+                        f"{', '.join(o['_ppom_offen'])} gewählt, aber keiner Veredelung "
+                        "zugeordnet — geht so nicht an CDH (Einstellungen → Shop → "
+                        "Wählbare Veredelungen).")
+                e.warnungen.append(text)
+                logging.warning("[%s] %s: %s", erg.shop, e.titel, text)
+
         ohne_ek = sorted({p.get("article_no") for p in e.wex_data["positions"]
                           if p.get("article_no") and p.get("buying_price") in (None, "")})
         if ohne_ek:
@@ -2044,6 +2176,10 @@ def _shop_abrufen(shop_cfg: dict, global_cfg: dict, exported_locally: set,
     for order in orders:
         order_no = order.get("number") or order.get("id")
         try:
+            for z in ppom_veredelung_ergaenzen(order, client, erg.price_cache,
+                                               ppom_regeln(shop_cfg)):
+                logging.info("[%s] Bestellung %s: Veredelung %s × %s (PPOM) ergänzt.",
+                             shop_name, order_no, z["quantity"], z["sku"])
             if shop_cfg.get("pflicht_zubehoer"):
                 for z in zubehoer_ergaenzen(order, client, erg.price_cache):
                     logging.info("[%s] Bestellung %s: Pflicht-Zubehör %s × %s ergänzt.",

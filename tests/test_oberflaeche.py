@@ -1095,3 +1095,33 @@ def test_artikel_staffelpreise(artikelseite):
     p.wait_for_selector("text=Nicht sicherbar")
     assert "EK (9.00) größer als VK (4.00)" in p.locator("#overlay").inner_text()
     assert p.fehler == []
+
+
+# --- Wählbare Veredelungen (Welle 11) ----------------------------------------------
+
+def test_waehlbare_veredelungen_zuordnen(seite):
+    _nav(seite, "caf")
+    seite.wait_for_selector("text=Wählbare Veredelungen (PPOM)")
+    seite.click("[data-a=add-ppom]")
+    _admin(seite)
+    seite.wait_for_selector("#ff-feld")
+    seite.wait_for_timeout(150)
+    seite.fill("#ff-feld", "Zusatzoptionen")
+    seite.fill("#ff-option", "Stick Audi")
+    seite.fill("#ff-artikel", "004/AUDI")
+    seite.click("[data-a=sheet-done]")
+    seite.click("[data-a=add-ppom]")
+    seite.wait_for_selector("#ff-feld")
+    seite.wait_for_timeout(150)
+    seite.fill("#ff-feld", "Stick Name")
+    seite.fill("#ff-artikel", "004/NAME")
+    seite.click("[data-a=sheet-done]")
+    assert "Stick Name Text" in seite.locator("#detail").inner_text().replace("\n", " ")
+    seite.click("#detail [data-a=save]")
+    seite.wait_for_selector("#hud.show:has-text('Gesichert')")
+    assert _cfg(seite.ordner)["shops"][0]["ppom_veredelung"] == [
+        {"feld": "Zusatzoptionen", "option": "Stick Audi", "artikel": "004/AUDI"},
+        {"feld": "Stick Name", "option": "", "artikel": "004/NAME"}]
+    text = next(seite.ordner.glob("*verlauf*")).read_text(encoding="utf-8")
+    assert "Wählbare Veredelungen Zusatzoptionen: Stick Audi → 004/AUDI; Stick Name (Text) → 004/NAME" in text
+    assert seite.fehler == []

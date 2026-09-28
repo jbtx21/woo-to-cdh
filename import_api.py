@@ -85,6 +85,10 @@ def _bestellung_json(o: dict, s: w.ShopErgebnis) -> dict:
         sku = (item.get("sku") or "").strip()
         if item.get("_zubehoer"):
             name += " (Zubehör, automatisch)"
+        if item.get("_veredelung"):
+            name += " (Veredelung, gewählt)"
+        if item.get("_zusatztext"):
+            variante = ", ".join(t for t in (variante, item["_zusatztext"]) if t)
         pos.append({"q": w._menge(item.get("quantity")), "sku": sku, "art": name,
                     "v": variante, "vk": _zahl(vk), "ek": _zahl(ek),
                     "ved": w._is_veredelung(sku)})
@@ -113,7 +117,8 @@ def _cdh_json(e: w.Einheit, feste_orte: set) -> dict:
             hinweis = "Versandadresse aus der Bestellung"
     positionen = [{"q": p.get("quantity"), "sku": p.get("article_no") or "",
                    "text": " · ".join(x for x in (p.get("description"), p.get("variant_text"),
-                                                   "Zubehör, automatisch" if p.get("zubehoer") else "")
+                                                   "Zubehör, automatisch" if p.get("zubehoer") else "",
+                                                   "Veredelung, gewählt" if p.get("veredelung") else "")
                                       if x),
                    "vk": _zahl(p.get("selling_price")), "trenner": not p.get("article_no")}
                   for p in w._aggregate_veredelungen(d.get("positions") or [])]

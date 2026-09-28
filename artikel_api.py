@@ -745,6 +745,12 @@ class ArtikelApi(ShopApi):
                 zeilen = self._katalog(shop_id, client, neu=True)
             except Exception as e:  # noqa: BLE001
                 raise _Fehler(f"Artikel nicht abrufbar ({w.ohne_schluessel(e)}).") from None
+            # Veredelungsartikel der wählbaren Veredelungen (PPOM) zählen wie
+            # Zubehör: Staffel-Spalte, Filter „Zubehörartikel“
+            ppom = {r["artikel"].casefold() for r in w.ppom_regeln(shop)}
+            for z in zeilen:
+                if z["sku"] and z["sku"].casefold() in ppom:
+                    z["ist_zubehoer"] = True
             self._vorschau = None
             getattr(self, "_plugin_versionen", {}).pop(shop_id, None)   # nach Plugin-Update neu lesen
             cfg, _ = w.load_config(self._base)

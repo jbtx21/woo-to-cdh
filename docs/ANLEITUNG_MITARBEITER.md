@@ -128,6 +128,13 @@ Stick zum Poloshirt ein.
 - „eigene Regel" bei einer Variante heißt: Dort gilt eine eigene Einstellung
   aus dem Shop.
 
+**Wählbare Veredelungen (zum Beispiel Weeber):** Wählt der Kunde im Shop
+eine kostenpflichtige Zusatzveredelung, geht sie als eigene Position an CDH.
+- In der Prüfansicht steht sie mit „(Veredelung, gewählt)".
+- Der Name aus „Stick Name" steht bei der Jacke.
+- Erscheint der Hinweis „… gewählt, aber keiner Veredelung zugeordnet",
+  bitte an den Admin geben. Die Veredelung fehlt sonst im Auftrag.
+
 **VK und EK** gehen an CDH, der **Verkaufspreis** ist der Preis im Shop.
 
 ## 7. Wenn etwas nicht geht

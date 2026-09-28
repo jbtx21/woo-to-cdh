@@ -748,6 +748,46 @@ Import liest.
   hat. Filter „Ohne Bild". Nicht in andere Shops übertragen (Bild-ids sind
   je Shop verschieden).
 
+### Wählbare Veredelungen aus PPOM (Welle 11)
+
+Beispiel Shop Weeber: Der Kunde wählt kostenpflichtige Zusatzveredelungen
+über PPOM, etwa „Zusatzoptionen: Stick Audi / Stick Logo Weeber Rücken"
+(Checkboxen) oder „Stick Name" (Textfeld). PPOM legt sie an der
+Bestellposition unter dem Feldnamen ab. Die Schnittstelle zeigt den
+Feldtitel; bei Checkboxen stehen die gewählten Optionen mit Komma getrennt.
+
+Einrichten je Shop: Einstellungen → Shop → **Wählbare Veredelungen (PPOM)**
+(Admin), gespeichert als `ppom_veredelung`:
+
+```yaml
+    ppom_veredelung:
+      - {feld: Zusatzoptionen, option: Stick Audi, artikel: 004/AUDI}
+      - {feld: Zusatzoptionen, option: Stick Logo Weeber Rücken, artikel: 004/WEEBER-R}
+      - {feld: Stick Name, option: "", artikel: 004/NAME}   # Textfeld
+```
+
+- `feld` ist der Feldtitel oder Feldname in PPOM, `artikel` die
+  Artikelnummer eines **verborgenen Veredelungsartikels im Shop**. Dessen
+  EK (Länge), VK (Breite) und Staffelpreise gelten, gepflegt im Artikel-Tab.
+- Gewählte Option: eigene Position direkt hinter dem Artikel, Menge wie
+  dort. Die Prüfansicht zeigt sie mit „(Veredelung, gewählt)".
+- Textfeld (`option` leer): Die Position kommt nur, wenn Text eingegeben
+  ist. Der Text steht an der Artikelzeile (DescriptionText2 bzw. Excel
+  „Artikeltext 2"), zum Beispiel „L, Stick Name: Max Muster".
+- Eine Option gilt nur als ganzer Eintrag: „Stick" trifft nicht „Stick
+  Audi".
+- Fehlt der Veredelungsartikel im Shop, bleibt die Bestellung offen (Fehler
+  statt Auftrag ohne Veredelung).
+- Wählt ein Kunde eine Option, die keiner Veredelung zugeordnet ist, warnt
+  die Prüfansicht („… gewählt, aber keiner Veredelung zugeordnet").
+- Hat der Veredelungsartikel selbst Pflicht-Zubehör (etwa Transfer), kommt
+  es mit, wenn beim Shop „Pflicht-Zubehör ergänzen" an ist.
+- Im Artikel-Tab gelten diese Artikel als Zubehörartikel (Staffel-Spalte,
+  Filter).
+
+Shop-Adressen ohne Unterordner (eigene Domain wie
+`https://weeber.texma-gmbh.de/`) nimmt der Shop-Assistent seit Welle 11 an.
+
 ### Zusätzliche Meta-Spalten
 
 Über `extra_excel_meta` lassen sich pro Shop weitere Meta-Felder anhängen.

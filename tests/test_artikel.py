@@ -721,3 +721,11 @@ def test_zubehoer_am_zubehoer_erlaubt_kreislauf_nicht(vier):
     assert erg["vorschau_id"] is None
     assert erg["fehler"] == ["005/TRANSFER Transfer: Kreislauf beim Zubehör "
                              "(005/TRANSFER Transfer → 005/DRUCK Druck Logo → 005/TRANSFER Transfer)."]
+
+
+def test_ppom_veredelungsartikel_gelten_als_zubehoer(api, tmp_path):
+    einst = yaml.safe_load((tmp_path / "einstellungen.yaml").read_text(encoding="utf-8"))
+    einst["shops"][0]["ppom_veredelung"] = [{"feld": "Zusatzoptionen", "option": "Pin", "artikel": "042/PIN"}]
+    (tmp_path / "einstellungen.yaml").write_text(yaml.safe_dump(einst), encoding="utf-8")
+    z = {r["id"]: r for r in api.artikel_laden("caf")["artikel"]}
+    assert z[30]["ist_zubehoer"] is True and z[20]["ist_zubehoer"] is False

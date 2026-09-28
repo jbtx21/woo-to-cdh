@@ -434,6 +434,38 @@ Etappen:
 
 ---
 
+## Welle 11 — Wählbare Veredelungen aus PPOM (28.09.2026)
+
+Anlass: neuer Shop Weeber (weeber.texma-gmbh.de, eigene Domain).
+Kostenpflichtige Zusatzveredelungen sind optional und werden über PPOM
+gewählt: Checkboxen „Zusatzoptionen" (Stick Audi, Stick Logo Weeber Rücken)
+und das Textfeld „Stick Name".
+
+Entscheidungen 28.09.2026:
+- Je gewählter Option eine eigene Position in CDH.
+- Artikelnummer, EK und VK aus verborgenen Veredelungsartikeln im Shop (mit
+  Staffel, pflegbar im Artikel-Tab).
+- Der Text von „Stick Name" steht an der Jacke.
+
+Umgesetzt:
+- `woo_to_cdh.ppom_veredelung_ergaenzen`: läuft vor dem Pflicht-Zubehör,
+  also bekommt eine Veredelung auch ihr eigenes Zubehör.
+- Zuordnung `ppom_veredelung` je Shop, pflegbar in den Einstellungen
+  (Admin).
+- Prüfansicht warnt bei nicht zugeordneten Optionen.
+- Fehlender Artikel lässt die Bestellung offen.
+- Grundlage war PPOM 34.0.9 (Quelltext geprüft): Die Order-Item-Meta liegt
+  unter dem Feldnamen, `display_key` ist der Feldtitel. Bei Checkboxen
+  sind die Labels mit ", " verbunden. `_ppom_fields` ist ein Array und
+  fehlt deshalb in der REST-Antwort.
+- Shop-Assistent: Adressen ohne Unterordner sind erlaubt.
+- Tests gehen nie ins Netz (autouse-Sperre in conftest).
+
+**Offen, am echten Shop prüfen:**
+- Eine Testbestellung mit allen Optionen aufgeben.
+- Mit `python diagnose.py Weeber --felder` prüfen, ob Feldtitel und Werte so
+  ankommen wie erwartet.
+
 ## Offene Fragen an Jannik
 
 ### Sicherheitsvorfall 23.09.2026 — API-Schlüssel sichtbar geworden

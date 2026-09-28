@@ -86,6 +86,24 @@ def value(xml, tag):
 
 
 @pytest.fixture(autouse=True)
+def _kein_netz(monkeypatch):
+    """Tests gehen nie ins Netz (28.09.2026: ein Test ohne Test-Shop hatte echte
+    Shops angefragt — der Proxy hat es geblockt). Jede Anfrage über requests
+    an einen anderen Rechner als diesen lässt den Test sofort scheitern."""
+    import requests.adapters
+    from urllib.parse import urlsplit
+
+    echt = requests.adapters.HTTPAdapter.send
+
+    def send(self, request, *a, **kw):
+        host = urlsplit(request.url).hostname or ""
+        if host not in ("127.0.0.1", "localhost", "::1"):
+            raise AssertionError(f"Test wollte ins Netz: {host} — Test-Shop (client_factory) fehlt")
+        return echt(self, request, *a, **kw)
+    monkeypatch.setattr(requests.adapters.HTTPAdapter, "send", send)
+
+
+@pytest.fixture(autouse=True)
 def _versandarten_nicht_merken():
     """Jeder Test mit eigenen Versandzonen — nichts aus dem vorigen merken."""
     w.versandarten_vergessen()
